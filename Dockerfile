@@ -1,0 +1,23 @@
+# ===== Frontend build =====
+FROM node:20-alpine AS frontend
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install --no-audit --no-fund
+COPY frontend/ ./
+ENV REACT_APP_BACKEND_URL=""
+RUN npm run build
+
+# ===== Backend/runtime =====
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FRONTEND_BUILD_DIR=/app/frontend_build \
+    UPLOAD_ROOT=/app/data/uploads/installazioni
+WORKDIR /app
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+COPY backend/ /app/backend/
+COPY --from=frontend /app/frontend/build /app/frontend_build
+RUN mkdir -p /app/data/uploads/installazioni
+WORKDIR /app/backend
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
