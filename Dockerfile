@@ -2,7 +2,7 @@
 FROM node:20-alpine AS frontend
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
+RUN npm install --legacy-peer-deps --no-audit --no-fund
 COPY frontend/ ./
 ENV REACT_APP_BACKEND_URL=""
 RUN npm run build
