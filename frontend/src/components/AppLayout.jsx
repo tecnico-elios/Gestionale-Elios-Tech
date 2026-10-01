@@ -1,4 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import axios from "axios";
+import { API } from "../lib/apiBase";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -25,6 +27,7 @@ import {
   List,
   X,
   Briefcase,
+  CalendarBlank,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { useInventoryCtx } from "../lib/InventoryContext";
@@ -148,6 +151,7 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= 1024));
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [customModules, setCustomModules] = useState([]);
 
   const initialOpen = useMemo(() => {
     const found = SECTIONS.find((s) => s.items.some((i) => location.pathname.startsWith(i.to)));
@@ -164,9 +168,10 @@ export default function AppLayout() {
 
   useEffect(() => {
     const found = SECTIONS.find((s) => s.items.some((i) => location.pathname.startsWith(i.to)));
-    const key = location.pathname.startsWith("/admin") ? "sistema" : found?.key;
+    const custom = customModules.find((m) => location.pathname.startsWith(`/moduli/${m.slug}`));
+    const key = location.pathname.startsWith("/admin") ? "sistema" : (custom?.section || found?.key);
     if (key) setOpenSections((prev) => ({ ...prev, [key]: true }));
-  }, [location.pathname]);
+  }, [location.pathname, customModules]);
 
   const toggleSection = (key) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -192,12 +197,18 @@ export default function AppLayout() {
     }
   };
 
+  const loadCustomModules = async () => {
+    try { const { data } = await axios.get(`${API}/custom/modules`); setCustomModules(data.items || []); } catch { setCustomModules([]); }
+  };
+  useEffect(() => { loadCustomModules(); const fn=()=>loadCustomModules(); window.addEventListener("elios:custom-modules-changed", fn); return ()=>window.removeEventListener("elios:custom-modules-changed", fn); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const roleLabel = { admin: "Admin", responsabile: "Responsabile", operator: "Operatore", commerciale: "Commerciale", tecnico: "Tecnico" }[user?.role] || user?.role || "";
 
   const systemExtra = isAdmin
     ? [
         { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", module: "impostazioni" },
         { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", module: "utenti" },
+        { to: "/admin/moduli", label: "Costruttore moduli", icon: SlidersHorizontal, testid: "nav-module-builder", module: "impostazioni" },
       ]
     : [];
 
@@ -301,12 +312,19 @@ export default function AppLayout() {
                 onNavigate={closeOnMobile}
               />
             )}
+            {hasPermission("calendar", "view") && (
+              <SidebarLink
+                item={{ to: "/calendario", label: "Calendario", icon: CalendarBlank, testid: "nav-calendar", module: "calendar" }}
+                onNavigate={closeOnMobile}
+              />
+            )}
 
             <div className="h-px bg-white/10 my-2" />
 
             {SECTIONS.map((section) => {
               const allowed = section.items.filter((item) => !item.module || hasPermission(item.module, "view"));
-              const extras = (section.key === "sistema" ? systemExtra : []).filter((item) => isAdmin || !item.module || hasPermission(item.module, "view"));
+              const dynamicExtras = customModules.filter((m) => (m.section || "amministrazione") === section.key).map((m) => ({ to: `/moduli/${m.slug}`, label: m.name, icon: FileText, testid: `nav-custom-${m.slug}` }));
+              const extras = [...(section.key === "sistema" ? systemExtra : []), ...dynamicExtras].filter((item) => isAdmin || !item.module || hasPermission(item.module, "view"));
               if (!allowed.length && !extras.length) return null;
               return (
                 <Section

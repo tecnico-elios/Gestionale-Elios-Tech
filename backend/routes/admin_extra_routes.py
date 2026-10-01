@@ -1324,7 +1324,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         cfg = await _apply_saved_notion_config()
         if not cfg.get("token"):
             raise HTTPException(400, "Token Notion non configurato")
-        counts = {"inventory_count": 0, "orders_count": 0, "receipts_count": 0, "exits_count": 0, "verona_inventory_count": 0, "verona_receipts_count": 0, "verona_exits_count": 0}
+        counts = {"inventory_count": 0, "orders_count": 0, "receipts_count": 0, "exits_count": 0, "verona_inventory_count": 0, "verona_receipts_count": 0, "verona_exits_count": 0, "historical_orders_count": 0, "interventions_count": 0, "staff_reports_count": 0, "riccardo_reports_count": 0}
         try:
             if notion_service.NOTION_INVENTARIO_DS_ID:
                 notion_service.invalidate_inventory_cache()
@@ -1341,6 +1341,10 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 counts["verona_receipts_count"] = len(await _query_notion_source(cfg["verona_receipts_ds_id"]))
             if cfg.get("verona_tracker_ds_id"):
                 counts["verona_exits_count"] = len(await _query_notion_source(cfg["verona_tracker_ds_id"]))
+            counts["historical_orders_count"] = len(await _query_notion_source("25ca9b09-6783-814d-9752-000b91ebc7d9"))
+            counts["interventions_count"] = len(await _query_notion_source("67361dc0-3bf7-434e-89f6-64816e5ad0f2"))
+            counts["staff_reports_count"] = len(await _query_notion_source("2a3a9b09-6783-8055-aa60-000bfb55e3ea"))
+            counts["riccardo_reports_count"] = len(await _query_notion_source("ca1a9b09-6783-83f4-80f3-07393c23d8ba"))
         except Exception as e:
             raise HTTPException(502, f"Impossibile preparare l'anteprima: {e}")
         previous = await db.settings.find_one({"_id": "notion_migration"}) or {}
@@ -2063,6 +2067,181 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             except Exception as e:
                 logger.warning("Import storico uscite Notion fallito: %s", e)
 
+        # 4) Fonti Notion aggiuntive del workspace Elios Tech (storico, Verona, interventi, report)
+        extra = {
+            "historical_orders": 0, "verona_products": 0, "verona_receipts": 0, "verona_exits": 0, "interventions": 0,
+            "staff_reports": 0, "riccardo_reports": 0,
+        }
+        OLD_ORDERS_DS = "25ca9b09-6783-814d-9752-000b91ebc7d9"
+        VERONA_INV_DS = "c93a9b09-6783-8271-ae7f-07858948fde5"
+        INTERVENTI_DS = "67361dc0-3bf7-434e-89f6-64816e5ad0f2"
+        REPORT_DS = "2a3a9b09-6783-8055-aa60-000bfb55e3ea"
+        RICCARDO_REPORT_DS = "ca1a9b09-6783-83f4-80f3-07393c23d8ba"
+
+        async def _ensure_client_by_name(name: str) -> Optional[str]:
+            import re as _re
+            name = (name or "").strip()
+            if not name:
+                return None
+            found = await db.crm_clienti.find_one({"ragione_sociale": {"$regex": f"^{_re.escape(name)}$", "$options": "i"}})
+            if found:
+                return str(found.get("id"))
+            cid = str(_uuid.uuid4())
+            await db.crm_clienti.insert_one({
+                "id": cid, "tipo": "Azienda", "ragione_sociale": name,
+                "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc),
+                "created_by": current_user.get("username"), "import_source": "notion", "origine": "Migrazione Notion storico",
+            })
+            return cid
+
+        # Storico Ordini 2023/24: confluisce negli stessi Ordini cliente.
+        try:
+            for page in await _query_notion_source(OLD_ORDERS_DS):
+                if await db.crm_ordini_clienti.find_one({"notion_page_id": page.get("id")}):
+                    continue
+                props = page.get("properties") or {}
+                company = (_notion_value(props, "Ragione sociale") or "").strip()
+                if not company:
+                    continue
+                client_id = await _ensure_client_by_name(company)
+                number = _notion_value(props, "N° Ordine") or ""
+                codes_raw = _notion_value(props, "Codice prodotto") or ""
+                codes = [x.strip() for x in str(codes_raw).split(",") if x.strip()]
+                sns = notion_service._parse_serials(str(_notion_value(props, "SN WB") or ""))
+                await db.crm_ordini_clienti.insert_one({
+                    "id": str(_uuid.uuid4()), "numero": number, "cliente_id": client_id,
+                    "data": _notion_value(props, "Data") or "", "data_firma": _notion_value(props, "Data") or "",
+                    "modalita_pagamento": _notion_value(props, "Pagamento") or "",
+                    "importo": _notion_value(props, "Capitale"), "qty_wb": _notion_value(props, "QTY WB") or len(sns),
+                    "prodotti_notion": codes, "sn_wb": sns, "agente": _notion_value(props, "Agente") or "",
+                    "stato": _notion_value(props, "Stato cliente") or "", "notion_page_id": page.get("id"),
+                    "notion_url": page.get("url"), "import_source": "notion_storico",
+                    "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc),
+                    "created_by": current_user.get("username"),
+                })
+                extra["historical_orders"] += 1
+        except Exception as e:
+            logger.warning("Import Ordini 2023/24 fallito: %s", e)
+
+        # Magazzino Verona: catalogo e giacenza del deposito separati da Elios Tech.
+        verona_notion_to_local: Dict[str, str] = {}
+        try:
+            for page in await _query_notion_source(VERONA_INV_DS):
+                props = page.get("properties") or {}
+                name = _notion_value(props, "Nome prodotto") or ""
+                code = (_notion_value(props, "Codice prodotto") or "").strip()
+                if not name and not code:
+                    continue
+                existing = await db.products.find_one({"warehouse_id": "verona", "$or": [{"notion_page_id": page.get("id")}, {"code": code}]})
+                pid = str(existing.get("id")) if existing else str(_uuid.uuid4())
+                qty = _notion_value(props, "QTA in magazzino")
+                if qty is None: qty = _notion_value(props, "QTA Base") or 0
+                payload = {
+                    "id": pid, "warehouse_id": "verona", "name": name or code or "Prodotto Verona", "code": code,
+                    "category": _notion_value(props, "Categoria") or "", "unit_price": _notion_value(props, "Prezzo Unitario"),
+                    "power": _notion_value(props, "Potenza") or "", "cable": _notion_value(props, "Cavo") or "",
+                    "tipo_gestione": "a_quantita", "active": True, "notion_page_id": page.get("id"),
+                    "updated_at": _now_iso(),
+                }
+                if existing:
+                    await db.products.update_one({"id": pid}, {"$set": payload})
+                else:
+                    payload["created_at"] = _now_iso(); await db.products.insert_one(payload)
+                await db.warehouse_stock.update_one({"product_id": pid, "warehouse_id": "verona"}, {"$set": {"quantity": float(qty or 0), "low_stock_threshold": float(_notion_value(props, "QTA Minima in Stock") or 0), "updated_at": _now_iso()}, "$setOnInsert": {"created_at": _now_iso()}}, upsert=True)
+                verona_notion_to_local[str(page.get("id"))] = pid
+                extra["verona_products"] += 1
+        except Exception as e:
+            logger.warning("Import Magazzino Verona fallito: %s", e)
+
+        # Storico movimenti Verona (read-only da Notion, senza ricalcolare la giacenza importata).
+        try:
+            for page in await _query_notion_source("f29a9b09-6783-8294-a231-87f5b5cd43dd"):
+                rid = f"notion-verona:{page.get('id')}"
+                if await db.local_receipts.find_one({"id": rid}): continue
+                props=page.get("properties") or {}
+                rel = notion_service._get_prop(props, "Item in entrata") or {}
+                rels = rel.get("relation") or []
+                source_pid = str((rels[0] or {}).get("id")) if rels else ""
+                pid = verona_notion_to_local.get(source_pid)
+                prod = await db.products.find_one({"id": pid}) if pid else None
+                await db.local_receipts.insert_one({"id":rid,"warehouse_id":"verona","product_id":pid,"product_name":(prod or {}).get("name") or _notion_value(props,"Item") or "Movimento Verona","quantity":_notion_value(props,"Quantità") or 0,"data_consegna":_notion_value(props,"Date Consegna","Data Consegna") or "","created_at":_now_iso(),"import_source":"notion_verona"})
+                extra["verona_receipts"] += 1
+            for page in await _query_notion_source("5f7a9b09-6783-8381-9339-072e1ffce4cf"):
+                rid = f"notion-verona:{page.get('id')}"
+                if await db.local_picks.find_one({"id": rid}): continue
+                props=page.get("properties") or {}
+                rel = notion_service._get_prop(props, "Item in uscita") or {}
+                rels = rel.get("relation") or []
+                source_pid = str((rels[0] or {}).get("id")) if rels else ""
+                pid = verona_notion_to_local.get(source_pid)
+                prod = await db.products.find_one({"id": pid}) if pid else None
+                await db.local_picks.insert_one({"id":rid,"warehouse_id":"verona","product_id":pid,"product_name":(prod or {}).get("name") or _notion_value(props,"SN") or "Movimento Verona","sn":_notion_value(props,"SN") or "","quantity":_notion_value(props,"Quantità") or 0,"cliente":_notion_value(props,"Preso per") or "","taken_by":_notion_value(props,"Preso da") or "","data_uscita":_notion_value(props,"Data Uscita") or "","created_at":_now_iso(),"import_source":"notion_verona"})
+                extra["verona_exits"] += 1
+        except Exception as e:
+            logger.warning("Import storico Magazzino Verona fallito: %s", e)
+
+        # Interventi tecnici: sopralluoghi nel relativo modulo, altri interventi in Assistenza.
+        try:
+            for page in await _query_notion_source(INTERVENTI_DS):
+                props = page.get("properties") or {}
+                if await db.crm_sopralluoghi.find_one({"notion_page_id": page.get("id")}) or await db.crm_assistenza.find_one({"notion_page_id": page.get("id")}):
+                    continue
+                cliente = _notion_value(props, "Cliente") or ""
+                cid = await _ensure_client_by_name(cliente) if cliente else None
+                tipo = _notion_value(props, "Tipo intervento") or ""
+                common = {
+                    "cliente_id": cid or "", "nominativo": "" if cid else cliente,
+                    "data": _notion_value(props, "Data intervento") or "", "tecnico": _notion_value(props, "Tecnico") or "",
+                    "stato": _notion_value(props, "Stato") or "", "note": _notion_value(props, "Note") or "",
+                    "indirizzo_libero": _notion_value(props, "Sede/Indirizzo") or "", "notion_page_id": page.get("id"),
+                    "import_source": "notion", "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc),
+                    "created_by": current_user.get("username"),
+                }
+                common["id"] = str(_uuid.uuid4())
+                if str(tipo).lower() == "sopralluogo":
+                    await db.crm_sopralluoghi.insert_one(common)
+                else:
+                    common.update({"tipo": tipo, "descrizione": common.get("note"), "costo": _notion_value(props, "Costo (€)")})
+                    await db.crm_assistenza.insert_one(common)
+                extra["interventions"] += 1
+        except Exception as e:
+            logger.warning("Import Interventi tecnici fallito: %s", e)
+
+        async def _ensure_custom_module(slug: str, name: str, section: str, fields: List[Dict[str, Any]]) -> Dict[str, Any]:
+            m = await db.custom_modules.find_one({"slug": slug})
+            if m: return m
+            m = {"id": str(_uuid.uuid4()), "slug": slug, "name": name, "section": section, "fields": fields, "active": True, "sort_order": 100, "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc), "created_by": current_user.get("username")}
+            await db.custom_modules.insert_one(m); return m
+
+        try:
+            m = await _ensure_custom_module("report-attivita", "Report attività", "amministrazione", [
+                {"key":"data","label":"Data","type":"date","showInList":True}, {"key":"account_owner","label":"Persona","type":"text","showInList":True},
+                {"key":"mansione","label":"Mansione","type":"text","showInList":True}, {"key":"ore","label":"Ore lavorate","type":"number","showInList":True},
+                {"key":"note","label":"Note","type":"textarea","showInList":True},
+            ])
+            for page in await _query_notion_source(REPORT_DS):
+                if await db.custom_records.find_one({"module_id": m["id"], "notion_page_id": page.get("id")}): continue
+                props=page.get("properties") or {}
+                data={"data":_notion_value(props,"Data") or "","account_owner":_notion_value(props,"Account owner") or "","mansione":_notion_value(props,"Mansione") or "","ore":_notion_value(props,"Ore lavorate") or 0,"note":_notion_value(props,"Note") or ""}
+                await db.custom_records.insert_one({"id":str(_uuid.uuid4()),"module_id":m["id"],"data":data,"notion_page_id":page.get("id"),"created_at":datetime.now(timezone.utc),"updated_at":datetime.now(timezone.utc),"created_by":current_user.get("username")})
+                extra["staff_reports"] += 1
+        except Exception as e:
+            logger.warning("Import Report attività fallito: %s", e)
+
+        try:
+            m = await _ensure_custom_module("report-riccardo-installazioni", "Report Riccardo - Installazioni", "amministrazione", [
+                {"key":"data","label":"Data","type":"date","showInList":True}, {"key":"nome","label":"Attività","type":"text","showInList":True},
+                {"key":"ore","label":"Ore","type":"number","showInList":True}, {"key":"tags","label":"Categorie","type":"text","showInList":True},
+            ])
+            for page in await _query_notion_source(RICCARDO_REPORT_DS):
+                if await db.custom_records.find_one({"module_id": m["id"], "notion_page_id": page.get("id")}): continue
+                props=page.get("properties") or {}
+                data={"data":_notion_value(props,"Start") or "","nome":_notion_value(props,"Name") or "","ore":_notion_value(props,"H") or 0,"tags":_notion_value(props,"Tags") or ""}
+                await db.custom_records.insert_one({"id":str(_uuid.uuid4()),"module_id":m["id"],"data":data,"notion_page_id":page.get("id"),"created_at":datetime.now(timezone.utc),"updated_at":datetime.now(timezone.utc),"created_by":current_user.get("username")})
+                extra["riccardo_reports"] += 1
+        except Exception as e:
+            logger.warning("Import Report Riccardo fallito: %s", e)
+
         result = {
             "ok": True,
             "inventory": {"created": inv_created, "updated": inv_updated},
@@ -2078,6 +2257,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 "document_errors": document_errors,
             },
             "movements": {"receipts_imported": receipts_imported, "exits_imported": exits_imported},
+            "extra_sources": extra,
         }
         await db.settings.update_one(
             {"_id": "notion_migration"},

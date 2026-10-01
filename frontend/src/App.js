@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import DashboardPage from "@/pages/DashboardPage";
+import CalendarPage from "@/pages/CalendarPage";
 import InventarioPage from "@/pages/InventarioPage";
 import EliosTechOrdiniPage from "@/pages/EliosTechOrdiniPage";
 import TrasferimentiPage from "@/pages/TrasferimentiPage";
@@ -28,10 +29,13 @@ import AppConfirmProvider from "@/components/AppConfirmProvider";
 
 
 
+import CustomModulePage from "@/pages/CustomModulePage";
+import ModuleBuilderPage from "@/pages/ModuleBuilderPage";
 function LandingRedirect() {
   const { hasPermission } = useAuth();
   const targets = [
     ["dashboard", "/dashboard"],
+    ["calendar", "/calendario"],
     ["lead", "/lead"],
     ["ordini_clienti", "/elios-tech-ordini"],
     ["commesse", "/commesse"],
@@ -84,6 +88,7 @@ function App() {
               >
                 <Route path="/" element={<LandingRedirect />} />
                 <Route path="/dashboard" element={<ProtectedRoute permission="dashboard"><DashboardPage /></ProtectedRoute>} />
+                <Route path="/calendario" element={<ProtectedRoute permission="calendar"><CalendarPage /></ProtectedRoute>} />
                 <Route path="/inventario" element={<ProtectedRoute permission="inventario"><InventarioPage warehouseId="elios-tech" warehouseName="Magazzino Elios Tech" /></ProtectedRoute>} />
                 <Route path="/magazzino-verona" element={<ProtectedRoute permission="inventario"><InventarioPage warehouseId="verona" warehouseName="Magazzino Verona" /></ProtectedRoute>} />
                 <Route path="/trasferimenti" element={<ProtectedRoute permission="movimenti"><TrasferimentiPage /></ProtectedRoute>} />
@@ -92,6 +97,8 @@ function App() {
                 <Route path="/movimenti" element={<ProtectedRoute permission="movimenti"><MovimentiPage /></ProtectedRoute>} />
                 <Route path="/anomalie" element={<ProtectedRoute permission="anomalie"><AnomaliePage /></ProtectedRoute>} />
                 <Route path="/assistente-ai" element={<ProtectedRoute permission="ai"><AIAssistantPage /></ProtectedRoute>} />
+                <Route path="/moduli/:slug" element={<CustomModulePage />} />
+                <Route path="/admin/moduli" element={<ProtectedRoute requireAdmin><ModuleBuilderPage /></ProtectedRoute>} />
                 <Route path="/commesse" element={<ProtectedRoute permission="commesse"><CommessePage /></ProtectedRoute>} />
                 <Route path="/lead" element={<ProtectedRoute permission="lead"><LeadPage /></ProtectedRoute>} />
                 <Route path="/elios-tech-ordini" element={<ProtectedRoute permission="ordini_clienti"><EliosTechOrdiniPage /></ProtectedRoute>} />

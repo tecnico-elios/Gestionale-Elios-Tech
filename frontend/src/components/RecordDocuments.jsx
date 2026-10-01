@@ -74,12 +74,19 @@ export default function RecordDocuments({ open, onOpenChange, resource, recordId
   };
 
   const openFile = async (doc) => {
+    // R39: il browser apre subito una scheda e riceve il file in streaming diretto.
+    // Prima Axios scaricava l'intero PDF come blob e solo dopo lo mostrava.
+    const tab = window.open("about:blank", "_blank");
     try {
-      const { data } = await axios.get(`${API}/files/download/${doc.id}`, { responseType: "blob" });
-      const url = URL.createObjectURL(data);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) { toast.error("Impossibile aprire il file", { description: errText(e) }); }
+      const { data } = await axios.post(`${API}/files/open-ticket/${doc.id}`);
+      if (!data?.ticket) throw new Error("Ticket documento non disponibile");
+      const target = `${API}/files/open/${encodeURIComponent(data.ticket)}`;
+      if (tab) { tab.opener = null; tab.location.replace(target); }
+      else window.location.href = target;
+    } catch (e) {
+      try { tab?.close(); } catch {}
+      toast.error("Impossibile aprire il file", { description: errText(e) });
+    }
   };
 
   const remove = async (doc) => {

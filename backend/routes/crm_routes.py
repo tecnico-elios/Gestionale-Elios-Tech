@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
+import asyncio
 from typing import Any, Dict, Optional, List
 import uuid
 import io
@@ -667,26 +668,55 @@ def build_router(db, auth_deps):
             docs = await coll(resource).find(query).sort("updated_at", -1).to_list(length=length)
             return [_clean(x) for x in docs]
 
-        contatti = await rows("contatti", {"cliente_id": client_id})
-        sedi = await rows("sedi", {"cliente_id": client_id})
-        sopralluoghi = await rows("sopralluoghi", {"cliente_id": client_id})
-        preventivi = await rows("preventivi", {"cliente_id": client_id})
-        ordini = await rows("ordini-clienti", {"cliente_id": client_id})
-        installazioni = await rows("installazioni", {"cliente_id": client_id})
-        assistenza = await rows("assistenza", {"cliente_id": client_id})
-        comm_docs = await db.commesse.find({"cliente_id": client_id}).sort("updated_at", -1).to_list(length=2000)
+        # R39 — tutte le sezioni del dossier vengono lette in parallelo da MongoDB.
+        # Dopo la migrazione Notion non deve piu' essere interrogato ad ogni apertura cliente.
+        contatti, sedi, sopralluoghi, preventivi, ordini, installazioni, assistenza, comm_docs, client_docs = await asyncio.gather(
+            rows("contatti", {"cliente_id": client_id}),
+            rows("sedi", {"cliente_id": client_id}),
+            rows("sopralluoghi", {"cliente_id": client_id}),
+            rows("preventivi", {"cliente_id": client_id}),
+            rows("ordini-clienti", {"cliente_id": client_id}),
+            rows("installazioni", {"cliente_id": client_id}),
+            rows("assistenza", {"cliente_id": client_id}),
+            db.commesse.find({"cliente_id": client_id}).sort("updated_at", -1).to_list(length=2000),
+            db.documents.find({"resource": "clienti", "record_id": client_id}).sort("created_at", -1).to_list(length=500),
+        )
         commesse = [_clean(x) for x in comm_docs]
 
-        # R27 — collega in sola lettura la scheda reale di Eliostech Ordini (Notion).
-        # Nessun dato viene scritto su Notion: serve per mostrare nel dossier i dati gia' presenti
-        # (prodotti, seriali, QR, credenziali, servizi, scadenze, portali e documenti).
-        notion_data: Dict[str, Any] = {"status": "not_found"}
-        notion_key = str(cliente.get("ragione_sociale") or cliente.get("nome") or "").strip()
-        if notion_key:
-            try:
-                notion_data = await notion_service.find_order_by_structure(notion_key)
-            except Exception as exc:
-                notion_data = {"status": "error", "detail": str(exc)}
+        def _docs_by_category(category: str):
+            out = []
+            wanted = category.casefold()
+            for d in client_docs:
+                if str(d.get("category") or "").casefold() == wanted:
+                    out.append({
+                        "id": d.get("id"), "name": d.get("filename"),
+                        "category": d.get("category"), "size": d.get("size", 0),
+                    })
+            return out
+
+        # Compatibilita' UI: la vecchia scheda chiamava questi dati "notion".
+        # Ora sono la copia locale/migrata e quindi l'apertura e' immediata e non dipende da Notion.
+        notion_data: Dict[str, Any] = {
+            "status": "found" if cliente.get("import_source") == "notion" or cliente.get("notion_source_ids") else "local",
+            "source": "mongo_migration",
+            "ragione_sociale": cliente.get("ragione_sociale"),
+            "referente": cliente.get("referente"), "telefono": cliente.get("telefono"), "email": cliente.get("email"),
+            "indirizzo": cliente.get("indirizzo"), "comune": cliente.get("comune"), "provincia": cliente.get("provincia"),
+            "agente": cliente.get("agente"), "provenienza_cliente": cliente.get("provenienza_cliente"),
+            "stato_cliente": cliente.get("stato_cliente"), "data_firma": cliente.get("data_firma"),
+            "pagamento": cliente.get("pagamento"), "capitale": cliente.get("capitale"),
+            "codici_prodotto": cliente.get("codici_prodotto") or [], "qty_wb": cliente.get("qty_wb"),
+            "sn_wb": cliente.get("sn_wb") or [], "qr_codes": cliente.get("qr_codes") or [],
+            "installatore": cliente.get("installatore_notion"), "id_wallbox": cliente.get("id_wallbox"),
+            "password_wallbox": cliente.get("password_wallbox"), "numero_caso_wallbox": cliente.get("numero_caso_wallbox"),
+            "assistenza_smart": bool(cliente.get("assistenza_smart")), "backend_elios_tech": bool(cliente.get("backend_elios_tech")),
+            "scadenza_backend": cliente.get("scadenza_backend"), "electromaps": bool(cliente.get("electromaps")),
+            "eviaggio": bool(cliente.get("eviaggio")), "nextcharge": bool(cliente.get("nextcharge")),
+            "plugshare": bool(cliente.get("plugshare")), "recensione_google": bool(cliente.get("recensione_google")),
+            "contratto": _docs_by_category("Contratto"), "fattura": _docs_by_category("Fattura"),
+            "report_installazione": _docs_by_category("Report installazione"),
+            "report_fotografico": _docs_by_category("Report fotografico"),
+        }
 
         timeline: List[Dict[str, Any]] = []
         def add_many(items, type_name, label_fn, detail_fn=None):
@@ -710,6 +740,56 @@ def build_router(db, auth_deps):
             "commesse": commesse, "installazioni": installazioni, "assistenza": assistenza,
             "timeline": timeline, "notion": notion_data,
         }
+
+    @router.get("/clienti-summary")
+    async def clienti_summary(current=Depends(dep)):
+        """Elenco leggero per Elios Tech Ordini, gia' aggregato e ordinato per Data firma.
+
+        Evita di trasferire al browser tutte le collezioni clienti+ordini e rende la pagina
+        veloce anche con migliaia di record.
+        """
+        clients_task = db.crm_clienti.find(
+            {"archived": {"$ne": True}},
+            {"_id": 0, "id": 1, "ragione_sociale": 1, "nome_struttura": 1, "nome": 1, "cognome": 1,
+             "partita_iva": 1, "codice_fiscale": 1, "telefono": 1, "email": 1, "comune": 1, "provincia": 1,
+             "agente": 1, "data_firma": 1, "pagamento": 1, "capitale": 1, "qty_wb": 1, "stato_cliente": 1}
+        ).to_list(length=10000)
+        orders_task = db.crm_ordini_clienti.find(
+            {},
+            {"_id": 0, "id": 1, "cliente_id": 1, "data_firma": 1, "data": 1, "modalita_pagamento": 1,
+             "importo": 1, "qty_wb": 1, "stato": 1, "stato_commerciale": 1, "stato_finanziaria": 1}
+        ).to_list(length=20000)
+        clients, orders = await asyncio.gather(clients_task, orders_task)
+
+        by_client: Dict[str, List[Dict[str, Any]]] = {}
+        for order in orders:
+            by_client.setdefault(str(order.get("cliente_id") or ""), []).append(order)
+
+        def date_key(value: Any) -> str:
+            raw = str(value or "").strip()
+            return raw[:10] if raw else ""
+
+        items = []
+        for c in clients:
+            cid = str(c.get("id") or "")
+            cos = by_client.get(cid, [])
+            cos.sort(key=lambda o: (date_key(o.get("data_firma") or o.get("data")), str(o.get("id") or "")), reverse=True)
+            latest = cos[0] if cos else {}
+            dates = [date_key(c.get("data_firma"))] + [date_key(o.get("data_firma") or o.get("data")) for o in cos]
+            firma = max((d for d in dates if d), default="")
+            items.append({
+                **c,
+                "data_firma": firma,
+                "pagamento": latest.get("modalita_pagamento") or c.get("pagamento") or "",
+                "capitale": latest.get("importo") if latest.get("importo") is not None else c.get("capitale"),
+                "qty_wb": latest.get("qty_wb") if latest.get("qty_wb") not in (None, "") else c.get("qty_wb"),
+                "ordini_count": len(cos),
+                "ultimo_stato": latest.get("stato_commerciale") or latest.get("stato") or c.get("stato_cliente") or "",
+                "stato_finanziaria": latest.get("stato_finanziaria") or "",
+            })
+        # Record senza Data firma in fondo; a parita' di data ordina alfabeticamente.
+        items.sort(key=lambda x: (date_key(x.get("data_firma")), str(x.get("ragione_sociale") or x.get("nome_struttura") or "").casefold()), reverse=True)
+        return {"items": items, "count": len(items)}
 
     @router.get("/{resource}")
     async def list_records(resource: str, q: Optional[str] = Query(default=None), include_archived: bool = Query(default=False), current=Depends(dep)):

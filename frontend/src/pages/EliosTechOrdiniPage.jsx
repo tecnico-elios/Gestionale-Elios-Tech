@@ -499,7 +499,7 @@ function ClientDetail({ clientId, onBack, onReloadList }) {
             <div className="mt-1 text-sm text-slate-500">{[notionOrLocal("indirizzo"), notionOrLocal("comune"), notionOrLocal("provincia")].filter(Boolean).join(" · ") || "Sede da completare"}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {fromNotion && <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">Dati Notion collegati</Badge>}
+            {fromNotion && <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">Dati Notion importati</Badge>}
             {(n.stato_cliente || c.stato_cliente) && <StatusBadge>{n.stato_cliente || c.stato_cliente}</StatusBadge>}
             <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200">{data.sedi?.length || 0} sedi</Badge>
             <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200">{n.qty_wb ?? data.installazioni?.length ?? 0} WB</Badge>
@@ -546,7 +546,7 @@ function ClientDetail({ clientId, onBack, onReloadList }) {
 
     {tab === "anagrafica" && <div className="grid xl:grid-cols-3 gap-4">
       <section className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Anagrafica completa</h2><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"><Field label="Tipo" value={c.tipo}/><Field label="Ragione sociale / Nome" value={n.ragione_sociale || customerName(c)}/><Field label="Referente" value={n.referente || c.referente}/><Field label="Partita IVA" value={c.partita_iva}/><Field label="Codice fiscale" value={c.codice_fiscale}/><Field label="Telefono" value={n.telefono || c.telefono}/><Field label="Email" value={n.email || c.email}/><Field label="Indirizzo" value={n.indirizzo || c.indirizzo}/><Field label="Comune" value={n.comune || c.comune}/><Field label="Provincia" value={n.provincia || c.provincia}/><Field label="Agente" value={n.agente || c.agente}/><Field label="Provenienza" value={n.provenienza_cliente || c.provenienza_cliente}/><Field label="Stato Notion" value={n.stato_cliente}/><Field label="Data firma" value={formatDateIT(n.data_firma)}/><Field label="Pagamento" value={n.pagamento}/><div className="sm:col-span-2 lg:col-span-3"><Field label="Note" value={c.note}/></div></div></section>
-      <section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Origine dati</h2><div className="space-y-3"><div className={`rounded-xl border p-3 ${fromNotion ? "bg-violet-50 border-violet-200" : "bg-slate-50 border-slate-200"}`}><div className="font-semibold text-sm">Eliostech Ordini / Notion</div><div className="text-xs text-slate-600 mt-1">{fromNotion ? "Scheda trovata e letta in tempo reale." : data.notion?.status === "multiple" ? "Trovate più schede: occorre disambiguare la ragione sociale." : data.notion?.status === "not_configured" ? "Connessione Notion non configurata nel gestionale." : "Nessuna scheda Notion trovata con questa ragione sociale."}</div></div><Button variant="outline" className="w-full" onClick={()=>setDocs({resource:"clienti",recordId:c.id,title:`Documenti · ${customerName(c)}`,module:"ordini_clienti"})}><FileText size={16}/> Archivio gestionale</Button></div></section>
+      <section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Origine dati</h2><div className="space-y-3"><div className={`rounded-xl border p-3 ${fromNotion ? "bg-violet-50 border-violet-200" : "bg-slate-50 border-slate-200"}`}><div className="font-semibold text-sm">Eliostech Ordini / Notion</div><div className="text-xs text-slate-600 mt-1">{fromNotion ? "Dati importati da Notion e salvati nel gestionale." : data.notion?.status === "multiple" ? "Trovate più schede: occorre disambiguare la ragione sociale." : data.notion?.status === "not_configured" ? "Dati Notion non ancora importati nel gestionale." : "Nessun dato Notion importato per questa ragione sociale."}</div></div><Button variant="outline" className="w-full" onClick={()=>setDocs({resource:"clienti",recordId:c.id,title:`Documenti · ${customerName(c)}`,module:"ordini_clienti"})}><FileText size={16}/> Archivio gestionale</Button></div></section>
     </div>}
 
     {tab === "referenti" && <div className="grid lg:grid-cols-2 gap-4">
@@ -568,7 +568,7 @@ function ClientDetail({ clientId, onBack, onReloadList }) {
       <div className="grid md:grid-cols-2 gap-3"><ServiceCard title="Backend Elios Tech" active={backendActive} expiry={backendExpiry} icon={Buildings}/><ServiceCard title="Assistenza SMART" active={smartActive} expiry={smartExpiry} noExpiryLabel={fromNotion ? "Attiva · Notion non contiene una scadenza SMART" : "Attiva · nessuna scadenza registrata"} icon={Headset}/></div>
       <section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Credenziali e caso Wallbox</h2><div className="grid md:grid-cols-3 gap-3"><CopyValue label="ID Wallbox" value={wbId}/><CopyValue label="Password" value={wbPassword}/><CopyValue label="Numero caso WB" value={wbCase}/></div></section>
       <div className="grid lg:grid-cols-2 gap-4"><section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Portali e pubblicazione</h2><div className="grid sm:grid-cols-2 gap-2"><BoolPill label="Electromaps" active={fromNotion ? !!n.electromaps : !!c.electromaps}/><BoolPill label="Eviaggio" active={fromNotion ? !!n.eviaggio : !!c.eviaggio}/><BoolPill label="Nextcharge" active={fromNotion ? !!n.nextcharge : !!c.nextcharge}/><BoolPill label="Plugshare" active={fromNotion ? !!n.plugshare : !!c.plugshare}/><BoolPill label="Recensione Google" active={fromNotion ? !!n.recensione_google : !!c.recensione_google}/></div></section>
-      <section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-4">Documenti presenti in Notion</h2><div className="space-y-3">{[["Contratto",n.contratto],["Fattura",n.fattura],["Report installazione",n.report_installazione],["Report fotografico",n.report_fotografico]].map(([label,files])=><div key={label} className="rounded-xl border border-slate-100 p-3"><div className="font-semibold text-sm">{label}</div>{Array.isArray(files)&&files.length ? <div className="mt-2 space-y-1">{files.map((f,i)=><a key={`${label}-${i}`} href={f.url || "#"} target="_blank" rel="noreferrer" className={`block text-sm ${f.url ? "text-blue-700 hover:underline" : "text-slate-500"}`}>{f.name || "Documento"}</a>)}</div> : <div className="text-xs text-slate-400 mt-1">Non presente</div>}</div>)}</div></section></div>
+      <section className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold mb-2">Documenti importati</h2><div className="text-sm text-slate-500 mb-4">Contratti, fatture e report sono salvati localmente nel gestionale: non serve più aprirli da Notion.</div><div className="grid grid-cols-2 gap-2 mb-4">{[["Contratti",n.contratto],["Fatture",n.fattura],["Report installazione",n.report_installazione],["Report fotografici",n.report_fotografico]].map(([label,files])=><div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="text-xs text-slate-500">{label}</div><div className="text-xl font-bold text-slate-900 mt-1">{Array.isArray(files) ? files.length : 0}</div></div>)}</div><Button variant="outline" className="w-full" onClick={()=>setDocs({resource:"clienti",recordId:c.id,title:`Documenti · ${customerName(c)}`,module:"ordini_clienti"})}><FileText size={16}/> Apri archivio documenti</Button></section></div>
     </div>}
 
     {tab === "storico" && <section className="bg-white border border-slate-200 rounded-md p-4"><h2 className="font-bold mb-4">Timeline completa</h2><div className="space-y-3">{(data.timeline||[]).map((x,i)=><div key={`${x.type}-${x.id}-${i}`} className="relative border-l-2 border-slate-200 pl-4 pb-2"><div className="text-sm font-semibold">{x.label}</div><div className="text-xs text-slate-500 mt-0.5">{x.date || ""}{x.detail ? ` · ${x.detail}` : ""}</div></div>)}{!data.timeline?.length && <div className="text-sm text-slate-500">Nessuna attività registrata.</div>}</div></section>}
@@ -583,35 +583,60 @@ function ClientDetail({ clientId, onBack, onReloadList }) {
 export default function EliosTechOrdiniPage() {
   const { hasPermission } = useAuth();
   const [clients, setClients] = useState([]);
-  const [orders, setOrders] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [clientDialog, setClientDialog] = useState(false);
+  const [sort, setSort] = useState({ key: "data_firma", dir: "desc" });
   const canCreate = hasPermission("ordini_clienti", "create");
+
   const load = async () => {
     setLoading(true);
     try {
-      const [c,o] = await Promise.all([axios.get(`${API}/crm/clienti`), axios.get(`${API}/crm/ordini-clienti`)]);
-      setClients(c.data.items || []); setOrders(o.data.items || []);
-    } catch (e) { toast.error("Impossibile caricare Elios Tech Ordini", { description: errText(e) }); }
-    finally { setLoading(false); }
+      const { data } = await axios.get(`${API}/crm/clienti-summary`);
+      setClients(data.items || []);
+    } catch (e) {
+      toast.error("Impossibile caricare Elios Tech Ordini", { description: errText(e) });
+    } finally { setLoading(false); }
   };
   useEffect(()=>{load();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const target = new URLSearchParams(window.location.search).get("cliente");
     if (target) setSelected(target);
   }, []);
-  const orderCount = useMemo(()=>{ const m = new Map(); orders.forEach((o)=>m.set(String(o.cliente_id), (m.get(String(o.cliente_id))||0)+1)); return m; },[orders]);
-  const lastOrder = useMemo(()=>{ const m = new Map(); orders.forEach((o)=>{ const k=String(o.cliente_id); if(!m.has(k)) m.set(k,o); }); return m; },[orders]);
-  const shown = useMemo(()=>{ const q=query.trim().toLowerCase(); if(!q)return clients; return clients.filter((c)=>[customerName(c),c.partita_iva,c.codice_fiscale,c.telefono,c.email,c.comune,c.agente].some((v)=>String(v||"").toLowerCase().includes(q))); },[clients,query]);
+
+  const setSortKey = (key) => setSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "data_firma" || key === "capitale" || key === "qty_wb" || key === "ordini_count" ? "desc" : "asc" });
+  const sortLabel = (label, key) => <button type="button" onClick={(e)=>{e.stopPropagation();setSortKey(key);}} className="inline-flex items-center gap-1.5 font-semibold hover:text-blue-700 whitespace-nowrap">{label}<span className={`text-[11px] ${sort.key===key ? "text-blue-600" : "text-slate-300"}`}>{sort.key===key ? (sort.dir==="asc" ? "▲" : "▼") : "↕"}</span></button>;
+  const money = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v))) ? "—" : `€ ${Number(v).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const comparable = (c, key) => {
+    if (["capitale","qty_wb","ordini_count"].includes(key)) return Number(c?.[key] ?? -Infinity);
+    if (key === "data_firma") return String(c?.data_firma || "0000-00-00");
+    if (key === "cliente") return customerName(c).toLocaleLowerCase("it");
+    if (key === "localita") return `${c?.comune || ""} ${c?.provincia || ""}`.toLocaleLowerCase("it");
+    return String(c?.[key] || "").toLocaleLowerCase("it");
+  };
+  const shown = useMemo(()=>{
+    const q=query.trim().toLowerCase();
+    const filtered = q ? clients.filter((c)=>[customerName(c),c.partita_iva,c.codice_fiscale,c.telefono,c.email,c.comune,c.provincia,c.agente,c.pagamento,c.data_firma].some((v)=>String(v||"").toLowerCase().includes(q))) : [...clients];
+    filtered.sort((a,b)=>{
+      const av=comparable(a,sort.key), bv=comparable(b,sort.key);
+      if (av===bv) return customerName(a).localeCompare(customerName(b), "it");
+      const r = av > bv ? 1 : -1;
+      return sort.dir === "asc" ? r : -r;
+    });
+    return filtered;
+  },[clients,query,sort]);
+
   if (selected) return <ClientDetail clientId={selected} onBack={()=>setSelected(null)} onReloadList={load} />;
-  return <div className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-4" data-testid="elios-tech-ordini-page">
-    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3"><div><div className="et-eyebrow">Amministrazione</div><h1 className="et-page-heading text-3xl sm:text-4xl mt-1">Elios Tech Ordini</h1></div>{canCreate && <Button className="h-12" onClick={()=>setClientDialog(true)}><Plus size={18}/> Nuovo cliente</Button>}</div>
-    <div className="relative max-w-xl"><MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><Input className="pl-10 h-12" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Cerca cliente, P. IVA, telefono, email, comune o agente…"/></div>
+  return <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-4" data-testid="elios-tech-ordini-page">
+    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3"><div><div className="et-eyebrow">Amministrazione</div><h1 className="et-page-heading text-3xl sm:text-4xl mt-1">Elios Tech Ordini</h1><div className="text-sm text-slate-500 mt-1">{clients.length} clienti · ordinati per data firma più recente</div></div>{canCreate && <Button className="h-12" onClick={()=>setClientDialog(true)}><Plus size={18}/> Nuovo cliente</Button>}</div>
+    <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+      <div className="relative max-w-2xl flex-1"><MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><Input className="pl-10 h-12" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Cerca cliente, email, comune, agente, pagamento o data…"/></div>
+      <div className="text-xs text-slate-500">{shown.length} risultati</div>
+    </div>
     {loading ? <div className="py-12 text-center text-slate-500">Caricamento…</div> : <>
-      <div className="md:hidden space-y-2">{shown.map((c)=>{const o=lastOrder.get(String(c.id));return <button key={c.id} onClick={()=>setSelected(c.id)} className="w-full text-left bg-white border border-slate-200 rounded-md p-4"><div className="font-bold text-slate-900">{customerName(c)}</div><div className="text-xs text-slate-500 mt-1">{[c.comune,c.provincia,c.telefono].filter(Boolean).join(" · ")}</div><div className="flex flex-wrap items-center gap-2 mt-3"><span className="text-xs text-slate-500">{orderCount.get(String(c.id))||0} ordini</span>{o && <StatusBadge>{o.stato_commerciale || o.stato}</StatusBadge>}{o?.stato_finanziaria && o.stato_finanziaria !== "Non richiesta" && <StatusBadge>{o.stato_finanziaria}</StatusBadge>}</div></button>})}</div>
-      <div className="hidden md:block bg-white border border-slate-200 rounded-md overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="text-left p-3">Cliente</th><th className="text-left p-3">Località</th><th className="text-left p-3">Agente</th><th className="text-center p-3">Ordini</th><th className="text-left p-3">Ultimo stato</th><th className="text-left p-3">Finanziaria</th></tr></thead><tbody>{shown.map((c)=>{const o=lastOrder.get(String(c.id));return <tr key={c.id} onClick={()=>setSelected(c.id)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"><td className="p-3"><div className="font-semibold">{customerName(c)}</div><div className="text-xs text-slate-400">{c.partita_iva || c.codice_fiscale || c.email || "—"}</div></td><td className="p-3 text-slate-600">{[c.comune,c.provincia].filter(Boolean).join(" · ") || "—"}</td><td className="p-3 text-slate-600">{c.agente || "—"}</td><td className="p-3 text-center font-semibold">{orderCount.get(String(c.id))||0}</td><td className="p-3"><StatusBadge>{o?.stato_commerciale || o?.stato}</StatusBadge></td><td className="p-3"><StatusBadge>{o?.stato_finanziaria}</StatusBadge></td></tr>})}{shown.length===0&&<tr><td colSpan="6" className="text-center p-10 text-slate-400">Nessun cliente trovato.</td></tr>}</tbody></table></div></div>
+      <div className="md:hidden space-y-2">{shown.map((c)=><button key={c.id} onClick={()=>setSelected(c.id)} className="w-full text-left bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><div className="flex items-start gap-3"><div className="shrink-0 rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-2 text-center min-w-[88px]"><div className="text-[10px] uppercase font-bold tracking-wide text-blue-500">Data firma</div><div className="text-sm font-bold text-blue-900 mt-0.5">{formatDateIT(c.data_firma)}</div></div><div className="min-w-0 flex-1"><div className="font-bold text-slate-900 truncate">{customerName(c)}</div><div className="text-xs text-slate-500 mt-1">{[c.comune,c.provincia,c.agente].filter(Boolean).join(" · ") || "—"}</div><div className="text-xs text-slate-500 mt-1">{c.pagamento || "Pagamento non indicato"}</div></div></div><div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100"><div><div className="text-[10px] uppercase text-slate-400">Ordini</div><div className="font-bold">{c.ordini_count||0}</div></div><div><div className="text-[10px] uppercase text-slate-400">WB</div><div className="font-bold">{c.qty_wb ?? "—"}</div></div><div><div className="text-[10px] uppercase text-slate-400">Capitale</div><div className="font-bold text-xs">{money(c.capitale)}</div></div></div></button>)}</div>
+      <div className="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="text-left p-3">{sortLabel("Data firma","data_firma")}</th><th className="text-left p-3">{sortLabel("Cliente / Struttura","cliente")}</th><th className="text-left p-3">{sortLabel("Pagamento","pagamento")}</th><th className="text-right p-3">{sortLabel("Capitale","capitale")}</th><th className="text-center p-3">{sortLabel("Q.tà WB","qty_wb")}</th><th className="text-left p-3">{sortLabel("Località","localita")}</th><th className="text-left p-3">{sortLabel("Agente","agente")}</th><th className="text-center p-3">{sortLabel("Ordini","ordini_count")}</th><th className="text-left p-3">{sortLabel("Stato","ultimo_stato")}</th></tr></thead><tbody>{shown.map((c)=><tr key={c.id} onClick={()=>setSelected(c.id)} className="border-b border-slate-100 hover:bg-blue-50/40 cursor-pointer transition-colors"><td className="p-3"><div className="font-bold text-slate-900 whitespace-nowrap">{formatDateIT(c.data_firma)}</div></td><td className="p-3 min-w-[250px]"><div className="font-semibold text-slate-950">{customerName(c)}</div><div className="text-xs text-slate-400 mt-0.5">{c.partita_iva || c.codice_fiscale || c.email || "—"}</div></td><td className="p-3 text-slate-700 whitespace-nowrap">{c.pagamento || "—"}</td><td className="p-3 text-right font-semibold whitespace-nowrap">{money(c.capitale)}</td><td className="p-3 text-center font-bold">{c.qty_wb ?? "—"}</td><td className="p-3 text-slate-600 whitespace-nowrap">{[c.comune,c.provincia].filter(Boolean).join(" · ") || "—"}</td><td className="p-3 text-slate-600 whitespace-nowrap">{c.agente || "—"}</td><td className="p-3 text-center font-semibold">{c.ordini_count||0}</td><td className="p-3"><StatusBadge>{c.ultimo_stato}</StatusBadge></td></tr>)}{shown.length===0&&<tr><td colSpan="9" className="text-center p-10 text-slate-400">Nessun cliente trovato.</td></tr>}</tbody></table></div></div>
     </>}
     <ClientFormDialog open={clientDialog} onClose={()=>setClientDialog(false)} onSaved={async(created)=>{await load(); if (created?.id) setSelected(created.id);}} />
   </div>;

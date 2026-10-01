@@ -57,6 +57,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   const [items, setItems] = useState([]);
   const [lookups, setLookups] = useState({});
   const [lookupSearch, setLookupSearch] = useState({});
+  const [lookupOpen, setLookupOpen] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -138,12 +139,16 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   const startNew = () => {
     setEditing(null);
     setForm({ ...empty });
+    setLookupSearch({});
+    setLookupOpen({});
     setOpen(true);
   };
 
   const startEdit = (x) => {
     setEditing(x.id);
     setForm({ ...empty, ...x });
+    setLookupSearch({});
+    setLookupOpen({});
     setOpen(true);
   };
 
@@ -164,6 +169,43 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
       }
       return next;
     });
+  };
+
+  const selectedLookupItem = (field) => {
+    const value = form[field.key];
+    if (!value) return null;
+    const key = field.lookupValueKey || "id";
+    return (lookups[lookupKey(field)] || []).find((x) => String(x?.[key]) === String(value)) || null;
+  };
+
+  const lookupTextValue = (field) => {
+    if (Object.prototype.hasOwnProperty.call(lookupSearch, field.key)) return lookupSearch[field.key] || "";
+    const selected = selectedLookupItem(field);
+    if (selected) return optionLabel(selected, field);
+    if (field.allowFreeText && field.freeTextTarget) return form[field.freeTextTarget] || "";
+    return "";
+  };
+
+  const typeLookup = (field, text) => {
+    setLookupSearch((p) => ({ ...p, [field.key]: text }));
+    setLookupOpen((p) => ({ ...p, [field.key]: true }));
+    setForm((prev) => {
+      const next = { ...prev, [field.key]: "" };
+      for (const dep of field.clearOnChange || []) next[dep] = "";
+      if (field.allowFreeText && field.freeTextTarget) next[field.freeTextTarget] = text;
+      return next;
+    });
+  };
+
+  const chooseLookup = (field, item) => {
+    const key = field.lookupValueKey || "id";
+    const value = item?.[key] || "";
+    changeField(field, value);
+    setLookupSearch((p) => ({ ...p, [field.key]: optionLabel(item, field) }));
+    setLookupOpen((p) => ({ ...p, [field.key]: false }));
+    if (field.allowFreeText && field.freeTextTarget) {
+      setForm((prev) => ({ ...prev, [field.freeTextTarget]: "" }));
+    }
   };
 
   const lookupOptions = (field) => {
@@ -402,27 +444,35 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                         disabled={disabled}
                       />
                     ) : lookupKey(f) ? (
-                      <div>
-                        <Input
-                          className="mt-1 h-10"
-                          placeholder={`Cerca ${f.label.toLowerCase()}...`}
-                          value={lookupSearch[f.key] || ""}
-                          onChange={(e) => setLookupSearch((p) => ({ ...p, [f.key]: e.target.value }))}
-                          disabled={disabled}
-                        />
-                        <select
-                          className="mt-1 flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                          value={form[f.key] || ""}
-                          onChange={(e) => changeField(f, e.target.value)}
-                          required={f.required}
-                          disabled={disabled}
-                        >
-                          <option value="">{disabledByDependency ? "Seleziona prima il campo precedente" : "Seleziona..."}</option>
-                          {lookupOptions(f).map((o) => {
-                            const key = f.lookupValueKey || "id";
-                            return <option key={o[key]} value={o[key]}>{optionLabel(o, f)}</option>;
-                          })}
-                        </select>
+                      <div className="relative">
+                        <div className="relative mt-1">
+                          <Input
+                            className="h-12 pr-10"
+                            placeholder={disabledByDependency ? "Seleziona prima il campo precedente" : `Scrivi o scegli ${f.label.toLowerCase()}...`}
+                            value={lookupTextValue(f)}
+                            onChange={(e) => typeLookup(f, e.target.value)}
+                            onFocus={() => !disabled && setLookupOpen((p) => ({ ...p, [f.key]: true }))}
+                            onBlur={() => setTimeout(() => setLookupOpen((p) => ({ ...p, [f.key]: false })), 160)}
+                            required={f.required && !f.allowFreeText}
+                            disabled={disabled}
+                            autoComplete="off"
+                          />
+                          <button type="button" tabIndex={-1} disabled={disabled}
+                            onMouseDown={(e)=>e.preventDefault()}
+                            onClick={() => setLookupOpen((p) => ({ ...p, [f.key]: !p[f.key] }))}
+                            className="absolute right-1 top-1 h-10 w-9 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-40">⌄</button>
+                        </div>
+                        {lookupOpen[f.key] && !disabled && (
+                          <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-60 overflow-auto">
+                            {lookupOptions(f).length ? lookupOptions(f).map((o) => {
+                              const key = f.lookupValueKey || "id";
+                              return <button type="button" key={o[key]} onMouseDown={(e)=>e.preventDefault()} onClick={()=>chooseLookup(f,o)} className="block w-full text-left px-3 py-2.5 hover:bg-slate-50 border-b border-slate-50 last:border-0">
+                                <div className="font-semibold text-sm text-slate-900">{optionLabel(o,f)}</div>
+                              </button>;
+                            }) : <div className="px-3 py-3 text-sm text-slate-500">{f.allowFreeText && lookupTextValue(f) ? `Nessun cliente esistente: puoi salvare “${lookupTextValue(f)}” come nuovo prospect.` : "Nessun risultato"}</div>}
+                          </div>
+                        )}
+                        {f.allowFreeText && !form[f.key] && lookupTextValue(f) && <div className="text-xs text-amber-700 mt-1">Nuovo prospect: verrà salvato il nominativo senza creare ancora il cliente.</div>}
                         {f.inlineCreateSite && !disabledByDependency && (
                           <div className="mt-2 flex items-center gap-2 flex-wrap">
                             {lookupOptions(f).length === 0 && (

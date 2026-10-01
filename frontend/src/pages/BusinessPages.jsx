@@ -158,14 +158,13 @@ export const SopralluoghiPage = () => (
     title="Sopralluoghi"
     subtitle="Il sopralluogo può essere collegato a un cliente esistente oppure creato per un prospect non ancora acquisito."
     fields={[
-      F("cliente_id", "Cliente esistente", { ...CLIENT_LOOKUP, clearOnChange: ["sede_id"] }),
+      F("cliente_id", "Cliente / prospect", { ...CLIENT_LOOKUP, allowFreeText: true, freeTextTarget: "nominativo", clearOnChange: ["sede_id"] }),
       F("sede_id", "Sede cliente", {
         ...SITE_LOOKUP,
         dependsOn: "cliente_id",
         lookupFilterBy: "cliente_id",
         inlineCreateSite: true,
       }),
-      F("nominativo", "Prospect / nominativo"),
       F("telefono", "Telefono"),
       F("email", "Email", { type: "email" }),
       F("indirizzo_libero", "Indirizzo sopralluogo", { full: true }),

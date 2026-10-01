@@ -1133,10 +1133,6 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             prep = sum(float(r.get("qty_prelevata") or 0) for r in (existing.get("righe") or []))
             if prep <= 0:
                 raise HTTPException(409, "Nessun materiale preparato: impossibile creare spedizione parziale")
-            from routes.admin_extra_routes import get_app_settings
-            app_settings = await get_app_settings(db)
-            if not bool((app_settings.get("spedizioni") or {}).get("allow_partial_shipment", False)):
-                raise HTTPException(409, "Le spedizioni parziali sono disattivate nelle Impostazioni")
         # Transizione atomica da 'pronta' O 'parziale' a 'bozza_spedizione'
         draft_payload = await _build_draft_payload(existing, current.get("username"))
         draft_meta = {
@@ -1218,11 +1214,6 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             pass
         # Se la commessa è ancora 'pronta' o 'parziale', creiamo prima la bozza (retro-compat client)
         if doc.get("stato") in ("pronta", "parziale"):
-            if doc.get("stato") == "parziale":
-                from routes.admin_extra_routes import get_app_settings
-                app_settings = await get_app_settings(db)
-                if not bool((app_settings.get("spedizioni") or {}).get("allow_partial_shipment", False)):
-                    raise HTTPException(409, "Le spedizioni parziali sono disattivate nelle Impostazioni")
             draft_meta = {
                 "created_by": current.get("username"), "created_at": _now(),
                 "updated_at": _now(), "operation_id": doc.get("operation_id"),

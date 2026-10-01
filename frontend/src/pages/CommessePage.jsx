@@ -720,7 +720,7 @@ function CommessaDetail({ id, onBack }) {
   const canComplete = residuoQty > 0 && pickedQty >= residuoQty && ["in_preparazione", "parziale"].includes(c.stato);
   const hasMaterial = (c.righe || []).length > 0;
   const canCreateDraft = c.stato === "pronta" && hasMaterial;
-  const canShipPartial = allowPartialShipment && c.stato === "parziale" && pickedQty > 0 && pickedQty < residuoQty;
+  const canShipPartial = c.stato === "parziale" && pickedQty > 0 && pickedQty < residuoQty;
   const hasBozza = c.stato === "bozza_spedizione";
   const canCancel = !["annullata"].includes(c.stato);
   // F30.b — Warning per rollback pesante: sarà mostrato solo se spedizioni presenti
@@ -941,7 +941,7 @@ function CommessaDetail({ id, onBack }) {
         <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
         {canComplete && <Button onClick={() => setConfirmComplete(true)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-12" data-testid="complete-btn"><CheckCircle size={16} /> Completa preparazione</Button>}
         {canCreateDraft && <Button onClick={doCreateDraft} disabled={busy} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white h-12" data-testid="ship-btn"><Truck size={16} /> Crea spedizione</Button>}
-        {canShipPartial && <Button onClick={doCreateDraft} disabled={busy} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white h-12" data-testid="ship-partial-btn"><Truck size={16} /> 📦 Conferma spedizione parziale</Button>}
+        {canShipPartial && <Button onClick={doCreateDraft} disabled={busy} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white h-12" data-testid="ship-partial-btn"><Truck size={16} /> 📦 Spedisci parziale</Button>}
         {hasBozza && <Button onClick={() => setShowBozza(true)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white h-12" data-testid="open-bozza-btn"><Truck size={16} /> Apri bozza</Button>}
         {canReopenPreparation && <Button onClick={doReopenPreparation} disabled={busy} variant="outline" className="text-amber-700 border-amber-300 hover:bg-amber-50 h-12" data-testid="reopen-prep-btn"><ArrowCounterClockwise size={16} /> {c.stato === "parzialmente_spedita" ? "📦 Completa spedizione" : "Riapri preparazione"}</Button>}
         {canEdit && <Button onClick={() => setEditMode(true)} variant="outline" className="h-12" data-testid="edit-btn"><PencilSimple size={16} /> Modifica</Button>}

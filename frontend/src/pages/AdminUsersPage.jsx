@@ -304,7 +304,7 @@ function ResetPwdDialog({ user, onClose, onDone }) {
 
 // Matrice permessi per tutti i ruoli non Admin.
 const PERMISSION_MODULES = [
-  ["dashboard", "Dashboard"], ["lead", "Lead"],
+  ["dashboard", "Dashboard"], ["calendar", "Calendario"], ["lead", "Lead"],
   ["ordini_clienti", "Elios Tech Ordini"], ["commesse", "Commesse"],
   ["sopralluoghi", "Sopralluoghi"], ["preventivi", "Preventivi"], ["installazioni", "Installazioni"],
   ["assistenza", "Assistenza"], ["inventario", "Magazzini"], ["arrivi", "Arrivi"],

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # visualizzazione, creazione, modifica, eliminazione ed esportazione.
 PERMISSION_ACTIONS = ["view", "create", "edit", "delete", "export"]
 PERMISSION_MODULES = [
-    "dashboard", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
+    "dashboard", "calendar", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
     "preventivi", "ordini_clienti", "commesse", "installazioni", "assistenza",
     "inventario", "arrivi", "spedizioni", "movimenti", "anomalie",
     "ai", "impostazioni", "utenti", "importazione_dati",
@@ -67,19 +67,19 @@ def default_permissions_for_role(role: str):
     if role == ROLE_OPERATOR:
         # L'operatore lavora sulle commesse esistenti e sui flussi di magazzino.
         # La creazione di nuove commesse resta separata e può essere concessa dall'Admin.
-        base = _perms(["inventario", "arrivi", "spedizioni"], ("view", "create", "edit"))
+        base = _perms(["inventario", "arrivi", "spedizioni"], ("view", "create", "edit")) | _perms(["calendar"], ("view",))
         base |= _perms(["commesse"], ("view", "edit"))
         return base | {"gestione_commesse"}
     if role == ROLE_COMMERCIALE:
         # Il Commerciale usa Lead e la scheda unificata Elios Tech Ordini.
-        return _perms(["lead", "ordini_clienti"]) | _perms(["commesse"], ("view", "export"))
+        return _perms(["lead", "ordini_clienti"]) | _perms(["commesse"], ("view", "export")) | _perms(["calendar"], ("view",))
     if role == ROLE_TECNICO:
         # Profilo operativo essenziale: il tecnico vede e aggiorna solo le installazioni
         # assegnate a lui. Accessi extra possono essere concessi dall'Admin dalla matrice.
-        return _perms(["dashboard"], ("view",)) | _perms(["installazioni"], ("view", "edit", "export"))
+        return _perms(["dashboard", "calendar"], ("view",)) | _perms(["installazioni"], ("view", "edit", "export"))
     if role == ROLE_RESPONSABILE:
         mods = [
-            "dashboard", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
+            "dashboard", "calendar", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
             "preventivi", "ordini_clienti", "commesse", "installazioni", "assistenza",
             "inventario", "arrivi", "spedizioni", "movimenti", "anomalie", "ai",
         ]
@@ -156,6 +156,8 @@ def _request_module_action(request: Request):
         module = "anomalie"
     elif path.startswith("/api/dashboard"):
         module = "dashboard"
+    elif path.startswith("/api/calendar"):
+        module = "calendar"
     elif path.startswith("/api/ai"):
         module = "ai"
     elif path.startswith("/api/files"):

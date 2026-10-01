@@ -30,6 +30,7 @@ export default function AIAssistantPage() {
   const [sessionId, setSessionId] = useState(null);
   const [pendingOp, setPendingOp] = useState(null); // {preview_id, summary}
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Contesto sezione: se query param ?from=inventario o l'utente arriva da una pagina, invia il contesto.
   const contextSection = (() => {
@@ -82,6 +83,15 @@ export default function AIAssistantPage() {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
+
+  // Mantiene il cursore nel campo AI anche durante/alla fine della risposta.
+  // L'input resta scrivibile mentre l'AI elabora; l'invio resta bloccato finché
+  // la richiesta corrente non è conclusa, evitando doppi invii.
+  useEffect(() => {
+    if (!loadingStatus && status?.enabled) {
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    }
+  }, [loadingStatus, status?.enabled, sending]);
 
   const send = async (text) => {
     const q = (text ?? input).trim();
@@ -211,12 +221,14 @@ export default function AIAssistantPage() {
       {/* Input — sempre visibile in fondo, non scrolla mai */}
       <div className="mt-2 flex gap-2 shrink-0">
         <Input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); send(); } }}
           placeholder="Chiedi qualcosa al gestionale…"
           className="h-11 lg:h-12 flex-1 text-sm sm:text-base lg:text-[15px]"
-          disabled={sending}
+          autoFocus
+          aria-busy={sending}
           data-testid="ai-input"
         />
         <Button

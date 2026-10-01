@@ -8,7 +8,8 @@ from __future__ import annotations
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -81,6 +82,49 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         return record
 
     # Le rotte statiche devono precedere /{resource}/{record_id}.
+    @router.post("/open-ticket/{document_id}")
+    async def create_open_ticket(document_id: str, current=Depends(deps.require_password_current)):
+        """Genera un ticket temporaneo per aprire il file direttamente nel browser.
+
+        In questo modo PDF e immagini vengono streammati dal server e non devono essere
+        scaricati interamente da Axios prima di comparire a schermo.
+        """
+        doc = await db.documents.find_one({"id": document_id})
+        if not doc:
+            raise HTTPException(404, "Documento non trovato")
+        await _check(doc.get("resource"), doc.get("record_id"), current, "view")
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=2)
+        await db.file_open_tickets.insert_one({
+            "token": token, "document_id": document_id, "expires_at": expires_at,
+            "created_by": current.get("username"),
+        })
+        return {"ticket": token, "expires_in": 120}
+
+    @router.get("/open/{ticket}")
+    async def open_by_ticket(ticket: str):
+        now = datetime.now(timezone.utc)
+        row = await db.file_open_tickets.find_one({"token": ticket, "expires_at": {"$gt": now}})
+        if not row:
+            raise HTTPException(401, "Link documento scaduto o non valido")
+        doc = await db.documents.find_one({"id": row.get("document_id")})
+        if not doc:
+            raise HTTPException(404, "Documento non trovato")
+        path = Path(doc.get("stored_path") or "")
+        if not path.exists():
+            raise HTTPException(404, "File non disponibile sul server")
+        # Il ticket resta valido per 2 minuti: permette al browser di effettuare richieste
+        # Range aggiuntive (tipiche dei visualizzatori PDF) senza dover rigenerare il link.
+        safe_name = _clean_name(doc.get("filename") or path.name).replace('"', '')
+        return FileResponse(
+            path,
+            media_type=doc.get("content_type") or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'inline; filename="{safe_name}"',
+                "Cache-Control": "private, max-age=120",
+            },
+        )
+
     @router.get("/download/{document_id}")
     async def download(document_id: str, current=Depends(deps.require_password_current)):
         doc = await db.documents.find_one({"id": document_id})

@@ -26,6 +26,7 @@ import event_logger
 import email_service
 import secret_store
 from routes import auth_routes, admin_users_routes, admin_extra_routes, qr_routes, qr_bindings_routes, orders_routes, ai_routes, commesse_routes, crm_routes, documents_routes, products_routes, backup_routes, installation_report_routes
+from routes import custom_modules_routes, calendar_routes
 try:
     from zoneinfo import ZoneInfo
     ROME_TZ = ZoneInfo("Europe/Rome")
@@ -1834,7 +1835,7 @@ async def build_info():
     """
     return {
         "app": "Gestionale Elios Tech",
-        "build": "ERP-2026.09.25-R5",
+        "build": "ERP-2026.10.01-R41-CALENDAR",
         "api_generation": 3,
     }
 
@@ -1851,6 +1852,8 @@ app.include_router(orders_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(ai_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(commesse_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(crm_routes.build_router(db, auth_deps), prefix="/api")
+app.include_router(custom_modules_routes.build_router(db, auth_deps), prefix="/api")
+app.include_router(calendar_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(documents_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(installation_report_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(products_routes.build_router(db, auth_deps), prefix="/api")
