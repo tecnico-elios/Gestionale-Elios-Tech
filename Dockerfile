@@ -2,8 +2,12 @@
 FROM node:20-alpine AS frontend
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
+<<<<<<< HEAD
 RUN npm install --legacy-peer-deps --no-audit --no-fund \
     && npm install --legacy-peer-deps --no-audit --no-fund --save-dev ajv@8.17.1 ajv-keywords@5.1.0
+=======
+RUN npm install --legacy-peer-deps --no-audit --no-fund
+>>>>>>> 22ecf40be9c8602abceb78999774b24ac2014b84
 COPY frontend/ ./
 ENV REACT_APP_BACKEND_URL=""
 RUN npm run build
