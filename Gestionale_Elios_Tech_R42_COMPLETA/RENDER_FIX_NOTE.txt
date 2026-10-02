@@ -1,0 +1,9 @@
+R42 - FIX RENDER
+
+Modificato Dockerfile per rendere piu stabile la build su Render:
+- GENERATE_SOURCEMAP=false
+- DISABLE_ESLINT_PLUGIN=true
+- CI=false
+- build frontend completata prima dell'installazione Python, evitando i due carichi pesanti in parallelo.
+
+Non sono state rimosse le modifiche funzionali della R42.

@@ -1,0 +1,29 @@
+GESTIONALE ELIOS TECH — R42 COMPLETA (base R41_CALENDARIO_AZIENDALE)
+Data: 02/10/2026
+
+INTERVENTI PRINCIPALI
+- Dashboard ripulita: niente testi editoriali, card compatte e moderne con dato + micro-informazione.
+- Calendario aziendale ampliato: partecipanti multipli ricercabili, tipi evento, stato, priorità, ricorrenza, reminder, tutto il giorno, link riunione; layout desktop più compatto.
+- Installazioni: commessa facoltativa; cliente e sede gestibili direttamente; auto-collegamento quando viene scelta la commessa.
+- Commesse: ordine facoltativo, cliente/sede ricercabili e scrivibili, sede creabile al volo.
+- Magazzino Verona: mantenuto come deposito separato, con giacenze e movimenti distinti.
+- Migrazione completa: anteprima + Importa tutto + Completa e scollega.
+- Migrazione ripetibile prima della chiusura, con controlli anti-duplicazione.
+- Migrazione dati: inventario, seriali, clienti, referenti, sedi, ordini correnti/storici, servizi, scadenze, credenziali operative, portali, movimenti Elios/Verona, interventi, report, contratti e allegati.
+- Campi aggiuntivi della sorgente preservati in dati_aggiuntivi per evitare perdita di proprietà non mappate.
+- Contratti importati e collegati al relativo ordine; dossier cliente include anche i documenti degli ordini.
+- Chiusura migrazione: rimozione configurazioni esterne, metadati di provenienza e ID movimento con riferimenti aggiornati; dati locali preservati.
+- Dossier cliente reso operativo solo su dati locali dopo migrazione.
+- Costruttore moduli ampliato: creazione, rinomina, sezione, ordine, campi riordinabili, calendario, archiviazione e permessi per utente (view/create/edit/delete/export).
+- Home di sezione: Commerciale, Amministrazione, Tecnico, Gestione, Sistema.
+- Elios Tech Ordini: KPI valore ordini/WB/clienti/ordini e andamento ultimi 6 mesi.
+- Pulizia dei riferimenti visibili alla sorgente dati nelle principali schermate operative.
+
+VERIFICHE ESEGUITE
+- Backend: python -m compileall -q backend -> OK.
+- Import relativi frontend: nessun import mancante nei file applicativi modificati; unica segnalazione è un placeholder documentale preesistente in constants/testIds/index.js.
+- Nessun marker di conflitto.
+- Ricerca delle frasi UI vietate principali: nessuna occorrenza.
+
+LIMITAZIONE AMBIENTE DI TEST
+La build React completa non è stata eseguibile in questo ambiente perché la cartella node_modules non è inclusa nella R41 e il registry npm non è raggiungibile/cache non completa. Il codice frontend è stato controllato staticamente ma la build `npm run build` va eseguita nell'ambiente di sviluppo/deploy con dipendenze disponibili prima della pubblicazione definitiva.
