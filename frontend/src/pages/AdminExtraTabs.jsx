@@ -1,0 +1,2192 @@
+import { API } from "../lib/apiBase";
+import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { toast } from "sonner";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Badge } from "../components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "../components/ui/dialog";
+import {
+  ClockCounterClockwise, MagnifyingGlass, Warning, Broom, Gear, ListMagnifyingGlass, Trash, ArrowClockwise, Globe, Lock,
+} from "@phosphor-icons/react";
+
+import { fmtDateTime as fmtDate, useTz } from "../lib/tz";
+
+
+
+import { appConfirm } from "../lib/appConfirm";
+function formatError(err) {
+  const d = err?.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((e) => e?.msg || JSON.stringify(e)).join(" • ");
+  return err?.message || "Errore";
+}
+
+const fmtDateLegacy = (v) => fmtDate(v);
+
+// ---------- Audit Log ----------
+export function AuditLogTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/audit-logs`);
+      setItems(data.items || []);
+    } catch (e) { toast.error("Errore audit log", { description: formatError(e) }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const deleteOne = async (id) => {
+    if (!(await appConfirm({ title: "Elimina record", message: "Eliminare questo record dal registro attività?", confirmLabel: "Elimina", danger: true }))) return;
+    try {
+      await axios.delete(`${API}/admin/audit-logs/${id}`);
+      toast.success("Record eliminato");
+      load();
+    } catch (e) { toast.error("Eliminazione fallita", { description: formatError(e) }); }
+  };
+  const clearAll = async () => {
+    try {
+      const { data } = await axios.post(`${API}/admin/audit-logs/clear-all`);
+      toast.success(`Registro attività svuotato (${data.deleted} record)`);
+      setConfirmClearAll(false);
+      load();
+    } catch (e) { toast.error("Cancellazione fallita", { description: formatError(e) }); }
+  };
+
+  return (
+    <div className="space-y-3" data-testid="audit-log-tab">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-xs uppercase tracking-wider text-slate-500">{items.length} eventi</div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="reload-audit-btn">
+            <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setConfirmClearAll(true)} disabled={loading || items.length === 0} className="border-red-300 text-red-700 hover:bg-red-50" data-testid="clear-all-audit-btn">
+            🗑 Cancella tutto
+          </Button>
+        </div>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-md overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-3 py-2">Quando</th>
+              <th className="text-left px-3 py-2">Attore</th>
+              <th className="text-left px-3 py-2">Azione</th>
+              <th className="text-left px-3 py-2">Dettaglio</th>
+              <th className="text-right px-3 py-2">Azioni</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {items.map((r) => (
+              <tr key={r._id} data-testid={`audit-row-${r._id}`}>
+                <td className="px-3 py-2 font-mono-tight text-xs text-slate-500">{fmtDate(r.at)}</td>
+                <td className="px-3 py-2 font-mono-tight text-slate-800">@{r.actor_username || "—"}</td>
+                <td className="px-3 py-2">
+                  <Badge variant="outline" className="border-slate-300 font-mono-tight text-xs">
+                    {r.action}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-600">
+                  {r.meta && Object.keys(r.meta).length > 0
+                    ? JSON.stringify(r.meta)
+                    : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Button variant="outline" size="sm" onClick={() => deleteOne(r._id)} className="h-7 border-red-300 text-red-700 hover:bg-red-50" data-testid={`delete-audit-${r._id}`} title="Elimina record">
+                    🗑
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && !loading && (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400">Nessun evento.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {confirmClearAll && (
+        <Dialog open={true} onOpenChange={(v) => !v && setConfirmClearAll(false)}>
+          <DialogContent className="max-w-md" data-testid="clear-all-audit-dialog">
+            <DialogHeader>
+              <DialogTitle className="text-red-700">Cancellare tutto il Registro attività?</DialogTitle>
+              <DialogDescription>
+                Verranno eliminati definitivamente <b>{items.length}</b> record. Questa azione non tocca Inventario, Spedizioni, Movimenti o Notion.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setConfirmClearAll(false)} data-testid="clear-all-cancel">Annulla</Button>
+              <Button onClick={clearAll} className="bg-red-600 hover:bg-red-700 text-white" data-testid="clear-all-confirm">
+                🗑 Cancella tutto
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// F18 (26/02/2026) — Registro Log applicativo + HTTP con filtri strutturati e dettaglio.
+export function SystemLogsTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [level, setLevel] = useState("");
+  const [source, setSource] = useState(""); // "" | app | http | all
+  const [category, setCategory] = useState("");
+  const [eventType, setEventType] = useState("");
+  const [userF, setUserF] = useState("");
+  const [productF, setProductF] = useState("");
+  const [serialF, setSerialF] = useState("");
+  const [customerF, setCustomerF] = useState("");
+  const [statusF, setStatusF] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [detail, setDetail] = useState(null); // {item, related[]}
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = { limit: 1000 };
+      if (level) params.level = level;
+      if (q.trim()) params.q = q.trim();
+      // F19 — Default: mostra eventi applicativi. L'utente può cambiare in "http" o "all".
+      params.source = source || "app";
+      if (category) params.category = category;
+      if (eventType) params.event_type = eventType;
+      if (userF.trim()) params.user = userF.trim();
+      if (productF.trim()) params.product = productF.trim();
+      if (serialF.trim()) params.serial = serialF.trim();
+      if (customerF.trim()) params.customer = customerF.trim();
+      if (statusF) params.status = statusF;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      const { data } = await axios.get(`${API}/admin/system-logs`, { params });
+      setItems(data.items || []);
+    } catch (e) { toast.error("Errore lettura log", { description: formatError(e) }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const openDetail = async (r) => {
+    // Row HTTP → apri inline
+    if (r.source !== "app" || !r.id) {
+      setDetail({ item: r, related: [], httpOnly: true });
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/system-logs/${r.id}`);
+      setDetail({ item: data.item, related: data.related || [] });
+    } catch (e) { toast.error("Dettaglio non disponibile", { description: formatError(e) }); }
+    finally { setDetailLoading(false); }
+  };
+
+  const clearFilters = () => {
+    setQ(""); setLevel(""); setSource(""); setCategory(""); setEventType("");
+    setUserF(""); setProductF(""); setSerialF(""); setCustomerF(""); setStatusF("");
+    setDateFrom(""); setDateTo("");
+  };
+
+  const levelBadge = (lvl) => {
+    const c = {
+      ERROR: "bg-red-100 text-red-800 border-red-200",
+      CRITICAL: "bg-red-200 text-red-900 border-red-300",
+      WARNING: "bg-amber-100 text-amber-800 border-amber-200",
+      INFO: "bg-sky-100 text-sky-800 border-sky-200",
+      DEBUG: "bg-slate-100 text-slate-600 border-slate-200",
+    }[lvl] || "bg-slate-100 text-slate-600 border-slate-200";
+    return <Badge className={`${c} text-[10px] font-mono-tight`}>{lvl}</Badge>;
+  };
+  const statusBadge = (s) => {
+    if (!s) return null;
+    const c = {
+      SUCCESS: "bg-emerald-100 text-emerald-800 border-emerald-200",
+      FAILURE: "bg-red-100 text-red-800 border-red-200",
+      WARNING: "bg-amber-100 text-amber-800 border-amber-200",
+      PARTIAL: "bg-orange-100 text-orange-800 border-orange-200",
+    }[s] || "bg-slate-100 text-slate-600 border-slate-200";
+    return <Badge className={`${c} text-[10px] font-mono-tight`}>{s}</Badge>;
+  };
+  const catBadge = (c) => {
+    if (!c) return null;
+    const map = {
+      SPEDIZIONE: "bg-purple-100 text-purple-800",
+      ARRIVO: "bg-emerald-100 text-emerald-800",
+      INVENTARIO: "bg-indigo-100 text-indigo-800",
+      CANCELLAZIONE: "bg-rose-100 text-rose-800",
+      ANOMALIA: "bg-orange-100 text-orange-800",
+      AUTH: "bg-cyan-100 text-cyan-800",
+      RETRO: "bg-amber-100 text-amber-800",
+      SYSTEM: "bg-slate-200 text-slate-700",
+    };
+    return <Badge className={`${map[c] || "bg-slate-100 text-slate-700"} text-[10px] font-mono-tight`}>{c}</Badge>;
+  };
+
+  return (
+    <div className="space-y-3" data-testid="system-logs-tab">
+      {/* Barra filtri principale */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Cerca testo, endpoint, ID, seriale, cliente…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") load(); }}
+          className="h-9 max-w-xs"
+          data-testid="syslog-q"
+        />
+        <select value={source} onChange={(e) => setSource(e.target.value)} className="h-9 border border-slate-300 rounded-md px-2 text-sm bg-white" data-testid="syslog-source">
+          <option value="">Tutte le sorgenti</option>
+          <option value="app">Applicativo</option>
+          <option value="http">HTTP / Sistema</option>
+          <option value="all">Entrambe</option>
+        </select>
+        <select value={level} onChange={(e) => setLevel(e.target.value)} className="h-9 border border-slate-300 rounded-md px-2 text-sm bg-white" data-testid="syslog-level">
+          <option value="">Tutti i livelli</option>
+          <option>DEBUG</option>
+          <option>INFO</option>
+          <option>WARNING</option>
+          <option>ERROR</option>
+          <option>CRITICAL</option>
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="h-9 border border-slate-300 rounded-md px-2 text-sm bg-white" data-testid="syslog-category">
+          <option value="">Tutte le categorie</option>
+          <option>INVENTARIO</option>
+          <option>ARRIVO</option>
+          <option>SPEDIZIONE</option>
+          <option>CANCELLAZIONE</option>
+          <option>ANOMALIA</option>
+          <option>AUTH</option>
+          <option>RETRO</option>
+          <option>SYSTEM</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={() => setAdvanced(!advanced)} data-testid="syslog-advanced-toggle">
+          {advanced ? "Filtri base" : "Filtri avanzati"}
+        </Button>
+        <Button size="sm" onClick={load} disabled={loading} data-testid="syslog-reload">
+          <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} /> {loading ? "…" : "Applica"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={clearFilters} data-testid="syslog-clear">Reset</Button>
+        <div className="text-xs text-slate-500 ml-auto">{items.length} righe · segreti redatti</div>
+      </div>
+
+      {/* Filtri avanzati */}
+      {advanced && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-md" data-testid="syslog-advanced">
+          <Input placeholder="Utente" value={userF} onChange={(e) => setUserF(e.target.value)} className="h-9" data-testid="syslog-user" />
+          <Input placeholder="Prodotto" value={productF} onChange={(e) => setProductF(e.target.value)} className="h-9" data-testid="syslog-product" />
+          <Input placeholder="Seriale" value={serialF} onChange={(e) => setSerialF(e.target.value)} className="h-9 font-mono-tight" data-testid="syslog-serial" />
+          <Input placeholder="Cliente" value={customerF} onChange={(e) => setCustomerF(e.target.value)} className="h-9" data-testid="syslog-customer" />
+          <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="h-9 border border-slate-300 rounded-md px-2 text-sm bg-white" data-testid="syslog-status">
+            <option value="">Tutti gli stati</option>
+            <option>SUCCESS</option>
+            <option>FAILURE</option>
+            <option>WARNING</option>
+            <option>PARTIAL</option>
+          </select>
+          <Input placeholder="Event Type" value={eventType} onChange={(e) => setEventType(e.target.value.toUpperCase())} className="h-9 font-mono-tight uppercase" data-testid="syslog-event-type" />
+          <div className="col-span-2 flex items-center gap-2">
+            <Label className="text-[10px] uppercase text-slate-500 shrink-0">Dal</Label>
+            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9" data-testid="syslog-date-from" />
+          </div>
+          <div className="col-span-2 flex items-center gap-2">
+            <Label className="text-[10px] uppercase text-slate-500 shrink-0">Al</Label>
+            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9" data-testid="syslog-date-to" />
+          </div>
+        </div>
+      )}
+
+      {/* Tabella log */}
+      <div className="bg-slate-950 text-slate-100 border border-slate-800 rounded-md overflow-x-auto max-h-[70vh] overflow-y-auto">
+        <table className="w-full text-xs font-mono-tight">
+          <thead className="sticky top-0 bg-slate-900 text-slate-400 uppercase text-[10px] tracking-wider">
+            <tr>
+              <th className="text-left px-3 py-2 w-24">Livello</th>
+              <th className="text-left px-3 py-2 w-40">Timestamp</th>
+              <th className="text-left px-3 py-2 w-28">Categoria</th>
+              <th className="text-left px-3 py-2 w-32">Evento</th>
+              <th className="text-left px-3 py-2 w-24">Utente</th>
+              <th className="text-left px-3 py-2">Messaggio</th>
+              <th className="text-left px-3 py-2 w-24">Stato</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((r, i) => (
+              <tr
+                key={r.id || `http-${i}`}
+                className="border-t border-slate-800 hover:bg-slate-900 cursor-pointer"
+                onClick={() => openDetail(r)}
+                data-testid={`syslog-row-${i}`}
+              >
+                <td className="px-3 py-1.5">{levelBadge(r.level)}</td>
+                <td className="px-3 py-1.5 text-slate-400">{r.timestamp || r.created_at || "—"}</td>
+                <td className="px-3 py-1.5">{catBadge(r.category)}</td>
+                <td className="px-3 py-1.5 text-slate-300 truncate max-w-[180px]">{r.event_type || "—"}</td>
+                <td className="px-3 py-1.5 text-slate-300 truncate max-w-[120px]">{r.user || "—"}</td>
+                <td className="px-3 py-1.5 text-slate-200 truncate max-w-[500px]">
+                  {r.message || r.action || "—"}
+                  {r.product && <span className="ml-2 text-emerald-300">• {r.product}</span>}
+                  {r.serial && <span className="ml-2 text-amber-300">SN {r.serial}</span>}
+                </td>
+                <td className="px-3 py-1.5">{statusBadge(r.status)}</td>
+              </tr>
+            ))}
+            {items.length === 0 && !loading && (
+              <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">Nessun log disponibile.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Dettaglio evento */}
+      {detail && (
+        <SystemLogDetailDialog
+          detail={detail}
+          onClose={() => setDetail(null)}
+          loading={detailLoading}
+        />
+      )}
+    </div>
+  );
+}
+
+function SystemLogDetailDialog({ detail, onClose, loading }) {
+  const r = detail?.item || {};
+  const isApp = r.source === "app";
+  const kv = (label, val) => (val === null || val === undefined || val === "") ? null : (
+    <div className="grid grid-cols-3 gap-2 py-1 border-b border-slate-100 last:border-0">
+      <div className="text-[11px] uppercase text-slate-500 font-semibold">{label}</div>
+      <div className="col-span-2 text-sm text-slate-900 break-all">{typeof val === "object" ? JSON.stringify(val) : String(val)}</div>
+    </div>
+  );
+  return (
+    <Dialog open={true} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-3xl" data-testid="syslog-detail">
+        <DialogHeader>
+          <DialogTitle>Dettaglio evento log</DialogTitle>
+          <DialogDescription>
+            {isApp ? "Evento applicativo strutturato" : "Log HTTP / sistema"} · segreti automaticamente redatti
+          </DialogDescription>
+        </DialogHeader>
+        {loading ? (
+          <div className="py-6 text-center text-slate-500">Caricamento…</div>
+        ) : (
+          <div className="space-y-3">
+            {/* Dati applicativi */}
+            <div className="et-card p-3">
+              <div className="text-[11px] uppercase tracking-wider font-bold text-slate-700 mb-2">Dati applicativi</div>
+              {kv("Timestamp", r.timestamp || r.created_at)}
+              {kv("Livello", r.level)}
+              {kv("Categoria", r.category)}
+              {kv("Event Type", r.event_type)}
+              {kv("Action", r.action)}
+              {kv("Utente", r.user)}
+              {kv("Ruolo", r.user_role)}
+              {kv("Prodotto", r.product)}
+              {kv("Codice prodotto", r.product_code)}
+              {kv("Seriale", r.serial)}
+              {kv("Seriali", r.serials)}
+              {kv("Quantità prima", r.quantity_before)}
+              {kv("Variazione", r.quantity_change)}
+              {kv("Quantità dopo", r.quantity_after)}
+              {kv("Cliente", r.customer)}
+              {kv("Preso da", r.taken_by)}
+              {kv("Stato", r.status)}
+              {kv("Operation ID", r.operation_id)}
+              {kv("Messaggio", r.message)}
+            </div>
+
+            {/* Dati tecnici */}
+            {(r.endpoint || r.stack_trace || r.file || r.details) && (
+              <div className="et-card p-3 bg-slate-50">
+                <div className="text-[11px] uppercase tracking-wider font-bold text-slate-700 mb-2">Dati tecnici</div>
+                {kv("Endpoint", r.endpoint)}
+                {kv("File log", r.file)}
+                {kv("Source", r.source)}
+                {r.details && (
+                  <div className="mt-2">
+                    <div className="text-[11px] uppercase text-slate-500 font-semibold mb-1">Details</div>
+                    <pre className="text-[11px] bg-slate-900 text-slate-100 p-2 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+                      {JSON.stringify(r.details, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {r.stack_trace && (
+                  <div className="mt-2">
+                    <div className="text-[11px] uppercase text-slate-500 font-semibold mb-1">Stack trace</div>
+                    <pre className="text-[11px] bg-slate-900 text-red-200 p-2 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+                      {r.stack_trace}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Eventi correlati (stessa operation_id) */}
+            {detail?.related?.length > 0 && (
+              <div className="et-card p-3">
+                <div className="text-[11px] uppercase tracking-wider font-bold text-slate-700 mb-2">
+                  Eventi correlati (Operation ID: {r.operation_id}) — {detail.related.length}
+                </div>
+                <div className="space-y-1 max-h-56 overflow-y-auto">
+                  {detail.related.map((rel) => (
+                    <div key={rel.id} className="text-xs bg-white border border-slate-200 rounded px-2 py-1.5 flex items-center gap-2">
+                      <span className="text-slate-500 font-mono-tight">{rel.timestamp?.slice(11, 19) || "—"}</span>
+                      <Badge className="text-[9px] bg-slate-100 text-slate-700 border-slate-200">{rel.event_type}</Badge>
+                      <span className="truncate flex-1">{rel.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Chiudi</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Impostazioni (F7 esteso) ----------
+function SettingSwitch({ label, hint, checked, onChange, testid }) {
+  return (
+    <label className="flex items-center justify-between gap-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer" data-testid={testid}>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-slate-800">{label}</div>
+        
+      </div>
+      <Switch checked={!!checked} onCheckedChange={(v) => onChange(v)} className="et-settings-switch" />
+    </label>
+  );
+}
+
+function SettingNumber({ label, hint, value, onChange, min, max, step = 1, unit, testid }) {
+  return (
+    <div className="py-3 border-b border-slate-100 last:border-0">
+      <Label className="text-sm font-semibold text-slate-800">{label}</Label>
+      
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value ?? ""}
+          onChange={(e) => onChange(parseInt(e.target.value || "0", 10))}
+          className="h-11 max-w-[140px] font-mono-tight"
+          data-testid={testid}
+        />
+        {unit && <span className="text-xs text-slate-500">{unit}</span>}
+      </div>
+    </div>
+  );
+}
+
+function SettingsSection({ title, icon: Icon, children }) {
+  return (
+    <div className="settings-section">
+      <div className="flex items-center gap-2 pb-3 border-b border-slate-100 mb-1">
+        {Icon && <Icon size={17} className="text-amber-500" />}
+        <div className="text-[11px] tracking-[0.18em] uppercase text-slate-700 font-bold">{title}</div>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function SettingSubheading({ children }) {
+  return (
+    <div className="pt-4 pb-1 first:pt-2">
+      <div className="text-[10px] tracking-[0.16em] uppercase font-bold text-[#1A456B]">{children}</div>
+    </div>
+  );
+}
+
+export function SettingsTab({ filter, saveLabel }) {
+  const [s, setS] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useTz();
+
+  const load = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings`);
+      setS(data);
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+  };
+  useEffect(() => { load(); }, []);
+  if (!s) return <div className="text-slate-500">Caricamento…</div>;
+
+  const setSection = (section, patch) => setS((prev) => ({ ...prev, [section]: { ...(prev[section] || {}), ...patch } }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        low_stock_threshold: s.low_stock_threshold,
+        test_prefix: s.test_prefix,
+        scanner: s.scanner,
+        dashboard: s.dashboard,
+        magazzino: s.magazzino,
+        ricerca: s.ricerca,
+        movimenti: s.movimenti,
+        sicurezza: s.sicurezza,
+        general: s.general,
+      };
+      const { data } = await axios.put(`${API}/admin/settings`, payload);
+      setS(data);
+      toast.success("Impostazioni salvate");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("elios:settings-changed"));
+      }
+    } catch (e) { toast.error("Salvataggio fallito", { description: formatError(e) }); }
+    finally { setSaving(false); }
+  };
+
+  const show = (name) => !filter || filter.includes(name);
+
+  return (
+    <div className="space-y-4 max-w-4xl" data-testid="settings-tab">
+      <div className="grid grid-cols-1 gap-4">
+        {show("dashboard") && (
+        <SettingsSection title="Dashboard" icon={ArrowClockwise}>
+          <SettingNumber label="Intervallo auto-refresh"
+            hint="0 = disattivato. Consigliato 30-120 secondi"
+            value={s.dashboard?.autorefresh_seconds} min={0} max={3600} step={5} unit="secondi"
+            onChange={(v) => setSection("dashboard", { autorefresh_seconds: v })}
+            testid="set-dash-autorefresh" />
+        </SettingsSection>
+        )}
+
+        {show("magazzino") && (
+        <SettingsSection title="Magazzino" icon={Warning}>
+          <SettingSubheading>Soglie e avvisi scorte</SettingSubheading>
+          <SettingNumber label="Soglia minima"
+            hint="Prodotti con quantità ≤ soglia (e > 0) risultano sotto scorta"
+            value={s.magazzino?.low_stock_threshold ?? s.low_stock_threshold}
+            min={0} max={1000} step={1} unit="pezzi"
+            onChange={(v) => { setSection("magazzino", { low_stock_threshold: v }); setS((prev) => ({ ...prev, low_stock_threshold: v })); }}
+            testid="set-mag-low-threshold" />
+        </SettingsSection>
+        )}
+
+        {show("ricerca") && (
+        <SettingsSection title="Ricerca" icon={MagnifyingGlass}>
+          <SettingSwitch label="Ricerca durante digitazione"
+            hint="Filtra la lista mentre digiti usando i dati locali del gestionale"
+            checked={s.ricerca?.search_on_type}
+            onChange={(v) => setSection("ricerca", { search_on_type: v })}
+            testid="set-ric-live" />
+          <SettingNumber label="Numero massimo risultati"
+            value={s.ricerca?.max_results} min={1} max={200} step={5} unit="risultati"
+            onChange={(v) => setSection("ricerca", { max_results: v })}
+            testid="set-ric-max" />
+          <SettingSwitch label="Ricerca parziale"
+            hint="Trova le corrispondenze anche a metà parola (contains)"
+            checked={s.ricerca?.partial_match}
+            onChange={(v) => setSection("ricerca", { partial_match: v })}
+            testid="set-ric-partial" />
+        </SettingsSection>
+        )}
+
+        {show("scanner") && (
+        <SettingsSection title="Scanner e Acquisizione" icon={ListMagnifyingGlass}>
+          <SettingSubheading>Attivazione</SettingSubheading>
+          <SettingSwitch label="Scanner ON/OFF"
+            hint="Abilita/disabilita globalmente lo scanner (fisico + fotocamera)"
+            checked={s.scanner?.scanner_enabled}
+            onChange={(v) => setSection("scanner", { scanner_enabled: v })}
+            testid="set-scanner-enabled" />
+          <SettingSwitch label="Fotocamera ON/OFF"
+            hint="Abilita l'uso della fotocamera per la scansione"
+            checked={s.scanner?.camera_enabled}
+            onChange={(v) => setSection("scanner", { camera_enabled: v })}
+            testid="set-scanner-camera" />
+          <SettingSubheading>Flusso di acquisizione</SettingSubheading>
+          <SettingSwitch label="Scansione continua"
+            hint="Dopo INVIO/scan il focus va al prossimo campo automaticamente"
+            checked={s.scanner?.continuous_scan}
+            onChange={(v) => setSection("scanner", { continuous_scan: v })}
+            testid="set-scanner-continuous" />
+          <SettingSwitch label="Acquisizione automatica"
+            hint="Aggiunge il valore appena la lettura è validata (no click)"
+            checked={s.scanner?.auto_acquire}
+            onChange={(v) => setSection("scanner", { auto_acquire: v })}
+            testid="set-scanner-autoacquire" />
+          <SettingSwitch label="INVIO = acquisisci / aggiungi"
+            hint="Il tasto INVIO aggiunge direttamente il valore (no bottone CERCA)"
+            checked={s.scanner?.enter_equals_add}
+            onChange={(v) => setSection("scanner", { enter_equals_add: v })}
+            testid="set-scanner-enter" />
+          <SettingSubheading>Controlli e sicurezza lettura</SettingSubheading>
+          <SettingSwitch label="Prevenzione doppia scansione"
+            hint="Ignora scansioni ripetute dello stesso codice ravvicinate"
+            checked={s.scanner?.prevent_double_scan}
+            onChange={(v) => setSection("scanner", { prevent_double_scan: v })}
+            testid="set-scanner-nodup" />
+          <SettingNumber label="Intervallo minimo tra scansioni"
+            hint="Tempo di attesa fra due scansioni consecutive"
+            value={s.scanner?.min_scan_interval_ms} min={0} max={5000} step={50} unit="ms"
+            onChange={(v) => setSection("scanner", { min_scan_interval_ms: v })}
+            testid="set-scanner-interval" />
+          <SettingSwitch label="Focus automatico"
+            hint="Riporta sempre il cursore sul campo scanner"
+            checked={s.scanner?.autofocus}
+            onChange={(v) => setSection("scanner", { autofocus: v })}
+            testid="set-scanner-autofocus"
+          />
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Comportamento dopo errore</Label>
+            
+            <select
+              value={s.scanner?.error_behavior || "retry"}
+              onChange={(e) => setSection("scanner", { error_behavior: e.target.value })}
+              className="h-10 w-full max-w-[240px] rounded-md border border-slate-200 bg-white px-3 text-sm"
+              data-testid="set-scanner-errbehavior"
+            >
+              <option value="retry">Ripeti (riprova stessa riga)</option>
+              <option value="block">Blocca (attende conferma manuale)</option>
+              <option value="skip">Salta (passa al successivo)</option>
+            </select>
+          </div>
+          <SettingSubheading>Feedback operatore</SettingSubheading>
+          <SettingNumber label="Feedback verde (ms)" hint="Durata evidenza al match riuscito"
+            value={s.scanner?.feedback_green_ms} min={200} max={10000} step={100} unit="ms"
+            onChange={(v) => setSection("scanner", { feedback_green_ms: v })}
+            testid="set-scanner-green-ms" />
+          <SettingNumber label="Feedback rosso (ms)" hint="Durata evidenza in caso di errore"
+            value={s.scanner?.feedback_red_ms} min={200} max={10000} step={100} unit="ms"
+            onChange={(v) => setSection("scanner", { feedback_red_ms: v })}
+            testid="set-scanner-red-ms" />
+          <SettingSwitch label="Selezione automatica singolo risultato"
+            hint="Se la ricerca trova un solo prodotto lo seleziona subito"
+            checked={s.scanner?.autoselect_single_result}
+            onChange={(v) => setSection("scanner", { autoselect_single_result: v })}
+            testid="set-scanner-autoselect" />
+          <SettingSwitch label="Suono scanner"
+            hint="Beep al match riuscito (richiede audio browser abilitato)"
+            checked={s.scanner?.sound_enabled}
+            onChange={(v) => setSection("scanner", { sound_enabled: v })}
+            testid="set-scanner-sound" />
+        </SettingsSection>
+        )}
+
+
+
+        {show("movimenti") && (
+        <SettingsSection title="Movimenti" icon={ClockCounterClockwise}>
+          <SettingNumber label="Numero movimenti visualizzati"
+            hint="Massimo record mostrati nella pagina Movimenti"
+            value={s.movimenti?.max_shown} min={10} max={1000} step={10} unit="movimenti"
+            onChange={(v) => setSection("movimenti", { max_shown: v })}
+            testid="set-mov-max" />
+          <SettingSwitch label="Apertura automatica sul mese corrente"
+            checked={s.movimenti?.auto_open_current_month}
+            onChange={(v) => setSection("movimenti", { auto_open_current_month: v })}
+            testid="set-mov-current" />
+        </SettingsSection>
+        )}
+
+        {show("sicurezza") && (
+        <SettingsSection title="Sicurezza" icon={Gear}>
+          <SettingNumber label="Logout automatico dopo inattività"
+            hint="Chiude la sessione se l'utente non interagisce"
+            value={s.sicurezza?.idle_logout_minutes} min={1} max={1440} step={1} unit="minuti"
+            onChange={(v) => setSection("sicurezza", { idle_logout_minutes: v })}
+            testid="set-sec-idle" />
+          <SettingNumber label="Tentativi di login massimi"
+            hint="Oltre questa soglia l'utente viene bloccato temporaneamente"
+            value={s.sicurezza?.max_login_attempts} min={3} max={20} step={1} unit="tentativi"
+            onChange={(v) => setSection("sicurezza", { max_login_attempts: v })}
+            testid="set-sec-max-attempts" />
+          <SettingNumber label="Durata blocco dopo troppi tentativi"
+            value={s.sicurezza?.lockout_minutes} min={1} max={1440} step={1} unit="minuti"
+            onChange={(v) => setSection("sicurezza", { lockout_minutes: v })}
+            testid="set-sec-lockout" />
+        </SettingsSection>
+        )}
+
+        {show("general") && (
+        <SettingsSection title="Identità Gestionale" icon={Gear}>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Nome gestionale</Label>
+            <Input value={s.general?.app_name || ""}
+              onChange={(e) => setSection("general", { app_name: e.target.value })}
+              className="h-10 mt-1" data-testid="set-gen-appname" />
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Nome azienda</Label>
+            <Input value={s.general?.company_name || ""}
+              onChange={(e) => setSection("general", { company_name: e.target.value })}
+              className="h-10 mt-1" data-testid="set-gen-company" />
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Logo (URL)</Label>
+            
+            <Input value={s.general?.logo_url || ""}
+              onChange={(e) => setSection("general", { logo_url: e.target.value })}
+              placeholder="" className="h-10" data-testid="set-gen-logo" />
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Colore principale</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <input type="color" value={s.general?.primary_color || "#0f172a"}
+                onChange={(e) => setSection("general", { primary_color: e.target.value })}
+                className="h-10 w-14 rounded border border-slate-200 cursor-pointer" data-testid="set-gen-color" />
+              <Input value={s.general?.primary_color || ""}
+                onChange={(e) => setSection("general", { primary_color: e.target.value })}
+                className="h-10 max-w-[140px] font-mono-tight" />
+            </div>
+          </div>
+        </SettingsSection>
+        )}
+
+        {show("general") && (
+        <SettingsSection title="Formato e lingua" icon={Globe}>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Lingua</Label>
+            <select
+              value={s.general?.language || "it"}
+              onChange={(e) => setSection("general", { language: e.target.value })}
+              className="h-10 w-full max-w-[180px] rounded-md border border-slate-200 bg-white px-3 text-sm mt-1"
+              data-testid="set-gen-lang"
+            >
+              <option value="it">Italiano</option>
+            </select>
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Fuso orario</Label>
+            
+            <select
+              value={s.general?.timezone || "Europe/Rome"}
+              onChange={(e) => setSection("general", { timezone: e.target.value })}
+              className="h-10 w-full max-w-sm rounded-md border border-slate-200 bg-white px-3 text-sm font-mono-tight"
+              data-testid="setting-timezone"
+            >
+              <option value="Europe/Rome">Europe/Rome — Italia (predefinito)</option>
+              <option value="Europe/London">Europe/London — Regno Unito</option>
+              <option value="Europe/Paris">Europe/Paris — Francia</option>
+              <option value="Europe/Berlin">Europe/Berlin — Germania</option>
+              <option value="Europe/Madrid">Europe/Madrid — Spagna</option>
+              <option value="Europe/Lisbon">Europe/Lisbon — Portogallo</option>
+              <option value="America/New_York">America/New_York — USA Est</option>
+              <option value="America/Chicago">America/Chicago — USA Centro</option>
+              <option value="America/Denver">America/Denver — USA Montagna</option>
+              <option value="America/Los_Angeles">America/Los_Angeles — USA Ovest</option>
+              <option value="Asia/Dubai">Asia/Dubai — Emirati</option>
+              <option value="Asia/Tokyo">Asia/Tokyo — Giappone</option>
+              <option value="Australia/Sydney">Australia/Sydney</option>
+              <option value="UTC">UTC — Tempo universale</option>
+            </select>
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Formato data</Label>
+            <select
+              value={s.general?.date_format || "DD/MM/YYYY"}
+              onChange={(e) => setSection("general", { date_format: e.target.value })}
+              className="h-10 w-full max-w-[240px] rounded-md border border-slate-200 bg-white px-3 text-sm mt-1"
+              data-testid="set-gen-datefmt"
+            >
+              <option value="DD/MM/YYYY">DD/MM/YYYY (europeo)</option>
+              <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY (US)</option>
+            </select>
+          </div>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Formato ora</Label>
+            <select
+              value={s.general?.time_format || "24h"}
+              onChange={(e) => setSection("general", { time_format: e.target.value })}
+              className="h-10 w-full max-w-[180px] rounded-md border border-slate-200 bg-white px-3 text-sm mt-1"
+              data-testid="set-gen-timefmt"
+            >
+              <option value="24h">24 ore (14:30)</option>
+              <option value="12h">12 ore (2:30 PM)</option>
+            </select>
+          </div>
+        </SettingsSection>
+        )}
+
+        {show("general") && (
+        <SettingsSection title="Comportamento generale" icon={ArrowClockwise}>
+          <SettingSwitch label="Auto-refresh dati"
+            hint="Aggiorna automaticamente le pagine principali senza intervento manuale"
+            checked={s.general?.auto_refresh_enabled}
+            onChange={(v) => setSection("general", { auto_refresh_enabled: v })}
+            testid="set-gen-autorefresh-enabled" />
+          <SettingNumber label="Intervallo auto-refresh"
+            hint="Ogni quanto ricaricare i dati (0 = disattivato)"
+            value={s.dashboard?.autorefresh_seconds} min={0} max={3600} step={5} unit="secondi"
+            onChange={(v) => setSection("dashboard", { autorefresh_seconds: v })}
+            testid="set-dash-autorefresh" />
+          <SettingSwitch label="Conferme per operazioni importanti"
+            hint="Richiedi conferma esplicita per Conferma Arrivo, Conferma Spedizione e altre azioni critiche"
+            checked={s.general?.confirm_important_ops}
+            onChange={(v) => setSection("general", { confirm_important_ops: v })}
+            testid="set-gen-confirm-ops" />
+        </SettingsSection>
+        )}
+
+        {show("test_prefix") && (
+        <SettingsSection title="Manutenzione / Test" icon={Broom}>
+          <div className="py-2">
+            <Label className="text-sm font-semibold text-slate-800">Prefisso dati di test</Label>
+            <div className="text-[11px] text-slate-500 mb-1">
+              Usato dal tab Cleanup per identificare dati fittizi da eliminare (mai su Notion).
+            </div>
+            <Input value={s.test_prefix}
+              onChange={(e) => setS({ ...s, test_prefix: e.target.value })}
+              className="h-11 font-mono-tight max-w-[220px]" data-testid="setting-test-prefix" />
+          </div>
+        </SettingsSection>
+        )}
+      </div>
+
+      <div className="sticky bottom-3 z-10 flex justify-end">
+        <Button onClick={save} disabled={saving} className="h-11 et-btn-primary border-0 shadow-lg" data-testid="save-settings-btn">
+          {saving ? "Salvo…" : (saveLabel || "Salva impostazioni")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// F9 §21 — Wrapper per singola area. Riutilizzano SettingsTab con filtro sezioni.
+export const SettingsGeneralTab = () => <SettingsTab filter={["general", "dashboard"]} saveLabel="Salva Impostazioni Generali" />;
+export const SettingsMagazzinoTab = () => <SettingsTab filter={["magazzino", "ricerca", "movimenti"]} saveLabel="Salva Impostazioni Magazzino" />;
+export const SettingsScannerTab = () => <SettingsTab filter={["scanner"]} saveLabel="Salva Scanner e Acquisizione" />;
+export const SettingsSicurezzaTab = () => <SettingsTab filter={["sicurezza", "test_prefix"]} saveLabel="Salva Sicurezza" />;
+
+// F9 §7 — Impostazioni arrivi (info-only: le regole sono già cablate nella logica esistente).
+// F10 §10 — Impostazioni arrivi realmente configurabili.
+export function SettingsArriviTab() {
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings`);
+      setSettings(data.arrivi || {});
+    } catch (e) { toast.error("Errore caricamento", { description: formatError(e) }); }
+  };
+  useEffect(() => { load(); }, []);
+  const upd = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/admin/settings`, { arrivi: settings });
+      toast.success("Impostazioni arrivi salvate");
+      window.dispatchEvent(new Event("elios:settings-changed"));
+    } catch (e) { toast.error("Errore salvataggio", { description: formatError(e) }); }
+    finally { setSaving(false); }
+  };
+  if (!settings) return <div className="text-sm text-slate-500">Caricamento…</div>;
+
+  const LockedRow = ({ label, desc }) => (
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+      <div>
+        <div className="text-sm font-medium text-slate-800">{label} <Lock size={12} className="inline text-amber-600 ml-1" /></div>
+        {desc && <div className="text-xs text-slate-500 mt-0.5">{desc}</div>}
+      </div>
+      <Badge variant="outline" className="border-emerald-300 text-emerald-700 shrink-0">Sempre attivo</Badge>
+    </div>
+  );
+  const Toggle = ({ k, label, desc }) => (
+    <div className="border-b border-slate-100 last:border-0">
+      <SettingSwitch
+        label={label}
+        hint={desc}
+        checked={!!settings[k]}
+        onChange={(v) => upd(k, v)}
+        testid={`arrivi-${k}-toggle`}
+      />
+    </div>
+  );
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="settings-arrivi-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Impostazioni arrivi</h3>
+      </div>
+
+      <div className="et-card-elevated p-4">
+        <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Ricevi seriali</div>
+        <LockedRow label="Prodotto obbligatorio prima del seriale" desc="Il prodotto deve essere selezionato prima di scansionare seriali." />
+        <Toggle k="allow_new_serials" label="Consenti seriali mai visti prima" desc="Se disattivato, blocca l'arrivo di seriali sconosciuti." />
+        <Toggle k="continuous_scan" label="Scansione continua" desc="Dopo INVIO/scan, focus automatico sul prossimo seriale." />
+        <Toggle k="enter_equals_add" label="INVIO = acquisisci e aggiungi" desc="Nessun bottone CERCA: l'INVIO aggiunge direttamente." />
+        <Toggle k="final_confirmation" label="Conferma finale prima di registrare l’arrivo" desc="Richiedi un dialog di conferma prima di CONFERMA ARRIVO." />
+      </div>
+
+      <div className="et-card-elevated p-4">
+        <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Ricevi quantità</div>
+        <Toggle k="require_code_for_qty" label="Codice prodotto obbligatorio" desc="Ricevi quantità richiede sempre un codice riconosciuto." />
+        <Toggle k="require_quantity" label="Quantità obbligatoria" desc="Rifiuta l'aggiunta se la quantità è 0 o vuota." />
+        <LockedRow label="Verifica sull’inventario locale" desc="Il codice viene sempre verificato nel magazzino del gestionale." />
+      </div>
+
+      <div className="et-card-elevated p-4">
+        <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Reintegra seriale</div>
+        <LockedRow label="Popup dedicato con manuale/scanner/fotocamera" desc="Il flusso di reintegro passa sempre dal popup." />
+        <LockedRow label="Verifica sull’inventario locale" desc="Il seriale viene sempre verificato nel magazzino del gestionale prima del reintegro." />
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={save} disabled={saving} data-testid="save-arrivi-settings-btn">
+          {saving ? "Salvataggio…" : "Salva Impostazioni arrivi"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// F10 §10 — Impostazioni spedizioni realmente configurabili.
+export function SettingsSpedizioniTab() {
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings`);
+      setSettings(data.spedizioni || {});
+    } catch (e) { toast.error("Errore caricamento", { description: formatError(e) }); }
+  };
+  useEffect(() => { load(); }, []);
+  const upd = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/admin/settings`, { spedizioni: settings });
+      toast.success("Impostazioni spedizioni salvate");
+      window.dispatchEvent(new Event("elios:settings-changed"));
+    } catch (e) { toast.error("Errore salvataggio", { description: formatError(e) }); }
+    finally { setSaving(false); }
+  };
+  if (!settings) return <div className="text-sm text-slate-500">Caricamento…</div>;
+
+  const LockedRow = ({ label, desc }) => (
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+      <div>
+        <div className="text-sm font-medium text-slate-800">{label} <Lock size={12} className="inline text-amber-600 ml-1" /></div>
+        {desc && <div className="text-xs text-slate-500 mt-0.5">{desc}</div>}
+      </div>
+      <Badge variant="outline" className="border-emerald-300 text-emerald-700 shrink-0">Sempre attivo</Badge>
+    </div>
+  );
+  const Toggle = ({ k, label, desc }) => (
+    <div className="border-b border-slate-100 last:border-0">
+      <SettingSwitch
+        label={label}
+        hint={desc}
+        checked={!!settings[k]}
+        onChange={(v) => upd(k, v)}
+        testid={`spedizioni-${k}-toggle`}
+      />
+    </div>
+  );
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="settings-spedizioni-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Impostazioni spedizioni</h3>
+      </div>
+
+      <div className="et-card-elevated p-4">
+        <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Spedisci seriali</div>
+        <LockedRow label="Verifica seriale presente in Inventario" desc="Blocca la spedizione di seriali non presenti nel magazzino." />
+        <LockedRow label="Blocco duplicati nella stessa spedizione" desc="Un seriale non può comparire due volte nella stessa spedizione." />
+        <LockedRow label="Blocco seriale già spedito" desc="Un seriale già uscito non può essere spedito di nuovo." />
+        <Toggle k="continuous_scan" label="Scansione continua" desc="Dopo la verifica torna automaticamente il focus alla scansione successiva." />
+        <Toggle k="final_check" label="Controllo finale prima di CONFERMA" desc="Ricontrolla disponibilità e integrità prima di registrare la spedizione." />
+      </div>
+
+      <div className="et-card-elevated p-4">
+        <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Spedisci quantità</div>
+        <LockedRow label="Verifica disponibilità nell’inventario locale" desc="La disponibilità è sempre verificata prima di aggiungere alla lista." />
+        <LockedRow label="Blocco quantità insufficiente" desc="Non è possibile confermare più pezzi di quelli disponibili." />
+        <Toggle k="allow_partial_shipment" label="Consenti spedizioni parziali" desc="Se disponibile solo parte della quantità richiesta, procedi con quella disponibile." />
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={save} disabled={saving} data-testid="save-spedizioni-settings-btn">
+          {saving ? "Salvataggio…" : "Salva Impostazioni spedizioni"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// F14 §9 — Toggle email automatica dopo modifica retroattiva
+// Esportato per essere renderizzato nel tab "Notifiche" di AdminPage.
+export function RetroattivitaEmailToggle() {
+  const [enabled, setEnabled] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    axios.get(`${API}/admin/settings`).then(({ data }) => {
+      setEnabled(!!((data.retroattivita || {}).email_enabled));
+    }).catch(() => setEnabled(false));
+  }, []);
+  const toggle = async (v) => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/admin/settings`, { retroattivita: { email_enabled: v } });
+      setEnabled(v);
+      toast.success(v ? "Email retroattività: ON" : "Email retroattività: OFF");
+      window.dispatchEvent(new Event("elios:settings-changed"));
+    } catch (e) {
+      toast.error("Salvataggio fallito", { description: formatError(e) });
+    } finally { setSaving(false); }
+  };
+  if (enabled === null) return null;
+  return (
+    <div className="et-card-elevated p-4" data-testid="retro-email-toggle-card">
+      <div className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">Retroattività — Notifiche</div>
+      <SettingSwitch
+        label="Invia email automatica dopo modifica retroattiva"
+        hint="ON: dopo il salvataggio riuscito di una modifica retroattiva viene inviata un'email di notifica ai destinatari già configurati. OFF: nessuna email."
+        checked={enabled}
+        onChange={toggle}
+        disabled={saving}
+        testid="retro-email-toggle"
+      />
+    </div>
+  );
+}
+
+// F9 §21 — Gestione Prodotti (predisposizione — dipende dalla futura fonte Gestionale).
+export function ProductsAdminTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState("gestionale");
+  const [q, setQ] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(null); // product
+  const [serialsOf, setSerialsOf] = useState(null); // {product, serials}
+  const [newSN, setNewSN] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const [form, setForm] = useState({
+    name: "", code: "", category: "", tipo_gestione: "a_quantita",
+    quantity: 0, unit: "pz", threshold: 0, notes: "", active: true,
+  });
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const prodResp = await axios.get(`${API}/admin/products`);
+      setItems(prodResp.data.items || []);
+      setSource("gestionale");
+    } catch (e) {
+      toast.error("Errore caricamento prodotti", { description: formatError(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { loadAll(); }, []);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter(p =>
+      (p.name || "").toLowerCase().includes(s) ||
+      (p.code || "").toLowerCase().includes(s) ||
+      (p.category || "").toLowerCase().includes(s)
+    );
+  }, [items, q]);
+
+  const openCreate = () => {
+    setForm({ name: "", code: "", category: "", tipo_gestione: "a_quantita", quantity: 0, unit: "pz", threshold: 0, notes: "", active: true });
+    setEditing(null);
+    setShowCreate(true);
+  };
+  const openEdit = (p) => {
+    setForm({
+      name: p.name || "", code: p.code || "", category: p.category || "",
+      tipo_gestione: p.tipo_gestione || "a_quantita",
+      quantity: p.quantity || 0, unit: p.unit || "pz", threshold: p.threshold || 0,
+      notes: p.notes || "", active: p.active !== false,
+    });
+    setEditing(p);
+    setShowCreate(true);
+  };
+  const saveForm = async () => {
+    try {
+      if (!form.name.trim() || !form.code.trim()) {
+        toast.error("Nome e codice sono obbligatori");
+        return;
+      }
+      if (editing) {
+        await axios.patch(`${API}/admin/products/${editing.id}`, form);
+        toast.success("Prodotto aggiornato");
+      } else {
+        await axios.post(`${API}/admin/products`, form);
+        toast.success("Prodotto creato");
+      }
+      setShowCreate(false);
+      loadAll();
+    } catch (e) {
+      toast.error("Errore salvataggio", { description: formatError(e) });
+    }
+  };
+  const delProduct = async (p) => {
+    if (!(await appConfirm({ title: "Elimina prodotto", message: `Eliminare il prodotto “${p.name}”?\nVerranno rimossi anche i seriali associati.`, confirmLabel: "Elimina", danger: true }))) return;
+    try {
+      await axios.delete(`${API}/admin/products/${p.id}`);
+      toast.success("Prodotto eliminato");
+      loadAll();
+    } catch (e) {
+      toast.error("Errore eliminazione", { description: formatError(e) });
+    }
+  };
+  const openSerials = async (p) => {
+    try {
+      const { data } = await axios.get(`${API}/admin/products/${p.id}/serials`);
+      setSerialsOf({ product: p, serials: data.items || [] });
+      setNewSN("");
+    } catch (e) {
+      toast.error("Errore lettura seriali", { description: formatError(e) });
+    }
+  };
+  const addSerial = async () => {
+    const sn = newSN.trim();
+    if (!sn || !serialsOf) return;
+    try {
+      await axios.post(`${API}/admin/products/${serialsOf.product.id}/serials`, { serial: sn });
+      toast.success(`Seriale ${sn} aggiunto`);
+      setNewSN("");
+      openSerials(serialsOf.product);
+      loadAll();
+    } catch (e) {
+      toast.error("Errore aggiunta seriale", { description: formatError(e) });
+    }
+  };
+  const delSerial = async (sn) => {
+    if (!serialsOf) return;
+    if (!(await appConfirm({ title: "Rimuovi seriale", message: `Rimuovere il seriale “${sn}”?`, confirmLabel: "Rimuovi", danger: true }))) return;
+    try {
+      await axios.delete(`${API}/admin/products/${serialsOf.product.id}/serials/${encodeURIComponent(sn)}`);
+      toast.success("Seriale rimosso");
+      openSerials(serialsOf.product);
+      loadAll();
+    } catch (e) {
+      toast.error("Errore rimozione seriale", { description: formatError(e) });
+    }
+  };
+
+  const importFromNotion = async () => {
+    if (!(await appConfirm({ title: "Importa Inventario Elios Tech", message: "Importare SOLO il database Notion Inventario nel Magazzino Elios Tech? Notion non verrà modificato e Magazzino Verona resterà invariato.", confirmLabel: "Importa" }))) return;
+    setImporting(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/inventory/import-from-notion`);
+      toast.success(`Import completato — ${data.total} prodotti (nuovi: ${data.created}, aggiornati: ${data.updated})`);
+      loadAll();
+    } catch (e) {
+      toast.error("Errore import Notion", { description: formatError(e) });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="products-admin-tab">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-display text-lg font-bold text-slate-900">Gestione Prodotti (Inventario Gestionale)</h3>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            type="button" variant="outline"
+            onClick={importFromNotion} disabled={importing}
+            data-testid="import-from-notion-btn"
+          >
+            {importing ? "Importazione…" : "Importa Inventario Elios Tech da Notion"}
+          </Button>
+          <Button type="button" onClick={openCreate} data-testid="create-product-btn">
+            + Nuovo prodotto
+          </Button>
+        </div>
+      </div>
+
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <Input
+          value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Cerca nome, codice, categoria…"
+          className="pl-10 h-10" data-testid="products-search"
+        />
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-slate-500">Caricamento…</div>
+      ) : items.length === 0 ? (
+        <div className="rounded-md border border-slate-200 bg-slate-50 text-slate-600 text-sm p-4">
+          Nessun prodotto locale. Usa <b>Importa Inventario Elios Tech da Notion</b> per copiare l'inventario esistente,
+          oppure <b>Nuovo prodotto</b> per crearli manualmente.
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-md overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-slate-50 text-slate-600 text-xs uppercase">
+              <tr>
+                <th className="text-left px-3 py-2">Nome</th>
+                <th className="text-left px-3 py-2">Codice</th>
+                <th className="text-left px-3 py-2">Categoria</th>
+                <th className="text-left px-3 py-2">Gestione</th>
+                <th className="text-right px-3 py-2">Disponibile</th>
+                <th className="text-right px-3 py-2">Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p) => (
+                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`product-row-${p.code}`}>
+                  <td className="px-3 py-2 font-medium">{p.name}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{p.code}</td>
+                  <td className="px-3 py-2 text-slate-600">{p.category || "—"}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant="outline" className={p.tipo_gestione === "a_seriale" ? "text-indigo-700 border-indigo-300" : "text-emerald-700 border-emerald-300"}>
+                      {p.tipo_gestione === "a_seriale" ? "A seriale" : "A quantità"}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {p.tipo_gestione === "a_seriale"
+                      ? `${p.available || 0} SN`
+                      : `${p.quantity || 0} ${p.unit || "pz"}`}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {p.tipo_gestione === "a_seriale" && (
+                      <Button variant="outline" size="sm" onClick={() => openSerials(p)} className="mr-1" data-testid={`serials-btn-${p.code}`}>Seriali</Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => openEdit(p)} className="mr-1" data-testid={`edit-product-${p.code}`}>Modifica</Button>
+                    <Button variant="ghost" size="sm" onClick={() => delProduct(p)} className="text-red-600 hover:bg-red-50" data-testid={`delete-product-${p.code}`}>
+                      <Trash size={14} />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Create/Edit dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Modifica prodotto" : "Nuovo prodotto"}</DialogTitle>
+            <DialogDescription>Compila i dati del prodotto locale.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Nome prodotto</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="product-name-input" />
+            </div>
+            <div>
+              <Label>Codice</Label>
+              <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} data-testid="product-code-input" />
+            </div>
+            <div>
+              <Label>Categoria</Label>
+              <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+            </div>
+            <div>
+              <Label>Gestione</Label>
+              <select
+                className="h-10 w-full border border-slate-300 rounded-md px-3 text-sm"
+                value={form.tipo_gestione}
+                onChange={(e) => setForm({ ...form, tipo_gestione: e.target.value })}
+                data-testid="product-tipo-select"
+              >
+                <option value="a_quantita">A quantità</option>
+                <option value="a_seriale">A seriale</option>
+              </select>
+            </div>
+            <div>
+              <Label>Unità (per A quantità)</Label>
+              <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+            </div>
+            {form.tipo_gestione === "a_quantita" && (
+              <div>
+                <Label>Quantità iniziale</Label>
+                <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value || 0) })} />
+              </div>
+            )}
+            <div>
+              <Label>Soglia minima</Label>
+              <Input type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value || 0) })} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Note</Label>
+              <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            <div className="sm:col-span-2 flex items-center gap-2">
+              <input id="p-active" type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+              <label htmlFor="p-active" className="text-sm">Attivo</label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>Annulla</Button>
+            <Button onClick={saveForm} data-testid="save-product-btn">{editing ? "Salva modifiche" : "Crea"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Serials dialog */}
+      <Dialog open={!!serialsOf} onOpenChange={(o) => !o && setSerialsOf(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Seriali — {serialsOf?.product?.name}</DialogTitle>
+            <DialogDescription>Aggiungi/rimuovi seriali disponibili. Gli spediti restano tracciati.</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Input
+              value={newSN} onChange={(e) => setNewSN(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addSerial()}
+              placeholder="Nuovo seriale…"
+              data-testid="new-serial-input"
+            />
+            <Button onClick={addSerial} data-testid="add-serial-btn">Aggiungi</Button>
+          </div>
+          <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+            {(serialsOf?.serials || []).length === 0 ? (
+              <div className="p-3 text-sm text-slate-500">Nessun seriale ancora presente.</div>
+            ) : serialsOf.serials.map((s) => (
+              <div key={s.serial} className="flex items-center justify-between px-3 py-2 text-sm">
+                <div>
+                  <div className="font-mono">{s.serial}</div>
+                  <div className="text-xs text-slate-500">
+                    {s.status === "available"
+                      ? <span className="text-emerald-700">Disponibile</span>
+                      : <span className="text-slate-500">Spedito {s.last_pick_date ? `il ${s.last_pick_date}` : ""}</span>}
+                  </div>
+                </div>
+                {s.status === "available" && (
+                  <Button variant="ghost" size="sm" onClick={() => delSerial(s.serial)} className="text-red-600 hover:bg-red-50">
+                    <Trash size={14} />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSerialsOf(null)}>Chiudi</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ---------- Sessioni attive (F7) ----------
+export function SessionsTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busySid, setBusySid] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/sessions`);
+      setItems(data.items || []);
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 20000); // refresh soft ogni 20s (solo su questa tab)
+    return () => clearInterval(t);
+  }, []);
+
+  const disconnect = async (sid) => {
+    if (!(await appConfirm({ title: "Disconnetti sessione", message: "Disconnettere questa sessione?", confirmLabel: "Disconnetti", danger: true }))) return;
+    setBusySid(sid);
+    try {
+      await axios.delete(`${API}/admin/sessions/${sid}`);
+      toast.success("Sessione disconnessa");
+      load();
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setBusySid(null); }
+  };
+
+  return (
+    <div className="space-y-3" data-testid="sessions-tab">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-wider text-slate-500">
+          {items.length} sessione{items.length === 1 ? "" : " attive"}
+        </div>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="reload-sessions-btn">
+          <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
+        </Button>
+      </div>
+      <div className="et-card-elevated overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="et-table">
+            <thead>
+              <tr>
+                <th>Utente</th>
+                <th>Stato</th>
+                <th>Ultimo accesso</th>
+                <th>Ultima attività</th>
+                <th className="text-right">Azione</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((s) => {
+                const isMaster = String(s.email || "").trim().toLowerCase() === "tecnico@eliostech.org";
+                return (
+                <tr key={s.sid} data-testid={`session-row-${s.sid}`}>
+                  <td>
+                    <div className="font-semibold text-slate-900">{s.full_name}{isMaster && <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-600 font-bold">🔒 master</span>}</div>
+                    <div className="text-xs text-slate-500 font-mono-tight">@{s.username} · {s.role}</div>
+                  </td>
+                  <td>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold ${
+                        s.online
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                          : "bg-slate-100 text-slate-500 border border-slate-200"
+                      }`}
+                      data-testid={`session-status-${s.sid}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${s.online ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
+                      {s.online ? "Online" : "Offline"}
+                    </span>
+                  </td>
+                  <td className="text-xs font-mono-tight text-slate-600">{fmtDate(s.last_login)}</td>
+                  <td className="text-xs font-mono-tight text-slate-600">{fmtDate(s.last_activity)}</td>
+                  <td className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => disconnect(s.sid)}
+                      disabled={busySid === s.sid || isMaster}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                      data-testid={`disconnect-session-${s.sid}`}
+                      title={isMaster ? "Account master protetto" : ""}
+                    >
+                      {busySid === s.sid ? "…" : "Disconnetti"}
+                    </Button>
+                  </td>
+                </tr>
+                );
+              })}
+              {items.length === 0 && !loading && (
+                <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400">Nessuna sessione attiva.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- R13 — Pulizia completa dati gestionali ----------
+export function DataResetTab() {
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState(null);
+  const [confirmText, setConfirmText] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/data-reset/preview`);
+      setPreview(data);
+    } catch (e) {
+      toast.error("Impossibile leggere i dati", { description: formatError(e) });
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const openReset = (scope) => { setTarget(scope); setConfirmText(""); };
+  const close = () => { if (!busy) { setTarget(null); setConfirmText(""); } };
+  const expected = target === "all" ? "ELIMINA TUTTI I DATI" : "ELIMINA DATI";
+  const execute = async () => {
+    if (!target || confirmText.trim().toUpperCase() !== expected) return;
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/data-reset`, { scope: target, confirmation_text: confirmText.trim() });
+      toast.success("Pulizia completata", { description: `${data.deleted_total || 0} record eliminati${data.files_deleted ? ` · ${data.files_deleted} file` : ""}.` });
+      setTarget(null); setConfirmText("");
+      await load();
+    } catch (e) { toast.error("Pulizia non riuscita", { description: formatError(e) }); }
+    finally { setBusy(false); }
+  };
+
+  const groups = preview?.groups || {};
+  const order = ["crm", "commesse", "magazzino", "movimenti", "documenti", "assistente"];
+  return (
+    <div className="space-y-4" data-testid="data-reset-tab">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="font-bold">Pulizia dati del gestionale</div>
+        <div className="mt-1">Usa questa funzione per eliminare i dati delle prove e ripartire pulito. <b>Utenti, impostazioni, configurazioni, Log sistema e Audit attività restano invariati.</b> Notion non viene toccato.</div>
+      </div>
+      {loading ? <div className="text-sm text-slate-500 py-4">Calcolo dati in corso…</div> : (
+        <>
+          <div className="grid md:grid-cols-2 gap-3">
+            {order.map((scope) => { const g = groups[scope] || {}; return (
+              <div key={scope} className="rounded-xl border border-slate-200 bg-white p-4 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-slate-900">{g.label || scope}</div>
+                  <div className="text-xs text-slate-500 mt-1">{g.total || 0} record presenti</div>
+                </div>
+                <Button variant="outline" onClick={() => openReset(scope)} disabled={!g.total} className="h-10 border-red-200 text-red-700 hover:bg-red-50">
+                  <Trash size={15} /> Svuota
+                </Button>
+              </div>
+            );})}
+          </div>
+          <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex-1">
+                <div className="font-display text-lg font-bold text-red-900">Svuota tutti i dati operativi</div>
+                <div className="text-sm text-red-700 mt-1">Elimina clienti, prospect, sopralluoghi, preventivi, ordini, commesse, magazzino, seriali, movimenti, spedizioni, installazioni, assistenze, documenti, allegati e storico dell’Assistente AI.</div>
+                <div className="text-xs text-red-600 mt-2">Totale attuale: <b>{preview?.total || 0} record</b>. Utenti, impostazioni e log restano.</div>
+              </div>
+              <Button onClick={() => openReset("all")} disabled={!preview?.total} className="h-11 bg-red-600 hover:bg-red-700 text-white shrink-0">
+                <Trash size={17} /> Svuota tutto
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <Dialog open={!!target} onOpenChange={(v) => !v && close()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{target === "all" ? "Svuota tutto il gestionale" : `Svuota ${groups[target]?.label || "area"}`}</DialogTitle>
+            <DialogDescription>
+              Questa cancellazione è definitiva. I Log/Audit restano per documentare l'operazione. Digita <b>{expected}</b> per confermare.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Conferma scritta</Label>
+            <Input className="mt-1 h-11 font-mono-tight" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={expected} autoComplete="off" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={close} disabled={busy}>Annulla</Button>
+            <Button onClick={execute} disabled={busy || confirmText.trim().toUpperCase() !== expected} className="bg-red-600 hover:bg-red-700 text-white">
+              {busy ? "Eliminazione…" : "Conferma eliminazione"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ---------- Cleanup TEST_ ----------
+export function CleanupTestTab() {
+  const [preview, setPreview] = useState(null);
+  const [prefix, setPrefix] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const doPreview = async () => {
+    setBusy(true);
+    try {
+      const params = {};
+      if (prefix.trim()) params.prefix = prefix.trim();
+      const { data } = await axios.get(`${API}/admin/cleanup-test-data`, { params });
+      setPreview(data);
+    } catch (e) { toast.error("Preview fallita", { description: formatError(e) }); }
+    finally { setBusy(false); }
+  };
+
+  const doDelete = async () => {
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/cleanup-test-data`, {
+        confirm: true, prefix: prefix.trim() || undefined,
+      });
+      toast.success(`Cancellati ${data.checklists_deleted + data.arrivi_deleted + data.anomalies_deleted} record`);
+      setPreview(null);
+      setConfirmOpen(false);
+    } catch (e) { toast.error("Cleanup fallito", { description: formatError(e) }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="cleanup-test-tab">
+      <div className="text-sm text-slate-600 bg-amber-50 border-l-2 border-amber-400 p-3 rounded-sm">
+        Il cleanup elimina SOLO record locali (spedizioni/arrivi/anomalie) il cui cliente / operatore /
+        fornitore inizia con il prefisso. <strong>Notion NON viene toccato mai.</strong>
+      </div>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <Label className="text-sm font-semibold">Prefisso (lascia vuoto per usare l'impostazione)</Label>
+          <Input value={prefix} onChange={(e) => setPrefix(e.target.value)} className="h-11 font-mono-tight mt-1"
+            placeholder="" data-testid="cleanup-prefix-input" />
+        </div>
+        <Button onClick={doPreview} disabled={busy} className="h-11 et-btn-primary border-0" data-testid="cleanup-preview-btn">
+          {busy ? "…" : "Anteprima"}
+        </Button>
+      </div>
+      {preview && (
+        <div className="bg-white border border-slate-200 rounded-md p-4 space-y-2" data-testid="cleanup-preview">
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            Prefisso attivo: <span className="font-mono-tight text-slate-900">{preview.prefix}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="border border-slate-200 rounded p-3">
+              <div className="text-xs text-slate-500">Spedizioni</div>
+              <div className="font-display text-2xl">{preview.checklists.length}</div>
+            </div>
+            <div className="border border-slate-200 rounded p-3">
+              <div className="text-xs text-slate-500">Arrivi</div>
+              <div className="font-display text-2xl">{preview.arrivi.length}</div>
+            </div>
+            <div className="border border-slate-200 rounded p-3">
+              <div className="text-xs text-slate-500">Anomalie</div>
+              <div className="font-display text-2xl">{preview.anomalies.length}</div>
+            </div>
+          </div>
+          {preview.total > 0 ? (
+            <Button onClick={() => setConfirmOpen(true)} className="h-11 bg-red-600 hover:bg-red-700 text-white" data-testid="cleanup-execute-btn">
+              <Trash size={16} className="mr-1" /> Elimina {preview.total} record
+            </Button>
+          ) : (
+            <div className="text-sm text-slate-500">Nessun record da eliminare.</div>
+          )}
+        </div>
+      )}
+      <Dialog open={confirmOpen} onOpenChange={(v) => !v && setConfirmOpen(false)}>
+        <DialogContent data-testid="cleanup-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>Conferma eliminazione</DialogTitle>
+            <DialogDescription>
+              Verranno eliminati <strong>{preview?.total ?? 0}</strong> record che corrispondono al prefisso{" "}
+              <span className="font-mono-tight">{preview?.prefix}</span>. Notion non sarà toccato. Confermi?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Annulla</Button>
+            <Button onClick={doDelete} disabled={busy} className="bg-red-600 hover:bg-red-700 text-white" data-testid="cleanup-confirm-btn">
+              {busy ? "Elimino…" : "Sì, elimina"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ---------- Storico Seriali ----------
+export function SerialHistoryTab() {
+  const [sn, setSn] = useState("");
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const search = async () => {
+    if (!sn.trim()) return;
+    setBusy(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/serial-history/${encodeURIComponent(sn.trim())}`);
+      setResult(data);
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="serial-history-tab">
+      <div className="flex gap-2 items-end max-w-lg">
+        <div className="flex-1">
+          <Label className="text-sm font-semibold">Seriale</Label>
+          <Input value={sn} onChange={(e) => setSn(e.target.value)} placeholder=""
+            className="h-11 font-mono-tight mt-1" onKeyDown={(e) => e.key === "Enter" && search()}
+            data-testid="serial-history-input" />
+        </div>
+        <Button onClick={search} disabled={busy || !sn.trim()} className="h-11 et-btn-primary border-0" data-testid="serial-history-search-btn">
+          <MagnifyingGlass size={16} className="mr-1" /> Cerca
+        </Button>
+      </div>
+      {result && (
+        <div className="bg-white border border-slate-200 rounded-md p-4 space-y-3" data-testid="serial-history-result">
+          <div>
+            <span className="text-xs uppercase tracking-wider text-slate-500">SN</span>{" "}
+            <span className="font-mono-tight text-slate-900 font-semibold">{result.sn}</span>
+          </div>
+          <div>
+            <span className="text-xs uppercase tracking-wider text-slate-500">Stato attuale</span>{" "}
+            <Badge variant="outline" className={
+              result.status === "in_warehouse" ? "border-emerald-300 text-emerald-800 bg-emerald-50"
+              : result.status === "out" ? "border-blue-300 text-blue-800 bg-blue-50"
+              : "border-slate-300 text-slate-500"
+            }>
+              {result.status}
+            </Badge>
+          </div>
+          {result.last_entrata && (
+            <div className="border-l-2 border-emerald-400 pl-3 text-sm">
+              <div className="text-xs uppercase text-emerald-700 tracking-wider font-semibold">Ultima entrata</div>
+              <div className="font-mono-tight text-slate-700">Data: {result.last_entrata.date || "—"}</div>
+            </div>
+          )}
+          {result.last_uscita && (
+            <div className="border-l-2 border-blue-400 pl-3 text-sm">
+              <div className="text-xs uppercase text-blue-700 tracking-wider font-semibold">Ultima uscita</div>
+              <div className="font-mono-tight text-slate-700">Data: {result.last_uscita.date || "—"}</div>
+              <div className="text-slate-700">Cliente: {result.last_uscita.cliente || "—"}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Ricerca globale ----------
+export function GlobalSearchTab() {
+  const [q, setQ] = useState("");
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const search = async () => {
+    if (!q.trim()) return;
+    setBusy(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/global-search`, { params: { q: q.trim() } });
+      setResult(data);
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="global-search-tab">
+      <div className="flex gap-2 items-end max-w-2xl">
+        <div className="flex-1">
+          <Label className="text-sm font-semibold">Cerca ovunque</Label>
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="prodotto, cliente, seriale, operatore…"
+            className="h-11 mt-1" onKeyDown={(e) => e.key === "Enter" && search()}
+            data-testid="global-search-input" />
+        </div>
+        <Button onClick={search} disabled={busy || !q.trim()} className="h-11 et-btn-primary border-0" data-testid="global-search-btn">
+          <MagnifyingGlass size={16} className="mr-1" /> Cerca
+        </Button>
+      </div>
+      {result && (
+        <div className="space-y-4" data-testid="global-search-result">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">
+              Prodotti ({result.products.length})
+            </div>
+            {result.products.length === 0 ? <div className="text-slate-400 text-sm">—</div> : (
+              <ul className="border border-slate-200 rounded bg-white divide-y divide-slate-100">
+                {result.products.map((p) => (
+                  <li key={p.id} className="px-3 py-2 flex items-center justify-between" data-testid={`gs-product-${p.id}`}>
+                    <div>
+                      <div className="font-semibold text-slate-900">{p.name}</div>
+                      <div className="text-xs text-slate-500 font-mono-tight">{p.code} · {p.category || "—"}</div>
+                    </div>
+                    <div className="font-mono-tight text-sm">{p.quantity} {p.unit}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">
+              Spedizioni App ({result.checklists.length})
+            </div>
+            {result.checklists.length === 0 ? <div className="text-slate-400 text-sm">—</div> : (
+              <ul className="border border-slate-200 rounded bg-white divide-y divide-slate-100">
+                {result.checklists.map((c) => (
+                  <li key={c.id} className="px-3 py-2" data-testid={`gs-checklist-${c.id}`}>
+                    <div className="font-semibold text-slate-900">Cliente: {c.structure}</div>
+                    <div className="text-xs text-slate-500">Op: {c.operator} · {c.shipping_date}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">
+              Arrivi App ({result.arrivi.length})
+            </div>
+            {result.arrivi.length === 0 ? <div className="text-slate-400 text-sm">—</div> : (
+              <ul className="border border-slate-200 rounded bg-white divide-y divide-slate-100">
+                {result.arrivi.map((a) => (
+                  <li key={a.id} className="px-3 py-2" data-testid={`gs-arrivo-${a.id}`}>
+                    <div className="font-semibold text-slate-900">Fornitore: {a.fornitore}</div>
+                    <div className="text-xs text-slate-500">Op: {a.operator} · {a.arrival_date}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {result.serial_status && (
+            <div className="border border-blue-200 bg-blue-50 rounded p-3" data-testid="gs-serial">
+              <div className="text-xs uppercase tracking-wider text-blue-700 font-semibold">Seriale trovato</div>
+              <div className="text-sm mt-1">
+                Status: <Badge variant="outline">{result.serial_status.status}</Badge>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ---------- Fonte Inventario (F8 predisposizione) ----------
+// Sezione read-only: mostra la fonte attiva dell'Inventario. Attualmente NOTION.
+// La modalità GESTIONALE è predisposta ma NON attivabile in questa fase.
+// Nessun cambio di logica sull'Inventario, Notion o Arrivi/Spedizioni.
+export function InventorySourceTab() {
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="inventory-source-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Fonte dati magazzino</h3>
+      </div>
+      <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-5">
+        <div className="font-display text-base font-bold text-emerald-900">Gestionale Elios Tech · attivo</div>
+        <div className="text-sm text-emerald-900/80 mt-2">
+          Il database interno del Gestionale Elios Tech è la fonte unica dei dati operativi.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ManutenzioneTab() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadStatus = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/maintenance/status`);
+      setStatus(data);
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { loadStatus(); }, []);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/maintenance/refresh-cache`);
+      toast.success(`Inventario verificato — ${data.items_count} prodotti`);
+      if (typeof window !== "undefined") window.dispatchEvent(new Event("elios:refresh-dashboard"));
+      await loadStatus();
+    } catch (e) { toast.error("Verifica non riuscita", { description: formatError(e) }); }
+    finally { setRefreshing(false); }
+  };
+
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="maintenance-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Sistema e manutenzione</h3>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="et-card-elevated p-4">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Fonte operativa</div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`w-2.5 h-2.5 rounded-full ${status?.ok ? "bg-emerald-500" : "bg-red-500"}`} aria-hidden />
+            <span className="font-semibold text-slate-900">{loading ? "…" : status?.ok ? "Gestionale locale" : "Errore"}</span>
+          </div>
+          <div className="text-xs text-slate-500 mt-1">MongoDB locale · fonte unica dei dati operativi</div>
+        </div>
+        <div className="et-card-elevated p-4">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Inventario locale</div>
+          <div className="font-semibold text-slate-900 mt-1">{loading ? "…" : `${status?.inventory_items || 0} prodotti`}</div>
+          <div className="text-xs text-slate-500 mt-1 font-mono-tight">{status?.checked_at ? fmtDate(status.checked_at) : "—"}</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={doRefresh} disabled={refreshing} className="h-11" data-testid="btn-refresh-cache">
+          <ArrowClockwise size={16} className={`mr-1 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Verifica in corso…" : "Verifica inventario"}
+        </Button>
+        <Button onClick={loadStatus} variant="outline" disabled={loading} className="h-11 border-slate-300" data-testid="btn-check-status">
+          Verifica stato
+        </Button>
+      </div>
+
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs p-3">
+        Il Gestionale Elios Tech lavora esclusivamente sul proprio database interno per tutte le attività operative.
+      </div>
+    </div>
+  );
+}
+
+// ---------- Impostazioni Notion (F9 §27) ----------
+// Sezione diagnostica read-only: mostra stato integrazione. Nessuna modifica strutturale a Notion.
+export function NotionSettingsTab() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/admin/maintenance/status`);
+      setStatus(data);
+    } catch (_) {} finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="notion-settings-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Impostazioni Notion</h3>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="et-card-elevated p-4">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Stato connessione</div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`w-2.5 h-2.5 rounded-full ${status?.ok ? "bg-emerald-500" : "bg-red-500"}`} aria-hidden />
+            <span className="font-semibold text-slate-900">{loading ? "…" : status?.ok ? "Attiva" : "Non attiva"}</span>
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Token: {status?.notion_configured ? "Configurato" : "Mancante"}
+          </div>
+        </div>
+        <div className="et-card-elevated p-4">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Database mappati</div>
+          <ul className="text-xs text-slate-700 mt-1 space-y-0.5">
+            <li>• Inventario ({status?.inventory_items || 0} items)</li>
+            <li>• Entrate / Consegne (storico Arrivi)</li>
+            <li>• Uscite / Spedizioni (storico Spedizioni)</li>
+          </ul>
+        </div>
+      </div>
+      <div className="rounded-md border border-blue-200 bg-blue-50 text-blue-900 text-xs p-3 space-y-1">
+        <div><b>Colonne utilizzate</b> (già esistenti su Notion — non modificate dal gestionale):</div>
+        <ul className="list-disc pl-4 space-y-0.5">
+          <li>Colonna 13 → quantità in arrivo (Arrivi)</li>
+          <li>Colonna 16 → seriali (prodotti serializzati) oppure codice prodotto (prodotti a quantità)</li>
+        </ul>
+      </div>
+      <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-900 text-xs p-3">
+        <b>Sicurezza struttura:</b> qualsiasi modifica strutturale (creazione/rinomina/eliminazione colonne o
+        database) va effettuata direttamente su Notion. Il gestionale non altera mai la struttura.
+      </div>
+      <div className="text-xs text-slate-500 font-mono-tight">
+        Ultimo check: {status?.checked_at ? new Date(status.checked_at).toLocaleString("it-IT") : "—"}
+      </div>
+    </div>
+  );
+}
+
+
+
+// ---------- F17 — Export CSV storico Arrivi/Spedizioni ----------
+export function ExportMovimentiTab() {
+  const [tipo, setTipo] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const params = { tipo };
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      const resp = await axios.get(`${API}/admin/export/movimenti`, {
+        params, responseType: "blob",
+      });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      const dispo = resp.headers?.["content-disposition"] || "";
+      const m = /filename="([^"]+)"/.exec(dispo);
+      a.download = m ? m[1] : `movimenti_${tipo}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Export CSV pronto");
+    } catch (e) {
+      toast.error("Export fallito", { description: formatError(e) });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="export-movimenti-tab">
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">Export CSV — Movimenti</h3>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <Label className="text-xs font-semibold text-slate-700">Tipo</Label>
+          <select
+            value={tipo}
+            onChange={(e) => setTipo(e.target.value)}
+            className="mt-1 h-10 w-full border border-slate-300 rounded-md px-2 text-sm bg-white"
+            data-testid="export-tipo"
+          >
+            <option value="all">Tutti</option>
+            <option value="arrivo">Solo Arrivi</option>
+            <option value="spedizione">Solo Spedizioni</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-xs font-semibold text-slate-700">Data da</Label>
+          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1 h-10" data-testid="export-date-from" />
+        </div>
+        <div>
+          <Label className="text-xs font-semibold text-slate-700">Data a</Label>
+          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1 h-10" data-testid="export-date-to" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button
+          onClick={download}
+          disabled={busy}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          data-testid="export-csv-btn"
+        >
+          {busy ? "Preparo CSV…" : "⬇ Scarica CSV"}
+        </Button>
+        <div className="text-xs text-slate-500 self-center">
+          Sorgente LIVE Notion (o Gestionale, in base alla Fonte configurata).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- F20 — Assistente AI Settings ----------
+export function AISettingsTab() {
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    try {
+      const { data } = await axios.get(`${API}/ai/settings`);
+      setSettings(data);
+    } catch (e) { toast.error("Errore caricamento AI settings", { description: formatError(e) }); }
+  };
+  useEffect(() => { load(); }, []);
+  const upd = (patch) => {
+    setSaving(true);
+    axios.put(`${API}/ai/settings`, patch)
+      .then(({ data }) => { setSettings(data); toast.success("Salvato"); })
+      .catch((e) => toast.error("Salvataggio fallito", { description: formatError(e) }))
+      .finally(() => setSaving(false));
+  };
+  if (!settings) return <div className="text-sm text-slate-500">Caricamento…</div>;
+  return (
+    <div className="space-y-4 max-w-3xl" data-testid="ai-settings-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">🤖 Assistente AI</h3>
+      </div>
+
+      <div className="et-card-elevated p-4 space-y-4">
+        <SettingSwitch
+          label="Assistente AI abilitato"
+          hint="OFF di default. Attivalo per usare l'AI. Quando OFF, nessuna chiamata al provider viene effettuata."
+          checked={!!settings.enabled}
+          onChange={(v) => upd({ enabled: v })}
+          disabled={saving}
+          testid="ai-enabled-toggle"
+        />
+        <div className="border-t border-slate-100 pt-3">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Modalità</Label>
+          <select
+            value={settings.mode || "consultation"}
+            onChange={(e) => upd({ mode: e.target.value, ...(e.target.value !== "full_operational" ? { auto_execute: false } : {}) })}
+            disabled={saving}
+            className="mt-1 h-10 w-full max-w-sm border border-slate-300 rounded-md px-2 text-sm bg-white"
+            data-testid="ai-mode-select"
+          >
+            <option value="consultation">Solo Consultazione (default) — solo lettura</option>
+            <option value="operational">Operativa — può preparare operazioni</option>
+            <option value="full_operational">⚠️ Operativa Completa</option>
+          </select>
+          <div className="text-xs text-slate-500 mt-1">
+            {settings.mode === "consultation" && "L'AI può solo consultare. Nessuna modifica ai dati."}
+            {settings.mode === "operational" && "L'AI può proporre operazioni (spedizioni, arrivi). Sempre con conferma utente."}
+            {settings.mode === "full_operational" && "⚠️ L'AI può eseguire tutte le operazioni. Alto rischio senza conferma."}
+          </div>
+        </div>
+        <SettingSwitch
+          label="Conferma prima delle modifiche"
+          hint="ON di default. Ogni operazione modificativa richiede conferma esplicita dell'utente prima di essere eseguita."
+          checked={!!settings.confirm_before_modify}
+          onChange={(v) => upd({ confirm_before_modify: v })}
+          disabled={saving}
+          testid="ai-confirm-toggle"
+        />
+        <SettingSwitch
+          label="⚠️ Esecuzione automatica senza conferma"
+          hint="ALTO RISCHIO. Solo disponibile in modalità Operativa Completa. L'AI esegue direttamente le operazioni."
+          checked={!!settings.auto_execute}
+          onChange={(v) => upd({ auto_execute: v })}
+          disabled={saving || settings.mode !== "full_operational"}
+          testid="ai-auto-execute-toggle"
+        />
+        <div className="border-t border-slate-100 pt-3">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Limite richieste giornaliere</Label>
+          <div className="flex items-center gap-2 mt-1">
+            <Input
+              type="number" min={0} max={10000}
+              defaultValue={settings.daily_limit ?? 20}
+              onBlur={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v !== settings.daily_limit) upd({ daily_limit: v }); }}
+              className="h-10 max-w-[120px]"
+              data-testid="ai-daily-limit"
+            />
+            <span className="text-xs text-slate-500">richieste/giorno per utente. Al raggiungimento, l'AI si blocca fino al giorno successivo.</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="et-card p-3 bg-slate-50">
+        <div className="text-xs font-semibold text-slate-700 mb-1">Provider info (server-side, sola lettura):</div>
+        <div className="text-xs text-slate-600 font-mono-tight">
+          Provider: <b>{settings.provider}</b> · Modello: <b>{settings.model}</b>
+        </div>
+        <div className="text-[11px] text-slate-500 mt-2">
+          Per configurare la API key: modifica <code>AI_PROVIDER</code>, <code>AI_API_KEY</code>, <code>AI_MODEL</code> in <code>/app/backend/.env</code> e riavvia il backend. La API key non è MAI esposta al frontend.
+          <br />Per ottenere una chiave Groq gratuita: <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-indigo-600 underline">console.groq.com/keys</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ---------- F23 — Feature flags Admin (Funzioni) ----------
+export function FeaturesTab() {
+  const [feat, setFeat] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    axios.get(`${API}/features`).then(({ data }) => setFeat(data)).catch(() => setFeat({ commesse_enabled: false }));
+  }, []);
+  const upd = async (patch) => {
+    setSaving(true);
+    try {
+      const { data } = await axios.put(`${API}/admin/features`, patch);
+      setFeat(data);
+      toast.success("Salvato. Ricarica la pagina per aggiornare il menu.");
+    } catch (e) { toast.error("Errore", { description: formatError(e) }); }
+    finally { setSaving(false); }
+  };
+  if (!feat) return <div className="text-sm text-slate-500">Caricamento…</div>;
+  return (
+    <div className="space-y-4 max-w-2xl" data-testid="features-tab">
+      <div>
+        <h3 className="font-display text-lg font-bold text-slate-900">Funzioni opzionali</h3>
+      </div>
+      <div className="et-card-elevated p-4">
+        <SettingSwitch
+          label="📦 Gestione Commesse"
+          hint="Attiva la sezione Commesse (Ordini → Preparazione → Prelievo → Spedizione). OFF di default. Disattivando i dati restano salvati."
+          checked={!!feat.commesse_enabled}
+          onChange={(v) => upd({ commesse_enabled: v })}
+          disabled={saving}
+          testid="commesse-toggle"
+        />
+      </div>
+    </div>
+  );
+}
+
