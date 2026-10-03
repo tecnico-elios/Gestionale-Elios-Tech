@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API } from "../lib/apiBase";
 import { toast } from "sonner";
-import { Plus, Trash, FloppyDisk, ArrowUp, ArrowDown, ArchiveBox } from "@phosphor-icons/react";
+import { Plus, Trash, FloppyDisk, ArrowUp, ArrowDown, Archive } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -132,7 +132,7 @@ export default function ModuleBuilderPage() {
           {form.access_mode === "custom" && <div className="overflow-x-auto border rounded-lg"><table className="w-full min-w-[680px] text-sm"><thead className="bg-slate-50"><tr><th className="text-left p-3">Utente</th>{ACTIONS.map(([a,l]) => <th key={a} className="text-center p-3">{l}</th>)}</tr></thead><tbody>{users.map((u) => { const uid = userKey(u); return <tr key={uid} className="border-t"><td className="p-3 font-medium"><button type="button" onClick={() => toggleAllUser(uid)} className="text-left hover:text-blue-700">{u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username}<div className="text-xs text-slate-400 font-normal">{u.username}</div></button></td>{ACTIONS.map(([a]) => <td key={a} className="text-center p-2"><input type="checkbox" className="h-5 w-5" checked={hasUserAction(uid, a)} onChange={() => toggleUserAction(uid, a)}/></td>)}</tr>; })}</tbody></table></div>}
         </div>
 
-        <div className="flex justify-between gap-2"><div>{editing && <Button variant="outline" className="text-red-700 border-red-200" onClick={archive} disabled={busy}><ArchiveBox/> Archivia modulo</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={reset} disabled={busy}>Annulla</Button><Button onClick={save} disabled={busy}><FloppyDisk/> {editing ? "Salva modifiche" : "Crea modulo"}</Button></div></div>
+        <div className="flex justify-between gap-2"><div>{editing && <Button variant="outline" className="text-red-700 border-red-200" onClick={archive} disabled={busy}><Archive/> Archivia modulo</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={reset} disabled={busy}>Annulla</Button><Button onClick={save} disabled={busy}><FloppyDisk/> {editing ? "Salva modifiche" : "Crea modulo"}</Button></div></div>
       </div>
     </div>
   </div>;
