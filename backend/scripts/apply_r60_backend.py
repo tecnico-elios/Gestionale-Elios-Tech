@@ -80,4 +80,13 @@ patch(crm, [
     ),
 ])
 
+server = ROOT / "server.py"
+patch(server, [
+    (
+        '                ordini_ds_id=(notion_cfg.get("ordini_ds_id") if "ordini_ds_id" in notion_cfg else notion_service.NOTION_ORDINI_DS_ID),\n            )\n    except Exception as e:\n        logging.error(f"MongoDB index creation failed: {e}")',
+        '                ordini_ds_id=(notion_cfg.get("ordini_ds_id") if "ordini_ds_id" in notion_cfg else notion_service.NOTION_ORDINI_DS_ID),\n            )\n        # R60 — allinea subito tutte le installazioni già presenti nel Calendario.\n        # È idempotente: elabora soltanto eventi nuovi o modificati e non crea duplicati.\n        try:\n            from calendar_installation_sync import sync_all_calendar_installations\n            sync_stats = await sync_all_calendar_installations(db, actor="startup", force=False)\n            logging.info("R60 Calendar→Installazioni startup sync: %s", sync_stats)\n        except Exception as sync_exc:\n            logging.error("R60 Calendar→Installazioni startup sync failed: %s", sync_exc)\n    except Exception as e:\n        logging.error(f"MongoDB index creation failed: {e}")',
+        "startup installation sync",
+    ),
+])
+
 print("[R60 backend] sincronizzazione Calendario → Installazioni applicata.")
