@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && craco start",
-    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && craco build",
+    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
@@ -82,8 +82,8 @@
     "**/jsdom/form-data": "3.0.5",
     "**/postcss-svgo/svgo": "2.8.1",
     "**/postcss-load-config/yaml": "2.8.3",
-    "**/cosmiconfig/yaml": "1.10.3",
-    "**/cssnano/yaml": "1.10.3",
+    "**/cosmiconfig/yaml": "2.8.3",
+    "**/cssnano/yaml": "2.8.3",
     "**/eslint/js-yaml": "4.3.0",
     "**/@eslint/eslintrc/js-yaml": "4.3.0",
     "**/svgo/js-yaml": "3.15.0",
