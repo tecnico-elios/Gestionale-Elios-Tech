@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from zoneinfo import ZoneInfo
 import re
 import uuid
 
 ROME = ZoneInfo("Europe/Rome")
+STOPWORDS = {
+    "srl", "s.r.l", "spa", "s.p.a", "snc", "s.n.c", "sas", "s.a.s", "ss",
+    "societa", "società", "azienda", "di", "del", "della", "dei", "degli", "delle",
+    "e", "ed", "la", "le", "il", "lo", "i", "gli", "un", "una", "the",
+}
 
 
 def _now() -> datetime:
@@ -21,6 +26,10 @@ def _norm(value: Any) -> str:
 
 def _digits(value: Any) -> str:
     return re.sub(r"\D+", "", str(value or ""))
+
+
+def _tokens(value: Any) -> List[str]:
+    return [t for t in _norm(value).split() if len(t) >= 3 and t not in STOPWORDS]
 
 
 def _dt(value: Any) -> datetime:
@@ -47,25 +56,41 @@ def _source_stamp(event: Dict[str, Any]):
     return event.get("updated_at") or event.get("created_at") or _now()
 
 
-async def _best_site(db, client_id: str, location: Any) -> Optional[str]:
-    sites = await db.crm_sedi.find({"cliente_id": client_id}).to_list(length=500)
+def _site_score(site: Dict[str, Any], location: Any) -> int:
+    loc = _norm(location)
+    if not loc:
+        return 0
+    score = 0
+    name = _norm(site.get("nome"))
+    address = _norm(" ".join(x for x in [site.get("indirizzo"), site.get("civico")] if x))
+    comune = _norm(site.get("comune"))
+    cap = _norm(site.get("cap"))
+    provincia = _norm(site.get("provincia"))
+    if address and len(address) >= 5 and address in loc:
+        score += 140 + min(len(address), 40)
+    elif _norm(site.get("indirizzo")) and len(_norm(site.get("indirizzo"))) >= 5 and _norm(site.get("indirizzo")) in loc:
+        score += 120
+    if name and len(name) >= 5 and name in loc:
+        score += 55
+    if comune and len(comune) >= 4 and comune in loc:
+        score += 35
+    if cap and cap in loc:
+        score += 25
+    if provincia and len(provincia) >= 2 and re.search(rf"(^| ){re.escape(provincia)}( |$)", loc):
+        score += 8
+    return score
+
+
+async def _best_site(db, client_id: str, location: Any, sites_cache: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
+    if sites_cache is None:
+        sites = await db.crm_sedi.find({"cliente_id": client_id}).to_list(length=500)
+    else:
+        sites = [s for s in sites_cache if str(s.get("cliente_id") or "") == str(client_id)]
     if not sites:
         return None
-    loc = _norm(location)
-    if loc:
-        scored = []
-        for site in sites:
-            parts = [site.get("nome"), site.get("indirizzo"), site.get("civico"), site.get("cap"), site.get("comune"), site.get("provincia")]
-            text = _norm(" ".join(str(x or "") for x in parts))
-            score = 0
-            if text and text in loc: score += 100 + len(text)
-            for part in parts:
-                p = _norm(part)
-                if len(p) >= 4 and p in loc: score += len(p)
-            scored.append((score, site))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
-            return str(scored[0][1].get("id") or "") or None
+    scored = sorted(((_site_score(site, location), site) for site in sites), key=lambda x: x[0], reverse=True)
+    if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+        return str(scored[0][1].get("id") or "") or None
     primary = next((s for s in sites if s.get("is_primary") is True), None)
     if primary:
         return str(primary.get("id") or "") or None
@@ -74,64 +99,113 @@ async def _best_site(db, client_id: str, location: Any) -> Optional[str]:
     return None
 
 
-async def _match_client_and_site(db, event: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+async def _match_client_and_site(
+    db,
+    event: Dict[str, Any],
+    clients_cache: Optional[List[Dict[str, Any]]] = None,
+    sites_cache: Optional[List[Dict[str, Any]]] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    clients = clients_cache if clients_cache is not None else await db.crm_clienti.find({"archived": {"$ne": True}}).to_list(length=20000)
+    sites = sites_cache if sites_cache is not None else await db.crm_sedi.find({}).to_list(length=20000)
+
     existing_client = str(event.get("cliente_id") or "").strip()
     if existing_client:
-        client = await db.crm_clienti.find_one({"id": existing_client, "archived": {"$ne": True}})
+        client = next((c for c in clients if str(c.get("id") or "") == existing_client), None)
         if client:
             existing_site = str(event.get("sede_id") or "").strip()
-            if existing_site:
-                site = await db.crm_sedi.find_one({"id": existing_site, "cliente_id": existing_client})
-                if site:
-                    return existing_client, existing_site
-            return existing_client, await _best_site(db, existing_client, event.get("location"))
+            if existing_site and any(str(s.get("id") or "") == existing_site and str(s.get("cliente_id") or "") == existing_client for s in sites):
+                return existing_client, existing_site
+            return existing_client, await _best_site(db, existing_client, event.get("location"), sites)
 
+    # 1) L'indirizzo è il segnale più affidabile quando il titolo del calendario usa
+    # un nome abbreviato diverso dalla ragione sociale presente in anagrafica.
+    location = event.get("location") or ""
+    if location and sites:
+        ranked_sites = sorted(((_site_score(site, location), site) for site in sites), key=lambda x: x[0], reverse=True)
+        if ranked_sites and ranked_sites[0][0] >= 120 and (len(ranked_sites) == 1 or ranked_sites[0][0] > ranked_sites[1][0]):
+            site = ranked_sites[0][1]
+            cid = str(site.get("cliente_id") or "").strip()
+            if cid and any(str(c.get("id") or "") == cid for c in clients):
+                return cid, str(site.get("id") or "") or None
+
+    # 2) Ragione sociale/nome, anche abbreviati: richiede segnali abbastanza forti
+    # o un token distintivo per evitare collegamenti sbagliati.
     hay_raw = " ".join(str(event.get(k) or "") for k in ("title", "description", "location"))
     hay = _norm(hay_raw)
+    hay_tokens = set(_tokens(hay_raw))
     hay_digits = _digits(hay_raw)
-    clients = await db.crm_clienti.find({"archived": {"$ne": True}}).to_list(length=20000)
     best = None
     best_score = 0
     tied = False
     for client in clients:
         score = 0
-        for name in (
+        names = [
             client.get("ragione_sociale"), client.get("nome_struttura"),
             " ".join(x for x in (client.get("nome"), client.get("cognome")) if x),
             client.get("referente"),
-        ):
+        ]
+        for name in names:
             n = _norm(name)
+            if not n:
+                continue
             if len(n) >= 4 and n in hay:
-                score = max(score, 100 + len(n))
+                score = max(score, 170 + min(len(n), 60))
+            ntokens = _tokens(name)
+            matched = [t for t in ntokens if t in hay_tokens]
+            if len(matched) >= 2:
+                coverage = len(matched) / max(1, len(ntokens))
+                score = max(score, int(125 + 25 * len(matched) + 30 * coverage))
+            elif len(matched) == 1:
+                token = matched[0]
+                # Un solo token è accettato soltanto se molto distintivo.
+                if any(ch.isdigit() for ch in token) and len(token) >= 3:
+                    score = max(score, 145 + len(token))
+                elif len(token) >= 8:
+                    score = max(score, 128 + len(token))
         for email_field in ("email", "pec"):
             email = str(client.get(email_field) or "").strip().casefold()
             if email and email in hay_raw.casefold():
-                score = max(score, 220 + len(email))
+                score = max(score, 320 + len(email))
         phone = _digits(client.get("telefono"))
         if len(phone) >= 7 and phone in hay_digits:
-            score = max(score, 180 + len(phone))
+            score = max(score, 280 + len(phone))
         if score > best_score:
             best, best_score, tied = client, score, False
         elif score and score == best_score:
             tied = True
-    if not best or best_score < 104 or tied:
+
+    if not best or best_score < 130 or tied:
         return None, None
     client_id = str(best.get("id") or "") or None
-    return client_id, (await _best_site(db, client_id, event.get("location")) if client_id else None)
+    return client_id, (await _best_site(db, client_id, event.get("location"), sites) if client_id else None)
 
 
-async def _resource_assignment(db, event: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+async def _resource_assignment(
+    db,
+    event: Dict[str, Any],
+    resources_cache: Optional[List[Dict[str, Any]]] = None,
+) -> tuple[Optional[str], Optional[str]]:
     resource_ids = event.get("resource_ids") or []
     rid = str(resource_ids[0] or "") if resource_ids else ""
     if not rid:
         return None, None
-    resource = await db.calendar_resources.find_one({"id": rid})
+    if resources_cache is None:
+        resource = await db.calendar_resources.find_one({"id": rid})
+    else:
+        resource = next((r for r in resources_cache if str(r.get("id") or "") == rid), None)
     if not resource:
         return None, None
     return (str(resource.get("linked_user_id") or "") or None, str(resource.get("name") or "") or None)
 
 
-async def sync_calendar_event_to_installation(db, event: Dict[str, Any], actor: str = "calendar-sync") -> Dict[str, Any]:
+async def sync_calendar_event_to_installation(
+    db,
+    event: Dict[str, Any],
+    actor: str = "calendar-sync",
+    clients_cache: Optional[List[Dict[str, Any]]] = None,
+    sites_cache: Optional[List[Dict[str, Any]]] = None,
+    resources_cache: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     category = _norm(event.get("category"))
     title_norm = _norm(event.get("title"))
     if category != "installazione" and "installaz" not in title_norm:
@@ -146,8 +220,8 @@ async def sync_calendar_event_to_installation(db, event: Dict[str, Any], actor: 
     except Exception:
         end = start + timedelta(hours=1)
     duration = max(15, int((end - start).total_seconds() // 60))
-    client_id, site_id = await _match_client_and_site(db, event)
-    tech_user_id, tech_name = await _resource_assignment(db, event)
+    client_id, site_id = await _match_client_and_site(db, event, clients_cache, sites_cache)
+    tech_user_id, tech_name = await _resource_assignment(db, event, resources_cache)
 
     existing = await db.crm_installazioni.find_one({"calendar_event_id": event_id})
     linked_existing = False
@@ -238,15 +312,31 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
     ]}
     query: Dict[str, Any] = category_match
     if not force:
+        # Ritenta anche gli eventi ancora senza cliente: quando l'anagrafica viene
+        # importata/aggiornata il collegamento si completa senza interventi manuali.
         query = {"$and": [category_match, {"$or": [
             {"calendar_installation_synced_at": {"$exists": False}},
             {"$expr": {"$ne": ["$updated_at", "$calendar_installation_synced_source_updated_at"]}},
+            {"cliente_id": {"$exists": False}},
+            {"cliente_id": None},
+            {"cliente_id": ""},
         ]}]}
     rows = await db.calendar_events.find(query).sort("start", 1).to_list(length=50000)
-    stats = {"checked": len(rows), "created": 0, "updated": 0, "linked": 0, "clients_linked": 0, "clients_to_link": 0, "errors": []}
+    clients = await db.crm_clienti.find({"archived": {"$ne": True}}).to_list(length=20000)
+    sites = await db.crm_sedi.find({}).to_list(length=20000)
+    resources = await db.calendar_resources.find({"active": {"$ne": False}}).to_list(length=2000)
+    stats = {
+        "checked": len(rows), "created": 0, "updated": 0, "linked": 0,
+        "clients_linked": 0, "clients_to_link": 0,
+        "clients_available": len(clients), "sites_available": len(sites),
+        "errors": [],
+    }
     for event in rows:
         try:
-            result = await sync_calendar_event_to_installation(db, dict(event), actor=actor)
+            result = await sync_calendar_event_to_installation(
+                db, dict(event), actor=actor,
+                clients_cache=clients, sites_cache=sites, resources_cache=resources,
+            )
             action = result.get("action")
             if action in stats: stats[action] += 1
             if result.get("client_linked"): stats["clients_linked"] += 1
