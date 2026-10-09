@@ -1,0 +1,83 @@
+/* R52 — final route-specific redesign coverage */
+
+/* ===== Anomalie ===== */
+.r52-anomalies-workspace,.r52-insights-workspace,.r52-inventory-workspace,.r52-transfers-workspace{display:flex;flex-direction:column;gap:18px}
+.r52-anomalies-filterbar,.r52-inventory-filterbar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--r52-border);background:#fbfcfd}
+.r52-anomaly-summary{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 11px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid}
+.r52-anomaly-summary.has-items{color:#9a6200;background:#fff8e2;border-color:#efdca0}.r52-anomaly-summary.is-clear{color:#14714e;background:#effaf5;border-color:#c4ead9}
+
+/* ===== Fatturato / Wallbox ===== */
+.r52-insight-metrics-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.r52-insight-metric{display:flex;align-items:center;gap:12px;border:1px solid var(--r52-border);border-radius:15px;background:#fff;padding:14px;box-shadow:var(--r52-shadow)}
+.r52-insight-metric-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#edf4f8;color:#1f5b84;flex:0 0 auto}
+.r52-insight-metric-label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:#7890a4}
+.r52-insight-metric-value{font-family:'Manrope',system-ui,sans-serif;font-size:22px;line-height:1.15;font-weight:900;color:#183b58;letter-spacing:-.035em;margin-top:2px}
+.r52-insight-metric-sub{font-size:10px;color:#8b99a7;margin-top:2px}
+.r52-chart-panel{padding:0!important}.r52-chart-body{height:360px;padding:14px 10px 10px}.r52-chart-body.smaller{height:300px}
+
+/* ===== Inventario ===== */
+.r52-inventory-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
+.r52-mini-stat{display:flex;align-items:center;gap:9px;min-height:62px;border:1px solid var(--r52-border);border-radius:13px;background:#fff;padding:10px 12px;color:#2e5879;box-shadow:var(--r52-shadow)}
+.r52-mini-stat>div{display:flex;flex-direction:column;min-width:0}.r52-mini-stat b{font-size:18px;line-height:1;font-family:'Manrope',system-ui,sans-serif;color:#1c3d57}.r52-mini-stat span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#7f8f9e;margin-top:4px;font-weight:750}
+.r52-mini-stat.is-ok{color:#17835c}.r52-mini-stat.is-warning{color:#a56d00}.r52-mini-stat.is-danger{color:#c6404e}
+.r52-inventory-mobile-list{padding:10px}.r52-inventory-mobile-card{border:1px solid var(--r52-border);border-radius:13px;background:#fff;padding:13px;margin-bottom:9px;box-shadow:0 5px 18px -17px rgba(17,48,73,.7)}
+.r52-inventory-product-icon,.r52-table-product-icon{display:grid;place-items:center;border-radius:9px;background:#eef4f8;color:#255e87}.r52-inventory-product-icon{width:34px;height:34px}.r52-table-product-icon{width:27px;height:27px}
+.r52-mobile-label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:750;color:#8a98a7;margin-bottom:2px}
+
+/* ===== Trasferimenti ===== */
+.r52-transfer-count{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#eef4f8;color:#365b77;padding:7px 10px;font-size:11px;font-weight:800}
+.r52-transfer-form{padding:0!important}.r52-transfer-form>.r52-panel-heading{margin:0!important;padding:15px 16px!important}
+.r52-transfer-form>div:not(.r52-panel-heading),.r52-transfer-submit{margin-left:16px;margin-right:16px}.r52-transfer-route{display:grid;grid-template-columns:minmax(0,1fr) 52px minmax(0,1fr);gap:12px;align-items:end;margin-top:16px}
+.r52-transfer-swap{height:48px!important;width:48px!important;border-radius:50%!important;padding:0!important;justify-self:center;margin-bottom:0}
+.r52-transfer-product-block{margin-top:16px;padding:14px;border:1px solid #e0e8ee;border-radius:12px;background:#f9fbfc}
+.r52-selected-product{display:flex;align-items:center;gap:9px;margin-top:9px;padding:9px 10px;border-radius:9px;background:#edf4f8;color:#315671}.r52-selected-product>div{display:flex;flex-direction:column}.r52-selected-product b{font-size:12px;color:#24435a}.r52-selected-product span{font-size:10px;color:#738697;margin-top:1px}
+.r52-transfer-fields{display:grid;grid-template-columns:minmax(0,.65fr) minmax(0,1.35fr);gap:14px;margin-top:14px}.r52-transfer-submit{display:flex;justify-content:flex-end;padding:0 0 16px;margin-top:14px}
+.r52-transfer-history-row{display:grid;grid-template-columns:minmax(220px,1.2fr) minmax(260px,1fr) minmax(120px,.5fr);gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid #edf1f4}.r52-transfer-history-row:last-child{border-bottom:0}.r52-transfer-history-row:hover{background:#f7fafc}
+.r52-transfer-history-product{display:flex;align-items:center;gap:9px;color:#37607d}.r52-transfer-history-product>div{display:flex;flex-direction:column}.r52-transfer-history-product b{font-size:12px;color:#2a4052}.r52-transfer-history-product span{font-size:10px;color:#82909c;margin-top:2px}.r52-transfer-direction{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;font-weight:750;color:#4b6073}.r52-transfer-operator{text-align:right;font-size:11px;color:#708192}.r52-transfer-detail{grid-column:1/-1;font-size:10px;color:#6f7f8f;padding-left:26px}
+
+/* ===== Registry pages: Sopralluoghi / Assistenza and any shared registers ===== */
+.r52-route-sopralluoghi [data-testid="sopralluoghi-page"],
+.r52-route-assistenza [data-testid="assistenza-page"]{max-width:none!important;margin:0!important;padding:0!important}
+.r52-route-sopralluoghi [data-testid="sopralluoghi-page"]>div:first-child,
+.r52-route-assistenza [data-testid="assistenza-page"]>div:first-child{min-height:52px;padding:9px 12px;margin:0 0 12px!important;border:1px solid var(--r52-border);border-radius:13px;background:#fff;display:flex;align-items:center;justify-content:flex-end;box-shadow:var(--r52-shadow)}
+.r52-route-sopralluoghi [data-testid="sopralluoghi-page"]>div:first-child>div:first-child,
+.r52-route-assistenza [data-testid="assistenza-page"]>div:first-child>div:first-child{display:none}
+.r52-route-sopralluoghi [data-testid="sopralluoghi-page"]>div[class*="bg-white"],
+.r52-route-assistenza [data-testid="assistenza-page"]>div[class*="bg-white"]{border-radius:15px!important;overflow:hidden;border-color:var(--r52-border)!important;box-shadow:var(--r52-shadow)}
+.r52-route-sopralluoghi [data-testid="sopralluoghi-page"]>div[class*="bg-white"]>div:first-child,
+.r52-route-assistenza [data-testid="assistenza-page"]>div[class*="bg-white"]>div:first-child{background:#fbfcfd;border-bottom-color:var(--r52-border)!important}
+
+/* ===== Clienti / Ordini: rimuove il secondo hero legacy mantenendo l'azione ===== */
+.r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"]{max-width:none!important;margin:0!important;padding:0!important}
+.r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"]>div:first-child{min-height:48px;display:flex;justify-content:flex-end;align-items:center;margin:0!important}
+.r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"]>div:first-child>div:first-child{display:none}
+.r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"]>div:nth-child(2)>div{border-radius:14px!important;border-color:var(--r52-border)!important;box-shadow:var(--r52-shadow)!important}
+.r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"]>div:nth-child(3){border-radius:14px!important;border-color:var(--r52-border)!important;background:#fff!important;box-shadow:var(--r52-shadow)!important}
+
+/* ===== Large operational pages ===== */
+.r52-route-commesse .et-card,.r52-route-spedizioni .et-card,.r52-route-arrivi .et-card,.r52-route-movimenti .et-card{border-radius:14px!important;border-color:var(--r52-border)!important;box-shadow:var(--r52-shadow)!important}
+.r52-route-commesse .et-card>div[class*="border-b"],.r52-route-spedizioni .et-card>div[class*="border-b"]{background:#fbfcfd;border-color:#e7edf2!important}
+.r52-route-preventivi [class*="rounded-2xl"],.r52-route-report [class*="rounded-2xl"],.r52-route-admin [class*="rounded-2xl"],.r52-route-admin-utenti [class*="rounded-2xl"],.r52-route-admin-moduli [class*="rounded-2xl"],.r52-route-admin-migrazione-notion [class*="rounded-2xl"]{border-radius:15px!important}
+
+/* ===== Calendar R51 sits inside R52 shell ===== */
+.r52-route-calendario>div{max-width:none!important;margin:0!important;padding-top:0!important}
+.r52-route-calendario .r51-calendar-shell,.r52-route-calendario [class*="r51-"]{box-shadow:none}
+
+/* ===== Auth ===== */
+.r52-auth-page{min-height:100vh;display:grid;grid-template-columns:minmax(360px,.9fr) minmax(420px,1.1fr);background:#f3f6f9}
+.r52-auth-brand-panel{position:relative;overflow:hidden;display:flex;align-items:center;padding:clamp(34px,6vw,78px);color:#fff;background:linear-gradient(145deg,#0c2236,#174d74 72%,#1f628f)}
+.r52-auth-brand-panel::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 78% 22%,rgba(245,197,66,.16),transparent 18rem),radial-gradient(circle at 15% 82%,rgba(255,255,255,.05),transparent 20rem)}
+.r52-auth-brand-content{position:relative;z-index:1;max-width:520px}.r52-auth-logo{width:58px;height:58px;display:grid;place-items:center;border-radius:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);margin-bottom:28px}.r52-auth-eyebrow{font-size:10px;letter-spacing:.19em;text-transform:uppercase;color:#f4d46b;font-weight:850}.r52-auth-brand-content h1{font-family:'Manrope',system-ui,sans-serif;font-size:clamp(31px,4vw,49px);line-height:1.02;letter-spacing:-.045em;margin:12px 0 16px;font-weight:900}.r52-auth-brand-content p{max-width:480px;color:#cad8e4;line-height:1.6;font-size:14px}
+.r52-auth-form-panel{display:flex;align-items:center;justify-content:center;padding:28px}.r52-auth-card{width:min(100%,440px);border:1px solid #d8e2ea;border-radius:20px;background:#fff;padding:28px;box-shadow:0 24px 55px -38px rgba(12,34,54,.55)}.r52-auth-card-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:13px;background:#edf4f8;color:#1c5d8b;margin-bottom:17px}.r52-auth-card-kicker{font-size:9px;text-transform:uppercase;letter-spacing:.16em;color:#7890a4;font-weight:850}.r52-auth-card h2{font-family:'Manrope',system-ui,sans-serif;font-size:27px;letter-spacing:-.035em;color:#173a56;margin:5px 0 8px;font-weight:900}.r52-auth-card-copy{font-size:12px;line-height:1.55;color:#718294;margin-bottom:20px}.r52-auth-form{display:flex;flex-direction:column;gap:14px}.r52-auth-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#728292}.r52-auth-back{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:#687b8d;font-weight:650}.r52-auth-success{display:flex;align-items:flex-start;gap:10px;border:1px solid #c5e7d7;background:#f0faf5;color:#17714f;border-radius:12px;padding:13px}.r52-auth-success>div{display:flex;flex-direction:column}.r52-auth-success b{font-size:12px}.r52-auth-success span{font-size:10px;color:#5c8974;margin-top:2px}
+
+/* ===== Login / force change legacy markup alignment ===== */
+[data-testid="force-change-password-page"]{background:linear-gradient(145deg,#0b2135,#153e5d 72%,#1c567e)!important}
+[data-testid="force-change-password-page"]>div.relative{border-radius:20px!important;border-color:rgba(255,255,255,.12)!important;box-shadow:0 28px 70px -40px #000!important}
+
+/* ===== Admin / custom / AI content density ===== */
+.r52-route-admin,.r52-route-admin-utenti,.r52-route-admin-moduli,.r52-route-admin-migrazione-notion,.r52-route-assistente-ai,.r52-route-custom{--r52-route-accent:#315c7b}
+.r52-route-admin [class*="bg-white"][class*="border"],.r52-route-admin-utenti [class*="bg-white"][class*="border"],.r52-route-admin-moduli [class*="bg-white"][class*="border"],.r52-route-admin-migrazione-notion [class*="bg-white"][class*="border"],.r52-route-custom [class*="bg-white"][class*="border"]{border-color:#d9e4eb!important;box-shadow:0 9px 25px -23px rgba(17,48,73,.55)!important}
+.r52-route-assistente-ai [class*="bg-white"][class*="border"]{border-color:#d9e4eb!important}
+
+@media(max-width:1100px){.r52-inventory-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.r52-insight-metrics-grid{grid-template-columns:1fr 1fr}.r52-transfer-history-row{grid-template-columns:1fr 1fr}.r52-transfer-operator{text-align:left}.r52-transfer-detail{grid-column:1/-1}.r52-auth-page{grid-template-columns:1fr}.r52-auth-brand-panel{display:none}}
+@media(max-width:720px){.r52-inventory-stats{grid-template-columns:1fr 1fr}.r52-insight-metrics-grid{grid-template-columns:1fr}.r52-transfer-route{grid-template-columns:1fr}.r52-transfer-swap{transform:rotate(90deg);margin:0 auto}.r52-transfer-fields{grid-template-columns:1fr}.r52-transfer-history-row{grid-template-columns:1fr}.r52-transfer-direction{justify-content:flex-start}.r52-auth-form-panel{padding:18px}.r52-auth-card{padding:22px}}
