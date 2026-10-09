@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && node scripts/apply-r61-v2.js && node scripts/audit-r61.js && node scripts/apply-r62.js && node scripts/audit-r62.js && craco start",
-    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && node scripts/apply-r61-v2.js && node scripts/audit-r61.js && node scripts/apply-r62.js && node scripts/audit-r62.js && craco build",
+    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && node scripts/apply-r61-v2.js && node scripts/audit-r61.js && node scripts/apply-r62.js && node scripts/audit-r62.js && node scripts/apply-r63.js && node scripts/audit-r63.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles-v2.js && node scripts/apply-r59.js && node scripts/audit-r59-flows.js && node scripts/apply-r61-v2.js && node scripts/audit-r61.js && node scripts/apply-r62.js && node scripts/audit-r62.js && node scripts/apply-r63.js && node scripts/audit-r63.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
