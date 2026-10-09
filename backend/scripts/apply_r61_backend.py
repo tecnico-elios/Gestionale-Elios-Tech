@@ -86,7 +86,7 @@ patch(calendar, [
         "validate role on person create",
     ),
     (
-        '        data = body.model_dump(); data.pop("id", None); data.pop("source_google_name", None); data["updated_at"] = _now(); result = await db.calendar_resources.update_one({"id": resource_id}, {"$set": data})',
+        '        data = body.model_dump(); data.pop("id", None); data.pop("source_google_name", None)\n        if "role" in data: data["role"] = _normalize_resource_role(data.get("role"))\n        data["updated_at"] = _now(); result = await db.calendar_resources.update_one({"id": resource_id}, {"$set": data})',
         '        data = body.model_dump(); data.pop("id", None); data.pop("source_google_name", None)\n        if "role" in data:\n            data["role"] = await validated_calendar_role(data.get("role"))\n        data["updated_at"] = _now(); result = await db.calendar_resources.update_one({"id": resource_id}, {"$set": data})',
         "validate role on person update",
     ),
