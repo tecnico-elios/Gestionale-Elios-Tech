@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SRC = path.join(ROOT, 'src');
 
 function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function write(rel, text) { fs.writeFileSync(path.join(ROOT, rel), text, 'utf8'); }
