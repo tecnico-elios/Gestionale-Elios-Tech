@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { API } from "../lib/apiBase";
 import { toast } from "sonner";
@@ -7,182 +7,290 @@ import { useAuth } from "../lib/AuthContext";
 import {
   CaretLeft, CaretRight, Plus, MapPin, Wrench, ClipboardText,
   Headset, UsersThree, Gear, Trash, PencilSimple, ArrowSquareOut,
-  SlidersHorizontal, MagnifyingGlass, FloppyDisk,
+  SlidersHorizontal, MagnifyingGlass, UploadSimple, CalendarBlank,
+  Clock, CheckCircle, WarningCircle, ArrowClockwise, X,
 } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import InstallationWeather from "../components/InstallationWeather";
+import { appConfirm } from "../lib/appConfirm";
 
 const pad = (n) => String(n).padStart(2, "0");
 const localIso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+const inputIso = (d) => localIso(d).slice(0, 16);
 const dateKey = (value) => String(value || "").slice(0, 10);
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => { const out = new Date(d); out.setDate(out.getDate() + n); return out; };
+const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+const startOfWeek = (d) => { const x = startOfDay(d); return addDays(x, -((x.getDay() + 6) % 7)); };
+const startOfMonthGrid = (d) => startOfWeek(new Date(d.getFullYear(), d.getMonth(), 1));
+const sameDay = (a, b) => dateKey(a) === dateKey(b);
 const parseLocal = (value) => { const d = new Date(value); return Number.isNaN(d.getTime()) ? new Date() : d; };
 const timeKey = (value) => { const d = parseLocal(value); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-const startOfWeek = (d) => { const x = startOfDay(d); return addDays(x, -((x.getDay() + 6) % 7)); };
-const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
-const startOfMonthGrid = (d) => startOfWeek(new Date(d.getFullYear(), d.getMonth(), 1));
-const fmtDay = (d) => d.toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" });
+const fmtDate = (d) => d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
+const fmtDayLong = (d) => d.toLocaleDateString("it-IT", { weekday: "long" });
 const fmtMonth = (d) => d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
-const sameDay = (a, b) => dateKey(a) === dateKey(b);
 const normalizeCategory = (value) => String(value || "Attività").toLowerCase() === "commerciale" ? "Attività" : (value || "Attività");
-const hexToRgba = (hex, alpha = 0.13) => {
-  const h = String(hex || "#64748b").replace("#", "");
-  if (h.length !== 6) return `rgba(100,116,139,${alpha})`;
-  const n = parseInt(h, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+const CATEGORY_COLORS = {
+  Installazione: "#2563eb",
+  Sopralluogo: "#7c3aed",
+  Assistenza: "#dc2626",
+  Riunione: "#0f766e",
+  Formazione: "#0369a1",
+  Attività: "#475569",
+  Altro: "#64748b",
 };
-const iconFor = (cat) => cat === "Installazione" ? Wrench : cat === "Sopralluogo" ? ClipboardText : cat === "Assistenza" ? Headset : UsersThree;
-
-const defaultCalendarLists = {
+const defaultLists = {
   calendar_categories: ["Installazione", "Sopralluogo", "Assistenza", "Riunione", "Formazione", "Attività", "Altro"],
   calendar_statuses: ["Da confermare", "Confermato", "In corso", "Completato", "Annullato"],
   calendar_priorities: ["Bassa", "Normale", "Alta", "Urgente"],
 };
 
-function EventCard({ event, onOpen, onDragStart, compact = false }) {
+function eventColor(event) {
+  return event.resource_color || CATEGORY_COLORS[normalizeCategory(event.category)] || "#64748b";
+}
+
+function iconFor(category) {
+  const value = normalizeCategory(category);
+  if (value === "Installazione") return Wrench;
+  if (value === "Sopralluogo") return ClipboardText;
+  if (value === "Assistenza") return Headset;
+  return CalendarBlank;
+}
+
+function displayStatus(value) {
+  return String(value || "").trim() || "—";
+}
+
+function EventCard({ event, onOpen, onDragStart, compact = false, canDrag = false }) {
   const Icon = iconFor(event.category);
-  const color = event.resource_color || "#64748b";
+  const color = eventColor(event);
+  const start = event.all_day ? "Tutto il giorno" : timeKey(event.start);
+  const end = event.all_day || !event.end ? "" : timeKey(event.end);
   return (
     <button
       type="button"
-      draggable={!event.recurrence_instance}
+      draggable={canDrag && !event.recurrence_instance}
       onDragStart={(e) => onDragStart?.(e, event)}
       onClick={() => onOpen(event)}
-      className={`w-full text-left rounded-md border px-2 py-1.5 hover:shadow-sm overflow-hidden ${compact ? "text-[11px]" : "text-xs"}`}
-      style={{ borderLeft: `4px solid ${color}`, backgroundColor: hexToRgba(color, 0.10) }}
+      className="r51-event-card"
+      style={{ borderLeftColor: color }}
       title={`${event.title}${event.resource_name ? ` · ${event.resource_name}` : ""}`}
     >
-      <div className="flex items-center gap-1 font-bold text-slate-900 min-w-0"><Icon size={13} /><span className="truncate">{event.title}</span></div>
-      {!event.all_day && <div className="text-slate-600 mt-0.5">{timeKey(event.start)}{event.resource_name ? ` · ${event.resource_name}` : ""}</div>}
+      <div className="r51-event-time">
+        <span className="inline-flex items-center gap-1"><Clock size={11} /> {start}{end && end !== start ? `–${end}` : ""}</span>
+        {event.priority === "Urgente" && <WarningCircle size={13} className="text-red-600" weight="fill" />}
+      </div>
+      <div className="r51-event-title flex items-start gap-1.5"><Icon size={13} className="shrink-0 mt-0.5" /><span>{event.title}</span></div>
+      {!compact && (event.resource_name || event.location) && <div className="r51-event-meta">
+        {event.resource_name && <div className="truncate">{event.resource_name}</div>}
+        {event.location && <div className="truncate flex items-center gap-1"><MapPin size={10} />{event.location}</div>}
+      </div>}
+      <span className="r51-event-category">{normalizeCategory(event.category)}</span>
     </button>
   );
+}
+
+function WeekView({ days, byDay, onOpen, onNew, onDrop, onDragStart, canCreate, canEdit }) {
+  const today = new Date();
+  return <div className="r51-calendar-week-wrap">
+    <div className="r51-calendar-week">
+      {days.map((day) => {
+        const items = byDay[dateKey(day)] || [];
+        return <section
+          key={dateKey(day)}
+          className={`r51-calendar-day ${sameDay(day, today) ? "is-today" : ""}`}
+          onDragOver={(e) => canEdit && e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); onDrop(day); }}
+        >
+          <div className="r51-calendar-day-head">
+            <div>
+              <div className="r51-calendar-day-name">{fmtDayLong(day)}</div>
+              <div className="r51-calendar-day-date">{day.getDate()} <span className="text-sm font-semibold text-slate-400">{day.toLocaleDateString("it-IT", { month: "short" })}</span></div>
+            </div>
+            <span className="r51-calendar-count">{items.length}</span>
+          </div>
+          <div className="r51-calendar-day-body">
+            {items.map((event) => <EventCard key={event.key || `${event.id}-${event.start}`} event={event} onOpen={onOpen} onDragStart={onDragStart} canDrag={canEdit} />)}
+            {!items.length && <div className="py-5 px-2 text-center text-[11px] text-slate-400">Nessuna attività</div>}
+            {canCreate && <button type="button" className="r51-calendar-add-slot" onClick={() => onNew(day)}><Plus size={13} /> Aggiungi</button>}
+          </div>
+        </section>;
+      })}
+    </div>
+  </div>;
+}
+
+function MonthView({ days, byDay, month, onOpen, onNew, canCreate }) {
+  const today = new Date();
+  return <div className="overflow-x-auto pb-2">
+    <div className="r51-calendar-month">
+      {days.map((day) => {
+        const items = byDay[dateKey(day)] || [];
+        const outside = day.getMonth() !== month.getMonth();
+        return <section key={dateKey(day)} className={`r51-calendar-month-cell ${sameDay(day, today) ? "is-today" : ""} ${outside ? "opacity-45" : ""}`}>
+          <div className="flex items-center justify-between mb-2">
+            <div><span className="text-[10px] uppercase font-bold text-slate-400">{day.toLocaleDateString("it-IT", { weekday: "short" })}</span><span className="ml-1.5 font-black text-slate-800">{day.getDate()}</span></div>
+            {canCreate && <button type="button" className="h-7 w-7 inline-flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500" onClick={() => onNew(day)} aria-label="Aggiungi evento"><Plus size={13} /></button>}
+          </div>
+          <div className="space-y-1.5">{items.slice(0, 4).map((event) => <EventCard key={event.key || `${event.id}-${event.start}`} event={event} onOpen={onOpen} compact />)}{items.length > 4 && <div className="text-[10px] text-slate-500 font-semibold pl-1">+ {items.length - 4} altri</div>}</div>
+        </section>;
+      })}
+    </div>
+  </div>;
+}
+
+function DayView({ day, events, onOpen, onNew, canCreate, canEdit, onDragStart, onDrop }) {
+  return <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5" onDragOver={(e) => canEdit && e.preventDefault()} onDrop={(e) => { e.preventDefault(); onDrop(day); }}>
+    <div className="flex items-center justify-between gap-3 mb-4">
+      <div><div className="r51-kicker">Agenda del giorno</div><h2 className="r51-section-title text-xl mt-1 capitalize">{day.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}</h2></div>
+      {canCreate && <Button onClick={() => onNew(day)}><Plus size={16} /> Nuovo evento</Button>}
+    </div>
+    <div className="r51-calendar-day-agenda">{events.map((event) => <EventCard key={event.key || `${event.id}-${event.start}`} event={event} onOpen={onOpen} onDragStart={onDragStart} canDrag={canEdit} />)}{!events.length && <div className="r51-empty">Nessuna attività prevista per questo giorno.</div>}</div>
+  </section>;
 }
 
 export default function CalendarPage() {
   const { isAdmin, hasPermission } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [view, setView] = useState("week");
   const [cursor, setCursor] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedResources, setSelectedResources] = useState(null);
+  const [selectedResources, setSelectedResources] = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [detail, setDetail] = useState(null);
   const [editor, setEditor] = useState(null);
   const [resourceDlg, setResourceDlg] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [openHours, setOpenHours] = useState(() => new Set());
+  const [migrationOpen, setMigrationOpen] = useState(false);
   const [dragging, setDragging] = useState(null);
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [configLists, setConfigLists] = useState(defaultCalendarLists);
+  const [configLists, setConfigLists] = useState(defaultLists);
   const [search, setSearch] = useState("");
+  const [migration, setMigration] = useState({ imports_enabled: true, completed: false, ready_to_finalize: false, finalized: false });
+  const [importing, setImporting] = useState(false);
+  const [newResource, setNewResource] = useState({ name: "", color: "#2d6ea3" });
 
   const canCreate = hasPermission("calendar", "create") || isAdmin;
   const canEdit = hasPermission("calendar", "edit") || isAdmin;
 
   const range = useMemo(() => {
-    if (view === "day") { const s = startOfDay(cursor); return [s, addDays(s, 1)]; }
-    if (view === "week") { const s = startOfWeek(cursor); return [s, addDays(s, 7)]; }
-    const s = startOfMonthGrid(cursor);
-    return [s, addDays(s, 42)];
+    if (view === "day") { const start = startOfDay(cursor); return [start, addDays(start, 1)]; }
+    if (view === "week") { const start = startOfWeek(cursor); return [start, addDays(start, 7)]; }
+    const start = startOfMonthGrid(cursor);
+    return [start, addDays(start, 42)];
   }, [cursor, view]);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data } = await axios.get(`${API}/calendar/events`, { params: { start: localIso(range[0]), end: localIso(range[1]) } });
-      setEvents((data.items || []).map((e) => ({ ...e, category: normalizeCategory(e.category) })));
+      setEvents((data.items || []).map((event) => ({ ...event, category: normalizeCategory(event.category) })));
       setResources(data.resources || []);
-    } catch (e) {
-      toast.error("Calendario non disponibile", { description: e?.response?.data?.detail || e?.message });
-    } finally { setLoading(false); }
-  };
+    } catch (error) {
+      toast.error("Calendario non disponibile", { description: error?.response?.data?.detail || error?.message });
+    } finally { if (!silent) setLoading(false); }
+  }, [range]);
 
-  useEffect(() => { load(); }, [range[0].getTime(), range[1].getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const loadLookups = () => Promise.allSettled([
+  const loadLookups = useCallback(async () => {
+    const [c, s, j, l, m] = await Promise.allSettled([
       axios.get(`${API}/crm/clienti`),
       axios.get(`${API}/crm/sedi`),
       axios.get(`${API}/commesse`),
       axios.get(`${API}/custom/config/lists`),
-    ]).then(([c, s, j, l]) => {
-      if (c.status === "fulfilled") setClients(c.value.data?.items || []);
-      if (s.status === "fulfilled") setSites(s.value.data?.items || []);
-      if (j.status === "fulfilled") setJobs(j.value.data?.items || []);
-      if (l.status === "fulfilled") {
-        const values = l.value.data?.values || {};
-        const cats = (values.calendar_categories || defaultCalendarLists.calendar_categories).filter((x) => String(x).toLowerCase() !== "commerciale");
-        setConfigLists((p) => ({ ...p, ...values, calendar_categories: cats }));
-      }
-    });
-    loadLookups();
-    const fn = () => loadLookups();
-    window.addEventListener("elios:config-lists-changed", fn);
-    return () => window.removeEventListener("elios:config-lists-changed", fn);
+      axios.get(`${API}/calendar/integration-state`),
+    ]);
+    if (c.status === "fulfilled") setClients(c.value.data?.items || []);
+    if (s.status === "fulfilled") setSites(s.value.data?.items || []);
+    if (j.status === "fulfilled") setJobs(j.value.data?.items || []);
+    if (l.status === "fulfilled") {
+      const values = l.value.data?.values || {};
+      const categories = (values.calendar_categories || defaultLists.calendar_categories).filter((x) => String(x).toLowerCase() !== "commerciale");
+      setConfigLists((prev) => ({ ...prev, ...values, calendar_categories: categories }));
+    }
+    if (m.status === "fulfilled") setMigration((prev) => ({ ...prev, ...(m.value.data || {}) }));
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadLookups();
+    const onConfig = () => loadLookups();
+    window.addEventListener("elios:config-lists-changed", onConfig);
+    return () => window.removeEventListener("elios:config-lists-changed", onConfig);
+  }, [loadLookups]);
+
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return events.filter((e) => {
-      if (Array.isArray(selectedResources) && !(e.resource_ids || []).some((id) => selectedResources.includes(id))) return false;
-      if (selectedCategories.length && !selectedCategories.includes(e.category)) return false;
-      if (q && !`${e.title || ""} ${e.description || ""} ${e.location || ""} ${e.resource_name || ""}`.toLowerCase().includes(q)) return false;
+    const query = search.trim().toLowerCase();
+    return events.filter((event) => {
+      if (selectedResources.length && !(event.resource_ids || []).some((id) => selectedResources.includes(id))) return false;
+      if (selectedCategories.length && !selectedCategories.includes(normalizeCategory(event.category))) return false;
+      if (query && !`${event.title || ""} ${event.description || ""} ${event.location || ""} ${event.resource_name || ""}`.toLowerCase().includes(query)) return false;
       return true;
     });
   }, [events, selectedResources, selectedCategories, search]);
 
   const byDay = useMemo(() => {
-    const m = {};
-    for (const e of visible) {
-      const k = dateKey(e.start);
-      (m[k] || (m[k] = [])).push(e);
-    }
-    for (const k of Object.keys(m)) m[k].sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    return m;
+    const map = {};
+    visible.forEach((event) => {
+      const key = dateKey(event.start);
+      if (!map[key]) map[key] = [];
+      map[key].push(event);
+    });
+    Object.values(map).forEach((items) => items.sort((a, b) => String(a.start).localeCompare(String(b.start))));
+    return map;
   }, [visible]);
 
-  const goToday = () => setCursor(new Date());
-  const shift = (dir) => setCursor((c) => view === "month" ? addMonths(c, dir) : addDays(c, dir * (view === "week" ? 7 : 1)));
-  const heading = view === "month" ? fmtMonth(cursor) : view === "week" ? `${fmtDay(range[0])} – ${fmtDay(addDays(range[1], -1))}` : cursor.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const days = useMemo(() => view === "month"
+    ? Array.from({ length: 42 }, (_, index) => addDays(range[0], index))
+    : view === "week"
+      ? Array.from({ length: 7 }, (_, index) => addDays(range[0], index))
+      : [range[0]], [view, range]);
+
+  const stats = useMemo(() => ({
+    total: visible.length,
+    installazioni: visible.filter((event) => normalizeCategory(event.category) === "Installazione").length,
+    assistenze: visible.filter((event) => normalizeCategory(event.category) === "Assistenza").length,
+    pending: visible.filter((event) => ["da confermare", "programmata", "aperta", "in attesa"].includes(String(event.status || "").toLowerCase())).length,
+  }), [visible]);
+
+  const heading = view === "month"
+    ? fmtMonth(cursor)
+    : view === "week"
+      ? `${fmtDate(range[0])} – ${fmtDate(addDays(range[1], -1))} ${addDays(range[1], -1).getFullYear()}`
+      : cursor.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  const shift = (direction) => setCursor((current) => view === "month" ? addMonths(current, direction) : addDays(current, direction * (view === "week" ? 7 : 1)));
 
   const newEvent = (date = new Date()) => {
-    const s = new Date(date);
-    if (s.getHours() === 0) s.setHours(9, 0, 0, 0);
-    const e = new Date(s); e.setHours(s.getHours() + 1);
-    const categories = configLists.calendar_categories || defaultCalendarLists.calendar_categories;
-    const statuses = configLists.calendar_statuses || defaultCalendarLists.calendar_statuses;
-    const priorities = configLists.calendar_priorities || defaultCalendarLists.calendar_priorities;
+    const start = new Date(date);
+    if (start.getHours() === 0) start.setHours(9, 0, 0, 0);
+    const end = new Date(start); end.setHours(start.getHours() + 1);
     setEditor({
-      key: null,
-      title: "",
-      start: localIso(s),
-      end: localIso(e),
-      category: categories[0] || "Attività",
-      resource_ids: [],
-      description: "",
-      location: "",
-      all_day: false,
-      status: statuses[0] || "Da confermare",
-      priority: priorities[1] || priorities[0] || "Normale",
-      cliente_id: "",
-      sede_id: "",
-      commessa_id: "",
-      meeting_link: "",
-      reminder_minutes: 30,
-      rrule: "",
+      key: null, title: "", start: inputIso(start), end: inputIso(end),
+      category: configLists.calendar_categories?.[0] || "Attività",
+      resource_ids: [], description: "", location: "", all_day: false,
+      status: configLists.calendar_statuses?.[0] || "Da confermare",
+      priority: configLists.calendar_priorities?.[1] || "Normale",
+      cliente_id: "", sede_id: "", commessa_id: "", meeting_link: "",
+      reminder_minutes: 30, rrule: "",
     });
   };
 
-  const editEvent = (e) => setEditor({ ...e, category: normalizeCategory(e.category), start: String(e.start).slice(0, 16), end: String(e.end || e.start).slice(0, 16), resource_ids: e.resource_ids || [] });
+  const editEvent = (event) => setEditor({
+    ...event,
+    category: normalizeCategory(event.category),
+    start: String(event.start || "").slice(0, 16),
+    end: String(event.end || event.start || "").slice(0, 16),
+    resource_ids: event.resource_ids || [],
+  });
 
   const saveEvent = async () => {
     if (!editor?.title?.trim()) return toast.error("Inserisci il titolo");
@@ -190,156 +298,251 @@ export default function CalendarPage() {
     if (editor.end && new Date(editor.end) < new Date(editor.start)) return toast.error("La fine non può precedere l'inizio");
     try {
       const payload = { ...editor, category: normalizeCategory(editor.category) };
-      delete payload.source_record;
-      delete payload.key;
-      delete payload.resource_name;
-      delete payload.resource_color;
+      ["key", "source_type", "source_id", "resource_name", "resource_color", "source_record", "recurrence_instance"].forEach((key) => delete payload[key]);
       if (editor.key) await axios.put(`${API}/calendar/events/${encodeURIComponent(editor.key)}`, payload);
       else await axios.post(`${API}/calendar/events`, payload);
       toast.success(editor.key ? "Evento aggiornato" : "Evento creato");
-      setEditor(null);
-      setDetail(null);
-      await load();
-    } catch (e) {
-      toast.error("Salvataggio non riuscito", { description: e?.response?.data?.detail || e?.message });
+      setEditor(null); setDetail(null); await load(true);
+    } catch (error) {
+      toast.error("Salvataggio non riuscito", { description: error?.response?.data?.detail || error?.message });
     }
   };
 
   const deleteEvent = async () => {
-    if (!editor?.key || !editor.key.startsWith("manual:")) return;
+    if (!editor?.key?.startsWith("manual:")) return;
+    const ok = await appConfirm({ title: "Elimina evento", message: "Vuoi eliminare definitivamente questo evento dal calendario?", confirmLabel: "Elimina", danger: true });
+    if (!ok) return;
     try {
       await axios.delete(`${API}/calendar/events/${encodeURIComponent(editor.key)}`);
-      toast.success("Evento eliminato");
-      setEditor(null);
-      setDetail(null);
-      await load();
-    } catch (e) {
-      toast.error("Eliminazione non riuscita", { description: e?.response?.data?.detail || e?.message });
-    }
+      toast.success("Evento eliminato"); setEditor(null); setDetail(null); await load(true);
+    } catch (error) { toast.error("Eliminazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
   };
 
   const dropOnDate = async (date) => {
     if (!dragging || !canEdit) return;
-    const old = parseLocal(dragging.start);
-    const target = new Date(date);
-    if (target.getHours() === 0 && target.getMinutes() === 0) target.setHours(old.getHours(), old.getMinutes(), 0, 0);
+    const oldStart = parseLocal(dragging.start);
     const oldEnd = parseLocal(dragging.end || dragging.start);
-    const duration = Math.max(15, (oldEnd - old) / 60000);
+    const target = new Date(date);
+    target.setHours(oldStart.getHours(), oldStart.getMinutes(), 0, 0);
+    const duration = Math.max(15, (oldEnd - oldStart) / 60000);
     const end = new Date(target.getTime() + duration * 60000);
     try {
       await axios.put(`${API}/calendar/events/${encodeURIComponent(dragging.key)}`, { start: localIso(target), end: localIso(end) });
-      setDragging(null);
-      await load();
-    } catch (e) {
-      toast.error("Spostamento non riuscito", { description: e?.response?.data?.detail || e?.message });
+      setDragging(null); await load(true);
+    } catch (error) { toast.error("Spostamento non riuscito", { description: error?.response?.data?.detail || error?.message }); }
+  };
+
+  const openSource = (event) => {
+    if (event.source_type === "installazione") navigate("/installazioni");
+    else if (event.source_type === "sopralluogo") navigate("/sopralluoghi");
+    else if (event.source_type === "assistenza") navigate("/assistenza");
+    else if (event.source_type === "custom" && event.module_slug) navigate(`/moduli/${event.module_slug}`);
+  };
+
+  const toggleResource = (id) => setSelectedResources((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleCategory = (category) => setSelectedCategories((prev) => prev.includes(category) ? prev.filter((x) => x !== category) : [...prev, category]);
+  const clearFilters = () => { setSelectedResources([]); setSelectedCategories([]); setSearch(""); };
+
+  const importIcs = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const form = new FormData(); form.append("file", file);
+      const { data } = await axios.post(`${API}/calendar/import/ics`, form, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Calendario importato", { description: `${data.imported || 0} nuovi · ${data.updated || 0} aggiornati · ${data.linked_clients || 0} collegati a clienti` });
+      await Promise.all([load(true), loadLookups()]);
+    } catch (error) {
+      toast.error("Importazione calendario non riuscita", { description: error?.response?.data?.detail || error?.message });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const openSource = (ev) => {
-    if (ev.source_type === "installazione") navigate("/installazioni");
-    else if (ev.source_type === "sopralluogo") navigate("/sopralluoghi");
-    else if (ev.source_type === "assistenza") navigate("/assistenza");
-    else if (ev.source_type === "custom" && ev.module_slug) navigate(`/moduli/${ev.module_slug}`);
+  const relinkImported = async () => {
+    try {
+      const { data } = await axios.post(`${API}/calendar/relink`);
+      toast.success("Collegamenti aggiornati", { description: `${data.linked || 0} eventi collegati ai clienti` });
+      await load(true);
+    } catch (error) { toast.error("Collegamento non riuscito", { description: error?.response?.data?.detail || error?.message }); }
   };
 
-  const days = view === "month" ? Array.from({ length: 42 }, (_, i) => addDays(range[0], i)) : view === "week" ? Array.from({ length: 7 }, (_, i) => addDays(range[0], i)) : [range[0]];
-  const hours = Array.from({ length: 15 }, (_, i) => 7 + i);
-  const toggleHour = (h) => setOpenHours((prev) => { const next = new Set(prev); if (next.has(h)) next.delete(h); else next.add(h); return next; });
-  const allHoursOpen = openHours.size === hours.length;
-  const toggleAllHours = () => setOpenHours(allHoursOpen ? new Set() : new Set(hours));
+  const finalizeCalendarMigration = async () => {
+    const ok = await appConfirm({
+      title: "Rendi il calendario autonomo",
+      message: "Gli eventi importati resteranno nel gestionale come eventi locali. I riferimenti alla sorgente esterna verranno rimossi e non sarà più possibile fare altri import.",
+      confirmLabel: "Concludi migrazione",
+      danger: false,
+    });
+    if (!ok) return;
+    try {
+      const { data } = await axios.post(`${API}/calendar/migration/finalize`);
+      toast.success("Calendario autonomo", { description: data.message });
+      await Promise.all([load(true), loadLookups()]);
+    } catch (error) { toast.error("Chiusura migrazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
+  };
 
-  return (
-    <div className="max-w-[1600px] mx-auto px-3 sm:px-5 py-4 space-y-4" data-testid="company-calendar-page">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-        <div><div className="text-xs font-semibold tracking-[.16em] uppercase text-[#1A456B]">Elios Tech</div><h1 className="font-display text-3xl font-black text-slate-900">Calendario</h1><p className="text-sm text-slate-500 mt-1">Calendario unico per installazioni, sopralluoghi, assistenze, riunioni e attività interne.</p></div>
-        <div className="flex gap-2 flex-wrap">{isAdmin && <Button variant="outline" onClick={() => setResourceDlg(true)}><Gear size={17} /> Persone</Button>}<Button variant={filtersOpen ? "default" : "outline"} onClick={() => setFiltersOpen((v) => !v)}><SlidersHorizontal size={17} /> {filtersOpen ? "Chiudi filtri" : "Filtri"}</Button>{canCreate && <Button onClick={() => newEvent(cursor)}><Plus size={17} /> Nuovo evento</Button>}</div>
+  const addResource = async () => {
+    if (!newResource.name.trim()) return toast.error("Inserisci il nome");
+    try {
+      await axios.post(`${API}/calendar/resources`, newResource);
+      setNewResource({ name: "", color: "#2d6ea3" });
+      await load(true);
+      toast.success("Calendario aggiunto");
+    } catch (error) { toast.error("Creazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
+  };
+
+  const updateResource = async (resource, patch) => {
+    const next = { ...resource, ...patch };
+    setResources((prev) => prev.map((item) => item.id === resource.id ? next : item));
+    try { await axios.put(`${API}/calendar/resources/${resource.id}`, { name: next.name, color: next.color, linked_user_id: next.linked_user_id, sort_order: next.sort_order }); }
+    catch (error) { toast.error("Modifica calendario non riuscita", { description: error?.response?.data?.detail || error?.message }); await load(true); }
+  };
+
+  const removeResource = async (resource) => {
+    const ok = await appConfirm({ title: "Nascondi calendario", message: `Nascondere ${resource.name}? Gli eventi non vengono cancellati.`, confirmLabel: "Nascondi", danger: true });
+    if (!ok) return;
+    try { await axios.delete(`${API}/calendar/resources/${resource.id}`); await load(true); }
+    catch (error) { toast.error("Operazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
+  };
+
+  const clientName = (id) => { const c = clients.find((x) => String(x.id) === String(id)); return c?.ragione_sociale || [c?.nome, c?.cognome].filter(Boolean).join(" ") || ""; };
+  const selectedSite = sites.find((x) => String(x.id) === String(detail?.sede_id));
+  const editorSites = sites.filter((x) => !editor?.cliente_id || String(x.cliente_id) === String(editor.cliente_id));
+  const editorJobs = jobs.filter((x) => !editor?.cliente_id || String(x.cliente_id) === String(editor.cliente_id));
+
+  return <div className="max-w-[1660px] mx-auto px-3 sm:px-5 py-4 sm:py-6 space-y-4" data-testid="company-calendar-page">
+    <div className="r51-calendar-hero">
+      <div>
+        <div className="r51-kicker">Elios Tech · pianificazione operativa</div>
+        <h1 className="text-3xl sm:text-4xl mt-1">Calendario</h1>
+        <div className="r51-calendar-period mt-2 capitalize">{heading}</div>
       </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {isAdmin && <Button variant="outline" onClick={() => setResourceDlg(true)}><Gear size={16} /> Persone</Button>}
+        {isAdmin && <Button variant="outline" onClick={() => setMigrationOpen((v) => !v)}>{migration.finalized ? <CheckCircle size={16} className="text-emerald-600" /> : <UploadSimple size={16} />} {migration.finalized ? "Calendario autonomo" : "Importazione"}</Button>}
+        <Button variant={filtersOpen ? "default" : "outline"} onClick={() => setFiltersOpen((v) => !v)}><SlidersHorizontal size={16} /> Filtri</Button>
+        {canCreate && <Button onClick={() => newEvent(new Date())}><Plus size={16} /> Nuovo evento</Button>}
+      </div>
+    </div>
 
-      <div className="et-card p-3 space-y-3">
-        <div className="flex flex-col xl:flex-row xl:items-center gap-3 justify-between">
-          <div className="flex items-center gap-2 flex-wrap"><Button variant="outline" size="icon" onClick={() => shift(-1)}><CaretLeft /></Button><Button variant="outline" onClick={goToday}>Oggi</Button><Button variant="outline" size="icon" onClick={() => shift(1)}><CaretRight /></Button><div className="ml-1 font-black text-slate-900 capitalize">{heading}</div></div>
-          <div className="flex flex-wrap items-center gap-2 self-start xl:self-auto">
-            <div className="relative"><MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input className="h-9 pl-9 w-[220px]" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca nel calendario…" /></div>
-            {view !== "month" && <Button variant="outline" onClick={toggleAllHours} className="h-9">{allHoursOpen ? "Compatta orari" : "Espandi orari"}</Button>}
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-md">{[["day", "Giorno"], ["week", "Settimana"], ["month", "Mese"]].map(([k, l]) => <button key={k} onClick={() => setView(k)} className={`px-3 py-1.5 rounded text-sm font-semibold ${view === k ? "bg-white shadow text-slate-900" : "text-slate-600"}`}>{l}</button>)}</div>
+    <div className="r51-calendar-summary">
+      <div className="r51-calendar-stat"><strong>{stats.total}</strong><span>Attività nel periodo</span></div>
+      <div className="r51-calendar-stat"><strong>{stats.installazioni}</strong><span>Installazioni</span></div>
+      <div className="r51-calendar-stat"><strong>{stats.assistenze}</strong><span>Assistenze</span></div>
+      <div className="r51-calendar-stat"><strong>{stats.pending}</strong><span>Da seguire / confermare</span></div>
+    </div>
+
+    <div className="r51-toolbar">
+      <div className="flex items-center gap-1">
+        <button type="button" className="h-10 w-10 rounded-lg border border-slate-200 bg-white inline-flex items-center justify-center hover:bg-slate-50" onClick={() => shift(-1)} aria-label="Periodo precedente"><CaretLeft size={17} /></button>
+        <Button variant="outline" onClick={() => setCursor(new Date())}>Oggi</Button>
+        <button type="button" className="h-10 w-10 rounded-lg border border-slate-200 bg-white inline-flex items-center justify-center hover:bg-slate-50" onClick={() => shift(1)} aria-label="Periodo successivo"><CaretRight size={17} /></button>
+      </div>
+      <div className="r51-tabs">
+        {[["day", "Giorno"], ["week", "Settimana"], ["month", "Mese"]].map(([key, label]) => <button type="button" key={key} className={`r51-tab ${view === key ? "is-active" : ""}`} onClick={() => setView(key)}>{label}</button>)}
+      </div>
+      <div className="relative min-w-[220px] flex-1 max-w-lg">
+        <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Input className="pl-9 h-10" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca cliente, attività, luogo, tecnico…" />
+      </div>
+      <Button variant="outline" onClick={() => load()} disabled={loading}><ArrowClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna</Button>
+    </div>
+
+    {filtersOpen && <div className="r51-calendar-filter-panel">
+      <div className="flex items-start justify-between gap-3 mb-3"><div><div className="r51-section-title">Filtra la pianificazione</div><div className="text-xs text-slate-500 mt-0.5">Seleziona persone o tipologie per concentrarti sulle attività utili.</div></div><Button variant="ghost" size="sm" onClick={clearFilters}>Azzera</Button></div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Persone / calendari</div><div className="flex flex-wrap gap-2">{resources.map((resource) => { const active = selectedResources.includes(resource.id); return <button type="button" key={resource.id} onClick={() => toggleResource(resource.id)} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}><span className="r51-resource-dot" style={{ background: resource.color || "#64748b" }} />{resource.name}</button>; })}</div></div>
+        <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Tipologia</div><div className="flex flex-wrap gap-2">{(configLists.calendar_categories || []).map((category) => { const active = selectedCategories.includes(category); return <button type="button" key={category} onClick={() => toggleCategory(category)} className={`px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}>{category}</button>; })}</div></div>
+      </div>
+    </div>}
+
+    {isAdmin && migrationOpen && <div className="r51-calendar-filter-panel">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2"><div className="r51-section-title">Migrazione calendario una tantum</div>{migration.finalized && <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-1"><CheckCircle size={13} /> Autonomo</span>}</div>
+          <div className="text-sm text-slate-500 mt-1">Gli eventi importati vengono salvati nel database del gestionale. Dopo la verifica puoi chiudere la migrazione e rimuovere tutti i riferimenti alla sorgente esterna.</div>
+          {migration.last_result?.parsed != null && <div className="text-xs text-slate-500 mt-2">Ultimo import: {migration.last_result.parsed} letti · {migration.last_result.imported || 0} nuovi · {migration.last_result.updated || 0} aggiornati</div>}
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {!migration.finalized && <><input ref={fileInputRef} type="file" accept=".ics,.zip" className="hidden" onChange={(e) => importIcs(e.target.files?.[0])} /><Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}><UploadSimple size={16} /> {importing ? "Importazione…" : "Importa .ics / ZIP"}</Button><Button variant="outline" onClick={relinkImported}>Collega ai clienti</Button></>}
+          {migration.ready_to_finalize && !migration.finalized && <Button onClick={finalizeCalendarMigration}><CheckCircle size={16} /> Concludi migrazione</Button>}
+        </div>
+      </div>
+    </div>}
+
+    {loading && !events.length ? <div className="r51-empty">Caricamento pianificazione…</div> : view === "week"
+      ? <WeekView days={days} byDay={byDay} onOpen={setDetail} onNew={newEvent} onDrop={dropOnDate} onDragStart={(e, event) => setDragging(event)} canCreate={canCreate} canEdit={canEdit} />
+      : view === "month"
+        ? <MonthView days={days} byDay={byDay} month={cursor} onOpen={setDetail} onNew={newEvent} canCreate={canCreate} />
+        : <DayView day={days[0]} events={byDay[dateKey(days[0])] || []} onOpen={setDetail} onNew={newEvent} canCreate={canCreate} canEdit={canEdit} onDragStart={(e, event) => setDragging(event)} onDrop={dropOnDate} />}
+
+    <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
+      <DialogContent className="max-w-xl">
+        {detail && <>
+          <DialogHeader><DialogTitle className="text-xl">{detail.title}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="rounded-xl bg-slate-50 border p-3"><div className="text-[10px] uppercase font-bold text-slate-400">Quando</div><div className="font-bold mt-1">{detail.all_day ? "Tutto il giorno" : `${new Date(detail.start).toLocaleDateString("it-IT")} · ${timeKey(detail.start)}${detail.end ? `–${timeKey(detail.end)}` : ""}`}</div></div>
+              <div className="rounded-xl bg-slate-50 border p-3"><div className="text-[10px] uppercase font-bold text-slate-400">Assegnato</div><div className="font-bold mt-1 flex items-center gap-2"><span className="r51-resource-dot" style={{ background: eventColor(detail) }} />{detail.resource_name || "Non assegnato"}</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2"><span className="px-2.5 py-1 rounded-full bg-slate-100 text-xs font-bold">{normalizeCategory(detail.category)}</span>{detail.status && <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 text-xs font-bold">{displayStatus(detail.status)}</span>}{detail.priority && <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold">{detail.priority}</span>}</div>
+            {detail.cliente_id && <div><div className="text-xs font-bold text-slate-400 uppercase">Cliente</div><div className="mt-1 font-semibold">{clientName(detail.cliente_id) || "Cliente collegato"}</div></div>}
+            {detail.location && <div><div className="text-xs font-bold text-slate-400 uppercase">Luogo</div><div className="mt-1 flex items-start gap-2"><MapPin size={16} className="mt-0.5 text-slate-400" />{detail.location}</div></div>}
+            {detail.description && <div><div className="text-xs font-bold text-slate-400 uppercase">Note</div><div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{detail.description}</div></div>}
+            {normalizeCategory(detail.category) === "Installazione" && <InstallationWeather date={dateKey(detail.start)} site={selectedSite} address={detail.location || ""} compact />}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            {detail.source_type && detail.source_type !== "manual" && <Button variant="outline" onClick={() => openSource(detail)}><ArrowSquareOut size={15} /> Apri attività</Button>}
+            {canEdit && <Button onClick={() => { editEvent(detail); setDetail(null); }}><PencilSimple size={15} /> Modifica</Button>}
+          </DialogFooter>
+        </>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!editor} onOpenChange={(open) => !open && setEditor(null)}>
+      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+        {editor && <>
+          <DialogHeader><DialogTitle>{editor.key ? "Modifica attività" : "Nuovo evento"}</DialogTitle></DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2"><Label>Titolo *</Label><Input className="mt-1" value={editor.title || ""} onChange={(e) => setEditor((p) => ({ ...p, title: e.target.value }))} /></div>
+            <div><Label>Inizio *</Label><Input type="datetime-local" className="mt-1" value={editor.start || ""} onChange={(e) => setEditor((p) => ({ ...p, start: e.target.value }))} /></div>
+            <div><Label>Fine</Label><Input type="datetime-local" className="mt-1" value={editor.end || ""} onChange={(e) => setEditor((p) => ({ ...p, end: e.target.value }))} /></div>
+            <div><Label>Tipologia</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={normalizeCategory(editor.category)} onChange={(e) => setEditor((p) => ({ ...p, category: e.target.value }))}>{(configLists.calendar_categories || []).map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div><Label>Persona / calendario</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={(editor.resource_ids || [])[0] || ""} onChange={(e) => setEditor((p) => ({ ...p, resource_ids: e.target.value ? [e.target.value] : [] }))}><option value="">Non assegnato</option>{resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+            <div><Label>Stato</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.status || ""} onChange={(e) => setEditor((p) => ({ ...p, status: e.target.value }))}>{(configLists.calendar_statuses || []).map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div><Label>Priorità</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.priority || "Normale"} onChange={(e) => setEditor((p) => ({ ...p, priority: e.target.value }))}>{(configLists.calendar_priorities || []).map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div><Label>Cliente</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.cliente_id || ""} onChange={(e) => setEditor((p) => ({ ...p, cliente_id: e.target.value, sede_id: "", commessa_id: "" }))}><option value="">Nessun cliente</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" ") || "Cliente"}</option>)}</select></div>
+            <div><Label>Sede</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.sede_id || ""} onChange={(e) => setEditor((p) => ({ ...p, sede_id: e.target.value }))}><option value="">Nessuna sede</option>{editorSites.map((s) => <option key={s.id} value={s.id}>{s.nome || [s.indirizzo, s.comune].filter(Boolean).join(" · ") || "Sede"}</option>)}</select></div>
+            <div><Label>Commessa</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.commessa_id || ""} onChange={(e) => setEditor((p) => ({ ...p, commessa_id: e.target.value }))}><option value="">Nessuna commessa</option>{editorJobs.map((job) => <option key={job.id} value={job.id}>{job.number || job.cliente || "Commessa"}</option>)}</select></div>
+            <div><Label>Luogo / indirizzo</Label><Input className="mt-1" value={editor.location || ""} onChange={(e) => setEditor((p) => ({ ...p, location: e.target.value }))} /></div>
+            <div className="sm:col-span-2"><Label>Note / attività da svolgere</Label><Textarea className="mt-1" rows={4} value={editor.description || ""} onChange={(e) => setEditor((p) => ({ ...p, description: e.target.value }))} /></div>
+            {editor.source_type === "manual" || !editor.key ? <><div><Label>Promemoria (minuti)</Label><Input type="number" min="0" className="mt-1" value={editor.reminder_minutes ?? 30} onChange={(e) => setEditor((p) => ({ ...p, reminder_minutes: Number(e.target.value || 0) }))} /></div><div><Label>Ricorrenza RRULE</Label><Input className="mt-1" value={editor.rrule || ""} placeholder="Es. FREQ=WEEKLY;COUNT=6" onChange={(e) => setEditor((p) => ({ ...p, rrule: e.target.value }))} /></div></> : null}
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <div>{editor.key?.startsWith("manual:") && canEdit && <Button variant="destructive" onClick={deleteEvent}><Trash size={15} /> Elimina</Button>}</div>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => setEditor(null)}>Annulla</Button><Button onClick={saveEvent}>Salva</Button></div>
+          </DialogFooter>
+        </>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={resourceDlg} onOpenChange={setResourceDlg}>
+      <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Persone e calendari</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          {resources.map((resource) => <div key={resource.id} className="grid grid-cols-[46px_minmax(0,1fr)_42px] gap-2 items-center rounded-xl border border-slate-200 p-2.5">
+            <input type="color" className="h-9 w-10 rounded border-0 p-0 bg-transparent" value={resource.color || "#64748b"} onChange={(e) => updateResource(resource, { color: e.target.value })} aria-label="Colore" />
+            <Input value={resource.name || ""} onChange={(e) => setResources((prev) => prev.map((x) => x.id === resource.id ? { ...x, name: e.target.value } : x))} onBlur={() => updateResource(resource, { name: resources.find((x) => x.id === resource.id)?.name || resource.name })} />
+            <button type="button" className="h-9 w-9 rounded-lg border border-slate-200 inline-flex items-center justify-center text-slate-500 hover:text-red-600" onClick={() => removeResource(resource)} aria-label="Nascondi"><Trash size={15} /></button>
+          </div>)}
+          <div className="grid sm:grid-cols-[46px_minmax(0,1fr)_auto] gap-2 items-center pt-3 border-t border-slate-100">
+            <input type="color" className="h-9 w-10 rounded border-0 p-0 bg-transparent" value={newResource.color} onChange={(e) => setNewResource((p) => ({ ...p, color: e.target.value }))} aria-label="Colore nuovo calendario" />
+            <Input value={newResource.name} onChange={(e) => setNewResource((p) => ({ ...p, name: e.target.value }))} placeholder="Nome persona / calendario" />
+            <Button onClick={addResource}><Plus size={15} /> Aggiungi</Button>
           </div>
         </div>
-        {!!resources.length && <div className="flex items-center gap-2 overflow-x-auto pb-1"><button type="button" onClick={() => setSelectedResources(null)} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${selectedResources === null ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"}`}>Tutti</button>{resources.map((r) => { const active = selectedResources === null || selectedResources.includes(r.id); const toggle = () => setSelectedResources((prev) => { const base = prev === null ? resources.map((x) => x.id) : prev; if (base.includes(r.id)) return base.filter((x) => x !== r.id); return [...base, r.id]; }); return <button type="button" key={r.id} onClick={toggle} className={`shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${active ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-400 opacity-60"}`}><span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color || "#64748b" }} />{r.display_name || r.name}</button>; })}</div>}
-      </div>
-
-      <div className={`grid ${filtersOpen ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1"} gap-4`}>
-        {filtersOpen && <aside className="et-card p-3 h-fit space-y-4"><div><div className="font-black text-sm mb-2">Calendari / persone</div><div className="flex gap-3 mb-2"><button className="text-xs text-blue-700" onClick={() => setSelectedResources(null)}>Mostra tutti</button><button className="text-xs text-slate-500" onClick={() => setSelectedResources([])}>Nascondi tutti</button></div><div className="space-y-1.5">{resources.map((r) => { const checked = selectedResources === null || selectedResources.includes(r.id); return <div key={r.id} className="flex items-center gap-2"><label className="flex min-w-0 flex-1 items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={checked} onChange={(e) => setSelectedResources((prev) => { const base = prev === null ? resources.map((x) => x.id) : prev; if (e.target.checked) return base.includes(r.id) ? base : [...base, r.id]; return base.filter((x) => x !== r.id); })} /><span className="h-3 w-3 rounded-sm" style={{ background: r.color || "#64748b" }} /><span className="truncate">{r.display_name || r.name}</span></label><button type="button" className="text-[10px] font-bold text-blue-700" onClick={() => setSelectedResources([r.id])}>SOLO</button></div>; })}</div></div><div><div className="font-black text-sm mb-2">Tipo attività</div><button className="text-xs text-blue-700 mb-2" onClick={() => setSelectedCategories([])}>Tutti</button><div className="space-y-1.5">{(configLists.calendar_categories || defaultCalendarLists.calendar_categories).map((c) => <label key={c} className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={selectedCategories.includes(c)} onChange={(e) => setSelectedCategories((p) => e.target.checked ? [...p, c] : p.filter((x) => x !== c))} /><span>{c}</span></label>)}</div></div></aside>}
-
-        <section className="et-card overflow-hidden min-w-0">
-          {loading && <div className="p-8 text-center text-slate-500">Caricamento calendario…</div>}
-          {!loading && visible.length === 0 && <div className="p-4 text-center text-sm text-slate-400 border-b">Nessun evento corrisponde ai filtri attivi.</div>}
-          {!loading && view === "month" && <div className="grid grid-cols-7">{["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map((x) => <div key={x} className="p-2 text-center text-xs font-bold text-slate-500 bg-slate-50 border-b border-r">{x}</div>)}{days.map((d, i) => { const k = dateKey(localIso(d)); const inMonth = d.getMonth() === cursor.getMonth(); return <div key={i} onDoubleClick={() => canCreate && newEvent(d)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOnDate(d)} className={`min-h-[130px] border-r border-b p-1.5 ${inMonth ? "bg-white" : "bg-slate-50"}`}><div className={`text-xs font-bold mb-1 ${sameDay(localIso(d), localIso(new Date())) ? "inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white" : inMonth ? "text-slate-700" : "text-slate-400"}`}>{d.getDate()}</div><div className="space-y-1">{(byDay[k] || []).slice(0, 5).map((e) => <EventCard key={e.key} event={e} compact onOpen={setDetail} onDragStart={(ev, x) => { setDragging(x); ev.dataTransfer.effectAllowed = "move"; }} />)}{(byDay[k] || []).length > 5 && <div className="text-[11px] text-slate-500 px-1">+ {(byDay[k] || []).length - 5} altri</div>}</div></div>; })}</div>}
-          {!loading && view !== "month" && <div className="overflow-auto max-h-[76vh]"><div className="min-w-[900px]" style={{ display: "grid", gridTemplateColumns: `70px repeat(${days.length}, minmax(130px,1fr))` }}><div className="sticky top-0 bg-white z-20 border-b border-r" />{days.map((d, i) => <div key={i} className="sticky top-0 bg-white z-20 p-2 text-center border-b border-r"><div className="text-xs uppercase text-slate-500">{d.toLocaleDateString("it-IT", { weekday: "short" })}</div><div className={`mx-auto mt-1 text-sm font-black ${sameDay(localIso(d), localIso(new Date())) ? "h-7 w-7 rounded-full bg-blue-600 text-white flex items-center justify-center" : ""}`}>{d.getDate()}</div></div>)}{hours.map((h) => { const opened = openHours.has(h); return <div key={`row-${h}`} className="contents"><button type="button" onClick={() => toggleHour(h)} className={`border-r border-b text-xs text-slate-500 text-right pr-2 flex items-start justify-end gap-1 pt-2 hover:bg-slate-50 ${opened ? "h-[92px]" : "h-[42px]"}`}><span className="font-bold text-slate-700">{pad(h)}:00</span><span className="text-[10px]">{opened ? "▾" : "▸"}</span></button>{days.map((d, di) => { const k = dateKey(localIso(d)); const evs = (byDay[k] || []).filter((e) => parseLocal(e.start).getHours() === h || (e.all_day && h === 7)); return <div key={`${h}-${di}`} onDoubleClick={() => { if (!canCreate) return; const x = new Date(d); x.setHours(h, 0, 0, 0); newEvent(x); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { const x = new Date(d); x.setHours(h, 0, 0, 0); dropOnDate(x); }} className={`border-r border-b p-1 hover:bg-blue-50/30 ${opened ? "min-h-[92px]" : "h-[42px] overflow-hidden"}`}>{opened ? <div className="space-y-1">{evs.map((e) => <EventCard key={e.key} event={e} onOpen={setDetail} onDragStart={(ev, x) => { setDragging(x); ev.dataTransfer.effectAllowed = "move"; }} />)}</div> : <div className="h-full flex items-center gap-1 overflow-hidden">{evs.slice(0, 2).map((e) => <button type="button" key={e.key} onClick={(ev) => { ev.stopPropagation(); setDetail(e); }} className="max-w-[48%] truncate rounded-md border px-1.5 py-1 text-[10px] font-semibold text-slate-700 bg-white" style={{ borderLeft: `3px solid ${e.resource_color || "#64748b"}` }}>{timeKey(e.start)} {e.title}</button>)}{evs.length > 2 && <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">+{evs.length - 2}</span>}{evs.length === 0 && <span className="text-[10px] text-slate-300 px-1">libero</span>}</div>}</div>; })}</div>; })}</div></div>}
-        </section>
-      </div>
-
-      <Dialog open={!!detail} onOpenChange={(v) => !v && setDetail(null)}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{detail?.title}</DialogTitle></DialogHeader>{detail && <div className="space-y-4"><div className="grid sm:grid-cols-2 gap-3 text-sm"><div className="rounded-md bg-slate-50 p-3"><b>Quando</b><div className="mt-1">{parseLocal(detail.start).toLocaleString("it-IT")}{detail.end ? ` – ${parseLocal(detail.end).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}</div></div><div className="rounded-md bg-slate-50 p-3"><b>Partecipanti</b><div className="mt-1 flex flex-wrap gap-1.5">{(detail.resource_ids || []).length ? (detail.resource_ids || []).map((id) => { const r = resources.find((x) => x.id === id); return <span key={id} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs"><span className="h-2 w-2 rounded-full" style={{ background: r?.color || "#64748b" }} />{r?.display_name || r?.name || "Partecipante"}</span>; }) : <span className="text-slate-500">Non assegnato</span>}</div></div></div>{detail.location && <div><b className="text-sm">Luogo</b><div className="mt-1 flex items-start gap-2 text-sm"><MapPin className="mt-0.5" />{detail.location}</div></div>}{detail.description && <div><b className="text-sm">Note / descrizione</b><div className="mt-1 whitespace-pre-wrap text-sm bg-slate-50 rounded-md p-3 max-h-52 overflow-y-auto">{detail.description}</div></div>}{detail.meeting_link && <div><b className="text-sm">Riunione online</b><div className="mt-1"><a className="text-sm font-semibold text-blue-700 hover:underline" href={detail.meeting_link} target="_blank" rel="noreferrer">Apri collegamento riunione</a></div></div>}{detail.location && <InstallationWeather date={dateKey(detail.start)} address={detail.location} compact />}<div className="flex flex-wrap gap-2">{detail.location && <Button variant="outline" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(detail.location)}`, "_blank", "noopener,noreferrer")}><MapPin /> Maps</Button>}{detail.source_type !== "manual" && <Button variant="outline" onClick={() => openSource(detail)}><ArrowSquareOut /> Apri modulo</Button>}{canEdit && !detail.recurrence_instance && <Button onClick={() => editEvent(detail)}><PencilSimple /> Modifica</Button>}</div></div>}</DialogContent></Dialog>
-
-      <EventEditor open={!!editor} event={editor} setEvent={setEditor} resources={resources} clients={clients} sites={sites} jobs={jobs} configLists={configLists} onClose={() => setEditor(null)} onSave={saveEvent} onDelete={deleteEvent} canDelete={!!editor?.key?.startsWith("manual:")} />
-      <ResourcesDialog open={resourceDlg} onClose={() => setResourceDlg(false)} resources={resources} onChanged={load} />
-    </div>
-  );
-}
-
-function EventEditor({ open, event, setEvent, resources, clients = [], sites = [], jobs = [], configLists = defaultCalendarLists, onClose, onSave, onDelete, canDelete }) {
-  if (!event) return null;
-  const patch = (k, v) => setEvent((p) => ({ ...p, [k]: v }));
-  const sourceLocked = event.key && !event.key.startsWith("manual:");
-  const clientName = (c) => c.ragione_sociale || c.nome_struttura || [c.nome, c.cognome].filter(Boolean).join(" ") || "Cliente";
-  const visibleSites = event.cliente_id ? sites.filter((x) => String(x.cliente_id || "") === String(event.cliente_id)) : sites;
-  const visibleJobs = event.cliente_id ? jobs.filter((x) => String(x.cliente_id || "") === String(event.cliente_id)) : jobs;
-  const toggleResource = (id) => patch("resource_ids", (event.resource_ids || []).includes(id) ? (event.resource_ids || []).filter((x) => x !== id) : [...(event.resource_ids || []), id]);
-  const resolveFromList = (value, rows, labelFn, key) => { const found = rows.find((x) => labelFn(x).toLowerCase() === String(value).trim().toLowerCase()); patch(key, found?.id || ""); };
-  const currentClient = clients.find((x) => String(x.id) === String(event.cliente_id));
-  const currentSite = sites.find((x) => String(x.id) === String(event.sede_id));
-  const currentJob = jobs.find((x) => String(x.id) === String(event.commessa_id));
-  const categories = (configLists.calendar_categories || defaultCalendarLists.calendar_categories).filter((x) => String(x).toLowerCase() !== "commerciale");
-
-  return <Dialog open={open} onOpenChange={(v) => !v && onClose()}><DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto"><DialogHeader><DialogTitle>{event.key ? "Modifica evento" : "Nuovo evento"}</DialogTitle></DialogHeader><div className="grid sm:grid-cols-2 gap-4"><div className="sm:col-span-2"><Label>Titolo *</Label><Input className="mt-1" value={event.title || ""} onChange={(e) => patch("title", e.target.value)} disabled={sourceLocked} /></div><div><Label>Inizio *</Label><Input className="mt-1" type="datetime-local" value={String(event.start || "").slice(0, 16)} onChange={(e) => patch("start", e.target.value)} /></div><div><Label>Fine</Label><Input className="mt-1" type="datetime-local" value={String(event.end || event.start || "").slice(0, 16)} onChange={(e) => patch("end", e.target.value)} /></div>{!sourceLocked && <><div><Label>Tipo</Label><select className="mt-1 h-10 w-full border rounded-md px-2" value={normalizeCategory(event.category)} onChange={(e) => patch("category", e.target.value)}>{categories.map((x) => <option key={x}>{x}</option>)}</select></div><div><Label>Stato</Label><select className="mt-1 h-10 w-full border rounded-md px-2" value={event.status || "Da confermare"} onChange={(e) => patch("status", e.target.value)}>{(configLists.calendar_statuses || defaultCalendarLists.calendar_statuses).map((x) => <option key={x}>{x}</option>)}</select></div><div><Label>Priorità</Label><select className="mt-1 h-10 w-full border rounded-md px-2" value={event.priority || "Normale"} onChange={(e) => patch("priority", e.target.value)}>{(configLists.calendar_priorities || defaultCalendarLists.calendar_priorities).map((x) => <option key={x}>{x}</option>)}</select></div><label className="flex items-center gap-2 pt-6 text-sm font-semibold"><input type="checkbox" checked={!!event.all_day} onChange={(e) => patch("all_day", e.target.checked)} /> Tutto il giorno</label><div className="sm:col-span-2"><Label>Partecipanti</Label><div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 p-2 flex flex-wrap gap-2 max-h-36 overflow-y-auto">{resources.map((r) => { const active = (event.resource_ids || []).includes(r.id); return <button type="button" key={r.id} onClick={() => toggleResource(r.id)} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${active ? "bg-white border-blue-300 text-blue-700 shadow-sm" : "bg-white border-slate-200 text-slate-600"}`}><span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color || "#64748b" }} />{r.display_name || r.name}{active && <span>×</span>}</button>; })}{!resources.length && <span className="text-sm text-slate-400">Nessuna persona configurata.</span>}</div></div><div><Label>Cliente</Label><Input list="calendar-clients" className="mt-1" defaultValue={currentClient ? clientName(currentClient) : ""} onBlur={(e) => resolveFromList(e.target.value, clients, clientName, "cliente_id")} placeholder="Scrivi per cercare…" /><datalist id="calendar-clients">{clients.map((c) => <option key={c.id} value={clientName(c)} />)}</datalist></div><div><Label>Sede</Label><Input list="calendar-sites" className="mt-1" defaultValue={currentSite ? (currentSite.nome || [currentSite.indirizzo, currentSite.comune].filter(Boolean).join(" · ")) : ""} onBlur={(e) => resolveFromList(e.target.value, visibleSites, (x) => x.nome || [x.indirizzo, x.comune].filter(Boolean).join(" · "), "sede_id")} placeholder="Scrivi per cercare…" /><datalist id="calendar-sites">{visibleSites.map((x) => <option key={x.id} value={x.nome || [x.indirizzo, x.comune].filter(Boolean).join(" · ")} />)}</datalist></div><div className="sm:col-span-2"><Label>Commessa</Label><Input list="calendar-jobs" className="mt-1" defaultValue={currentJob ? (currentJob.numero || currentJob.codice || currentJob.nome || "") : ""} onBlur={(e) => resolveFromList(e.target.value, visibleJobs, (x) => x.numero || x.codice || x.nome || "", "commessa_id")} placeholder="Scrivi numero o nome commessa…" /><datalist id="calendar-jobs">{visibleJobs.map((x) => <option key={x.id} value={x.numero || x.codice || x.nome || ""} />)}</datalist></div><div className="sm:col-span-2"><Label>Luogo</Label><Input className="mt-1" value={event.location || ""} onChange={(e) => patch("location", e.target.value)} /></div><div className="sm:col-span-2"><Label>Link riunione</Label><Input className="mt-1" value={event.meeting_link || ""} onChange={(e) => patch("meeting_link", e.target.value)} placeholder="https://…" /></div><div><Label>Promemoria</Label><select className="mt-1 h-10 w-full border rounded-md px-2" value={event.reminder_minutes ?? 30} onChange={(e) => patch("reminder_minutes", Number(e.target.value))}>{[[0, "Nessuno"], [10, "10 minuti prima"], [30, "30 minuti prima"], [60, "1 ora prima"], [1440, "1 giorno prima"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div><div><Label>Ricorrenza</Label><select className="mt-1 h-10 w-full border rounded-md px-2" value={event.rrule || ""} onChange={(e) => patch("rrule", e.target.value)}><option value="">Nessuna</option><option value="FREQ=DAILY">Giornaliera</option><option value="FREQ=WEEKLY">Settimanale</option><option value="FREQ=MONTHLY">Mensile</option></select></div><div className="sm:col-span-2"><Label>Descrizione / note</Label><Textarea className="mt-1 min-h-28" value={event.description || ""} onChange={(e) => patch("description", e.target.value)} /></div></>}</div><div className="flex justify-between gap-2 mt-4">{canDelete ? <Button variant="outline" className="text-red-600" onClick={onDelete}><Trash /> Elimina</Button> : <span />}<div className="flex gap-2"><Button variant="outline" onClick={onClose}>Annulla</Button><Button onClick={onSave}>Salva</Button></div></div></DialogContent></Dialog>;
-}
-
-function ResourceRow({ resource, onChanged }) {
-  const [name, setName] = useState(resource.name || "");
-  const [color, setColor] = useState(resource.color || "#64748b");
-  const [saving, setSaving] = useState(false);
-  const dirty = name.trim() !== String(resource.name || "").trim() || color !== (resource.color || "#64748b");
-  const save = async () => {
-    if (!name.trim()) return toast.error("Nome obbligatorio");
-    setSaving(true);
-    try {
-      await axios.put(`${API}/calendar/resources/${resource.id}`, { name: name.trim(), color });
-      toast.success("Calendario aggiornato");
-      await onChanged();
-    } catch (e) {
-      toast.error("Aggiornamento non riuscito", { description: e?.response?.data?.detail || e?.message });
-    } finally { setSaving(false); }
-  };
-  const remove = async () => {
-    try {
-      await axios.delete(`${API}/calendar/resources/${resource.id}`);
-      toast.success("Calendario disattivato");
-      await onChanged();
-    } catch (e) { toast.error("Operazione non riuscita", { description: e?.response?.data?.detail || e?.message }); }
-  };
-  return <div className="grid grid-cols-[44px_minmax(0,1fr)_44px_44px] gap-2 items-center border rounded-lg p-2"><input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 border rounded" /><div><Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" /><div className="text-[10px] text-slate-400 mt-1">{resource.display_name && resource.display_name !== resource.name ? `Utente collegato: ${resource.display_name}` : "Calendario interno"}</div></div><Button variant="ghost" size="icon" disabled={!dirty || saving} onClick={save} title="Salva"><FloppyDisk /></Button><Button variant="ghost" size="icon" className="text-red-600" onClick={remove} title="Disattiva"><Trash /></Button></div>;
-}
-
-function ResourcesDialog({ open, onClose, resources, onChanged }) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("#64748b");
-  const add = async () => {
-    if (!name.trim()) return;
-    try {
-      await axios.post(`${API}/calendar/resources`, { name: name.trim(), color });
-      setName("");
-      toast.success("Calendario creato");
-      await onChanged();
-    } catch (e) { toast.error("Creazione non riuscita", { description: e?.response?.data?.detail || e?.message }); }
-  };
-  return <Dialog open={open} onOpenChange={(v) => !v && onClose()}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Calendari / persone</DialogTitle></DialogHeader><p className="text-sm text-slate-500">Modifica nome e colore dei calendari. La disattivazione li rimuove dalle viste future senza cancellare lo storico eventi.</p><div className="space-y-2">{resources.map((r) => <ResourceRow key={`${r.id}-${r.name}-${r.color}`} resource={r} onChanged={onChanged} />)}</div><div className="border-t pt-4"><div className="font-bold mb-2">Nuovo calendario/persona</div><div className="grid grid-cols-[44px_minmax(0,1fr)_auto] gap-2"><input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-10 border rounded" /><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Es. Federico Rossi" /><Button onClick={add}><Plus /> Aggiungi</Button></div></div></DialogContent></Dialog>;
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
