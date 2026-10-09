@@ -20,6 +20,7 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
+RUN python /app/backend/scripts/apply_r56_backend.py
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
 WORKDIR /app/backend
