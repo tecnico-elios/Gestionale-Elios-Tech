@@ -24,7 +24,9 @@ RUN python /app/backend/scripts/apply_r56_backend.py
 RUN python /app/backend/scripts/apply_r57_backend.py
 RUN python /app/backend/scripts/apply_r58_calendar_roles.py
 RUN python /app/backend/scripts/apply_r59_backend.py \
-    && python /app/backend/scripts/audit_r59_flows.py \
+    && python /app/backend/scripts/audit_r59_flows.py
+RUN python /app/backend/scripts/apply_r60_backend.py \
+    && python /app/backend/scripts/audit_r60_flows.py \
     && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
