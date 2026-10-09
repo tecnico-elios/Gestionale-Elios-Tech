@@ -29,6 +29,8 @@ patch(crm, [
 
 
 # Calendario: dopo ogni import/variazione sincronizza i tre flussi separati.
+# Il riallineamento completo NON viene eseguito all'avvio del server: viene fatto
+# al termine dell'importazione del calendario, così l'app resta veloce da avviare.
 calendar = ROOT / "routes" / "calendar_routes.py"
 patch(calendar, [
     (
@@ -58,15 +60,4 @@ patch(calendar, [
     ),
 ])
 
-
-# Startup: riallinea subito installazioni, interventi tecnici e assistenze importate.
-server = ROOT / "server.py"
-patch(server, [
-    (
-        '            sync_stats = await sync_all_calendar_installations(db, actor="startup", force=False)\n            logging.info("R60 Calendar→Installazioni startup sync: %s", sync_stats)',
-        '            sync_stats = await sync_all_calendar_installations(db, actor="startup", force=False)\n            logging.info("R60 Calendar→Installazioni startup sync: %s", sync_stats)\n            from calendar_operations_sync import sync_all_calendar_operations\n            operations_stats = await sync_all_calendar_operations(db, actor="startup-r62")\n            logging.info("R62 Calendar operational split startup sync: %s", operations_stats)',
-        "startup separated calendar streams",
-    ),
-])
-
-print("[R62 backend] Installazioni ENRICO/RICCARDO, Interventi tecnici RICCARDO e Assistenza IVAN configurati.")
+print("[R62 backend] Installazioni ENRICO/RICCARDO, Interventi tecnici RICCARDO e Assistenza IVAN configurati sull'importazione calendario.")
