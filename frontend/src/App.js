@@ -1,5 +1,6 @@
 import "@/App.css";
 import "@/r50.css";
+import "@/r51.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { InventoryProvider } from "@/lib/InventoryContext";
