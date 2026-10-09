@@ -15,22 +15,18 @@ import {
   CaretRight,
   Lock,
   Robot,
-  UserPlus,
-  AddressBook,
-  MapPin,
   ClipboardText,
   FileText,
   ShoppingCart,
   Wrench,
   Headset,
-  Truck,
   List,
   X,
-  Briefcase,
   CalendarBlank,
   SlidersHorizontal,
   ChartBar,
   Lightning,
+  Database,
 } from "@phosphor-icons/react";
 import { useInventoryCtx } from "../lib/InventoryContext";
 import { useAuth } from "../lib/AuthContext";
@@ -38,15 +34,14 @@ import ChangeMyPasswordDialog from "./ChangeMyPasswordDialog";
 import EliosLogo from "./EliosLogo";
 import { fmtTime } from "../lib/tz";
 
+const normalizeSection = (value) => {
+  const section = String(value || "").toLowerCase();
+  if (section === "commerciale") return "amministrazione";
+  if (["amministrazione", "tecnico", "gestione", "sistema"].includes(section)) return section;
+  return "amministrazione";
+};
+
 const SECTIONS = [
-  {
-    key: "commerciale",
-    label: "Commerciale",
-    icon: Briefcase,
-    items: [
-      { to: "/lead", label: "Lead", icon: UserPlus, testid: "nav-lead", module: "lead" },
-    ],
-  },
   {
     key: "amministrazione",
     label: "Amministrazione",
@@ -103,9 +98,7 @@ function SidebarLink({ item, onNavigate }) {
       data-testid={item.testid}
       className={({ isActive }) =>
         `relative flex items-center gap-3 h-11 pl-7 pr-3 rounded-md text-sm font-semibold transition-colors ${
-          isActive
-            ? "bg-white/10 text-white"
-            : "text-slate-300 hover:text-white hover:bg-white/5"
+          isActive ? "bg-white/10 text-white" : "text-slate-300 hover:text-white hover:bg-white/5"
         }`
       }
     >
@@ -158,19 +151,21 @@ export default function AppLayout() {
   const [pwdOpen, setPwdOpen] = useState(false);
   const [customModules, setCustomModules] = useState([]);
   const [navigationConfig, setNavigationConfig] = useState([]);
-  // Ogni click su una voce principale del menu deve riportare la sezione
-  // alla sua schermata iniziale, anche quando l'URL è già lo stesso.
-  // Cambiare la key dell'Outlet forza il remount della pagina e azzera
-  // dettagli cliente/commessa, tab interne, dialog e stato locale residuo.
+  const [appSettings, setAppSettings] = useState({
+    general: {
+      app_name: "Gestionale Elios Tech",
+      company_name: "Elios Tech S.r.l.",
+      primary_color: "#1A456B",
+    },
+  });
   const [sectionResetKey, setSectionResetKey] = useState(0);
 
   const initialOpen = useMemo(() => {
     const found = SECTIONS.find((s) => s.items.some((i) => location.pathname.startsWith(i.to)));
-    return found?.key || "commerciale";
+    return found?.key || (location.pathname.startsWith("/admin") ? "sistema" : "amministrazione");
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openSections, setOpenSections] = useState({
-    commerciale: initialOpen === "commerciale",
     amministrazione: initialOpen === "amministrazione",
     tecnico: initialOpen === "tecnico",
     gestione: initialOpen === "gestione",
@@ -180,7 +175,7 @@ export default function AppLayout() {
   useEffect(() => {
     const found = SECTIONS.find((s) => s.items.some((i) => location.pathname.startsWith(i.to)));
     const custom = customModules.find((m) => location.pathname.startsWith(`/moduli/${m.slug}`));
-    const key = location.pathname.startsWith("/admin") ? "sistema" : (custom?.section || found?.key);
+    const key = location.pathname.startsWith("/admin") ? "sistema" : normalizeSection(custom?.section || found?.key);
     if (key) setOpenSections((prev) => ({ ...prev, [key]: true }));
   }, [location.pathname, customModules]);
 
@@ -214,39 +209,101 @@ export default function AppLayout() {
   };
 
   const loadCustomModules = async () => {
-    try { const { data } = await axios.get(`${API}/custom/modules`); setCustomModules(data.items || []); } catch { setCustomModules([]); }
+    try {
+      const { data } = await axios.get(`${API}/custom/modules`);
+      setCustomModules((data.items || []).map((m) => ({ ...m, section: normalizeSection(m.section) })));
+    } catch {
+      setCustomModules([]);
+    }
   };
+
   const loadNavigationConfig = async () => {
-    try { const { data } = await axios.get(`${API}/custom/config/navigation`); setNavigationConfig(data.items || []); } catch { setNavigationConfig([]); }
+    try {
+      const { data } = await axios.get(`${API}/custom/config/navigation`);
+      setNavigationConfig((data.items || []).map((x) => ({ ...x, section: x.section === "principale" ? "principale" : normalizeSection(x.section) })));
+    } catch {
+      setNavigationConfig([]);
+    }
   };
+
+  const loadSettings = async () => {
+    try {
+      const { data } = await axios.get(`${API}/settings`);
+      setAppSettings(data || {});
+    } catch {
+      // Il layout resta utilizzabile con i valori di fallback.
+    }
+  };
+
   useEffect(() => {
-    loadCustomModules(); loadNavigationConfig();
-    const modulesFn=()=>loadCustomModules(); const navFn=()=>loadNavigationConfig();
+    loadCustomModules();
+    loadNavigationConfig();
+    loadSettings();
+
+    const modulesFn = () => loadCustomModules();
+    const navFn = () => loadNavigationConfig();
+    const settingsFn = () => loadSettings();
+
     window.addEventListener("elios:custom-modules-changed", modulesFn);
     window.addEventListener("elios:navigation-changed", navFn);
-    return ()=>{window.removeEventListener("elios:custom-modules-changed", modulesFn);window.removeEventListener("elios:navigation-changed", navFn);};
+    window.addEventListener("elios:settings-changed", settingsFn);
+
+    return () => {
+      window.removeEventListener("elios:custom-modules-changed", modulesFn);
+      window.removeEventListener("elios:navigation-changed", navFn);
+      window.removeEventListener("elios:settings-changed", settingsFn);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const navSettings = useMemo(() => Object.fromEntries((navigationConfig || []).map((x) => [x.key, x])), [navigationConfig]);
+  const general = appSettings?.general || {};
+  const appName = general.app_name || "Gestionale Elios Tech";
+  const companyName = general.company_name || "Elios Tech S.r.l.";
+  const primaryColor = /^#[0-9a-fA-F]{6}$/.test(String(general.primary_color || "")) ? general.primary_color : "#1A456B";
+
+  useEffect(() => {
+    if (typeof document !== "undefined") document.title = appName;
+  }, [appName]);
+
+  const navSettings = useMemo(
+    () => Object.fromEntries((navigationConfig || []).filter((x) => x.key !== "lead").map((x) => [x.key, x])),
+    [navigationConfig],
+  );
+
   const configuredItem = (item) => {
     const key = item.configKey || item.module;
     const cfg = navSettings[key] || {};
-    return { ...item, label: cfg.label || item.label, navSection: cfg.section, navActive: cfg.active !== false, navOrder: Number(cfg.sort_order ?? 100) };
+    return {
+      ...item,
+      label: cfg.label || item.label,
+      navSection: cfg.section ? (cfg.section === "principale" ? "principale" : normalizeSection(cfg.section)) : null,
+      navActive: cfg.active !== false,
+      navOrder: Number(cfg.sort_order ?? 100),
+    };
   };
 
-  const roleLabel = { admin: "Admin", responsabile: "Responsabile", operator: "Operatore", commerciale: "Commerciale", tecnico: "Tecnico" }[user?.role] || user?.role || "";
+  const roleLabel = {
+    admin: "Admin",
+    responsabile: "Responsabile",
+    operator: "Operatore",
+    commerciale: "Utente",
+    tecnico: "Tecnico",
+  }[user?.role] || user?.role || "";
 
   const systemExtra = isAdmin
     ? [
-        { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", module: "impostazioni" },
-        { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", module: "utenti" },
-        { to: "/admin/moduli", label: "Costruttore moduli", icon: SlidersHorizontal, testid: "nav-module-builder", module: "impostazioni" },
+        { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", module: "impostazioni", navOrder: 800 },
+        { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", module: "utenti", navOrder: 810 },
+        { to: "/admin/moduli", label: "Configura gestionale", icon: SlidersHorizontal, testid: "nav-module-builder", module: "impostazioni", navOrder: 820 },
+        { to: "/admin/notion", label: "Importazione Notion", icon: Database, testid: "nav-notion-migration", module: "impostazioni", navOrder: 830 },
       ]
     : [];
 
   return (
     <div className="min-h-screen bg-slate-50" data-testid="app-layout">
-      <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-[#1A456B] border-b border-white/10 text-white shadow-sm">
+      <header
+        className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-white/10 text-white shadow-sm"
+        style={{ backgroundColor: primaryColor }}
+      >
         <div className="h-full px-3 sm:px-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -260,14 +317,19 @@ export default function AppLayout() {
             </button>
             <button
               type="button"
-              onClick={() => { setSectionResetKey((v) => v + 1); navigate("/dashboard"); }}
+              onClick={() => {
+                setSectionResetKey((v) => v + 1);
+                navigate("/dashboard");
+              }}
               className="flex items-center gap-3 min-w-0 rounded-md px-1 py-1 hover:bg-white/5"
               data-testid="brand-home-btn"
             >
               <EliosLogo size={30} />
               <div className="hidden sm:block text-left min-w-0">
-                <div className="text-[10px] tracking-[0.22em] uppercase text-amber-300/90 font-semibold">ELIOS TECH</div>
-                <div className="text-sm font-bold text-white/95 truncate">Gestionale aziendale</div>
+                <div className="text-[10px] tracking-[0.18em] uppercase text-amber-300/90 font-semibold truncate">
+                  {companyName}
+                </div>
+                <div className="text-sm font-bold text-white/95 truncate">{appName}</div>
               </div>
             </button>
           </div>
@@ -306,7 +368,10 @@ export default function AppLayout() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setMenuOpen(false); setPwdOpen(true); }}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setPwdOpen(true);
+                      }}
                       className="w-full text-left px-3 py-2.5 text-sm text-slate-700 hover:bg-amber-50 flex items-center gap-2"
                     >
                       <Lock size={15} /> Cambia password
@@ -328,25 +393,42 @@ export default function AppLayout() {
 
       <div className="flex min-h-screen pt-16">
         {sidebarOpen && (
-          <div className="fixed inset-x-0 bottom-0 top-16 bg-black/35 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+          <div
+            className="fixed inset-x-0 bottom-0 top-16 bg-black/35 z-20 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
         )}
 
         <aside
-          className={`fixed top-16 left-0 z-30 h-[calc(100vh-4rem)] w-64 bg-[#1A456B] border-r border-white/10 overflow-y-auto overscroll-contain transition-transform duration-200 ${
+          className={`fixed top-16 left-0 z-30 h-[calc(100vh-4rem)] w-64 border-r border-white/10 overflow-y-auto overscroll-contain transition-transform duration-200 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
+          style={{ backgroundColor: primaryColor }}
           data-testid="main-sidebar"
         >
           <div className="p-3 space-y-2">
-            {hasPermission("dashboard", "view") && (navSettings.dashboard?.active !== false) && (
+            {hasPermission("dashboard", "view") && navSettings.dashboard?.active !== false && (
               <SidebarLink
-                item={{ to: "/dashboard", label: navSettings.dashboard?.label || "Dashboard", icon: House, testid: "nav-dashboard", module: "dashboard" }}
+                item={{
+                  to: "/dashboard",
+                  label: navSettings.dashboard?.label || "Dashboard",
+                  icon: House,
+                  testid: "nav-dashboard",
+                  module: "dashboard",
+                }}
                 onNavigate={resetSectionAndNavigate}
               />
             )}
-            {hasPermission("calendar", "view") && (navSettings.calendar?.active !== false) && (
+            {hasPermission("calendar", "view") && navSettings.calendar?.active !== false && (
               <SidebarLink
-                item={{ to: "/calendario", label: navSettings.calendar?.label || "Calendario", icon: CalendarBlank, testid: "nav-calendar", module: "calendar" }}
+                item={{
+                  to: "/calendario",
+                  label: navSettings.calendar?.label || "Calendario",
+                  icon: CalendarBlank,
+                  testid: "nav-calendar",
+                  module: "calendar",
+                }}
                 onNavigate={resetSectionAndNavigate}
               />
             )}
@@ -356,12 +438,29 @@ export default function AppLayout() {
             {SECTIONS.map((section) => {
               const allowed = SECTIONS.flatMap((s) => s.items)
                 .map(configuredItem)
-                .filter((item) => (item.navSection || SECTIONS.find((s) => s.items.some((x) => x.to === item.to))?.key) === section.key)
+                .filter((item) => {
+                  const original = SECTIONS.find((s) => s.items.some((x) => x.to === item.to))?.key;
+                  return normalizeSection(item.navSection || original) === section.key;
+                })
                 .filter((item) => item.navActive && (!item.module || hasPermission(item.module, "view")))
-                .sort((a,b) => a.navOrder - b.navOrder);
-              const dynamicExtras = customModules.filter((m) => (m.section || "amministrazione") === section.key && !String(m.slug||"").startsWith("report-")).map((m) => ({ to: `/moduli/${m.slug}`, label: m.name, icon: FileText, testid: `nav-custom-${m.slug}`, navOrder: Number(m.sort_order || 100) }));
-              const extras = [...(section.key === "sistema" ? systemExtra : []), ...dynamicExtras].filter((item) => isAdmin || !item.module || hasPermission(item.module, "view")).sort((a,b)=>(a.navOrder||900)-(b.navOrder||900));
+                .sort((a, b) => a.navOrder - b.navOrder);
+
+              const dynamicExtras = customModules
+                .filter((m) => normalizeSection(m.section) === section.key && !String(m.slug || "").startsWith("report-"))
+                .map((m) => ({
+                  to: `/moduli/${m.slug}`,
+                  label: m.name,
+                  icon: FileText,
+                  testid: `nav-custom-${m.slug}`,
+                  navOrder: Number(m.sort_order || 100),
+                }));
+
+              const extras = [...(section.key === "sistema" ? systemExtra : []), ...dynamicExtras]
+                .filter((item) => isAdmin || !item.module || hasPermission(item.module, "view"))
+                .sort((a, b) => (a.navOrder || 900) - (b.navOrder || 900));
+
               if (!allowed.length && !extras.length) return null;
+
               return (
                 <Section
                   key={section.key}
@@ -376,8 +475,11 @@ export default function AppLayout() {
           </div>
 
           {refreshedAt && (
-            <div className="sticky bottom-0 px-4 py-3 text-[10px] text-slate-400 bg-[#1A456B] border-t border-white/10">
-              Ultimo aggiornamento: <span className="text-amber-300/80">{fmtTime(refreshedAt)}</span>
+            <div
+              className="sticky bottom-0 px-4 py-3 text-[10px] text-slate-300 border-t border-white/10"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Ultimo aggiornamento: <span className="text-amber-300/90">{fmtTime(refreshedAt)}</span>
             </div>
           )}
         </aside>
