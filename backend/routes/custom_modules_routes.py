@@ -22,8 +22,6 @@ VALID_SECTIONS = {"principale", "amministrazione", "tecnico", "gestione", "siste
 
 def _normalize_section(value: Any, *, allow_principale: bool = False) -> str:
     section = str(value or "amministrazione").strip().lower()
-    # R48: la vecchia area Commerciale non esiste più. I moduli già salvati lì
-    # vengono ricollocati automaticamente in Amministrazione senza perdere dati.
     if section == "commerciale":
         section = "amministrazione"
     allowed = VALID_SECTIONS if allow_principale else VALID_SECTIONS - {"principale"}
@@ -89,6 +87,44 @@ DEFAULT_NAVIGATION = [
 ]
 
 
+# Moduli generati in passato dall'import universale Notion che non devono più
+# comparire né conservare dati nel gestionale. Le funzioni operative native
+# (Magazzino Elios Tech, Magazzino Verona, Arrivi, Movimenti, ecc.) NON sono coinvolte.
+RETIRED_IMPORT_TITLES = {
+    "archivio pagine importate",
+    "goals tracker",
+    "inventario",
+    "inventory receipts",
+    "inventory tracker",
+    "people",
+}
+RETIRED_IMPORT_PREFIXES = ("fonte 278a9b09", "fonte 471a9b09")
+RETIRED_IMPORT_SLUGS = {
+    "archivio-pagine-importate",
+    "import-goals-tracker",
+    "import-inventario",
+    "import-inventory-receipts",
+    "import-inventory-tracker",
+    "import-people",
+}
+
+
+def _normalized_title(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+
+def _is_retired_import(value: Any, slug: Any = None) -> bool:
+    title = _normalized_title(value)
+    slug_value = str(slug or "").strip().casefold()
+    return (
+        title in RETIRED_IMPORT_TITLES
+        or any(title.startswith(prefix) for prefix in RETIRED_IMPORT_PREFIXES)
+        or slug_value in RETIRED_IMPORT_SLUGS
+        or slug_value.startswith("import-fonte-278a9b09")
+        or slug_value.startswith("import-fonte-471a9b09")
+    )
+
+
 def build_router(db, deps):
     router = APIRouter(prefix="/custom", tags=["Custom modules"])
 
@@ -103,6 +139,51 @@ def build_router(db, deps):
             if isinstance(d.get(k), datetime):
                 d[k] = d[k].isoformat()
         return d
+
+    async def _purge_retired_import_artifacts() -> Dict[str, int]:
+        """Rimuove definitivamente i vecchi moduli Notion indicati dall'utente.
+
+        La pulizia è idempotente e viene eseguita quando il menu/configuratore
+        carica i moduli, così elimina anche eventuali ricreazioni da import legacy.
+        """
+        result = {"modules": 0, "records": 0, "attachments": 0, "archive_records": 0, "sources": 0}
+        modules = await db.custom_modules.find({}).to_list(length=2000)
+        retired = [m for m in modules if _is_retired_import(m.get("name"), m.get("slug"))]
+        module_ids = [m.get("id") for m in retired if m.get("id")]
+
+        if module_ids:
+            attachments = await db.custom_attachments.find({"module_id": {"$in": module_ids}}).to_list(length=10000)
+            if attachments:
+                from pathlib import Path
+                for attachment in attachments:
+                    path = Path(str(attachment.get("stored_path") or ""))
+                    if path.exists() and path.is_file():
+                        try:
+                            path.unlink()
+                        except OSError:
+                            pass
+            result["attachments"] = int((await db.custom_attachments.delete_many({"module_id": {"$in": module_ids}})).deleted_count or 0)
+            result["records"] = int((await db.custom_records.delete_many({"module_id": {"$in": module_ids}})).deleted_count or 0)
+            result["modules"] = int((await db.custom_modules.delete_many({"id": {"$in": module_ids}})).deleted_count or 0)
+
+        # Elimina anche l'archivio tecnico della migrazione per le stesse fonti.
+        source_rows = await db.migration_sources.find({}).to_list(length=5000)
+        retired_source_ids = {
+            str(row.get("source_id"))
+            for row in source_rows
+            if row.get("source_id") and _is_retired_import(row.get("title"))
+        }
+        archive_rows = await db.migration_archive.find({}, {"source_id": 1, "source_title": 1}).to_list(length=20000)
+        retired_source_ids.update(
+            str(row.get("source_id"))
+            for row in archive_rows
+            if row.get("source_id") and _is_retired_import(row.get("source_title"))
+        )
+        if retired_source_ids:
+            ids = list(retired_source_ids)
+            result["archive_records"] = int((await db.migration_archive.delete_many({"source_id": {"$in": ids}})).deleted_count or 0)
+            result["sources"] = int((await db.migration_sources.delete_many({"source_id": {"$in": ids}})).deleted_count or 0)
+        return result
 
     def module_visible(m: Dict[str, Any], current: Dict[str, Any]) -> bool:
         if current.get("role") == "admin":
@@ -166,15 +247,28 @@ def build_router(db, deps):
 
     @router.get("/config/navigation")
     async def get_navigation_config(current=Depends(deps.require_password_current)):
+        await _purge_retired_import_artifacts()
         doc = await db.settings.find_one({"_id": "navigation_config"}) or {}
         saved = {str(x.get("key")): x for x in (doc.get("items") or []) if isinstance(x, dict) and x.get("key")}
         items = []
+        repaired = False
         for default in DEFAULT_NAVIGATION:
             item = dict(default)
             item.update(saved.get(default["key"], {}))
             item["section"] = _normalize_section(item.get("section"), allow_principale=True)
+            # Migrazione R49: una vecchia configurazione aveva rinominato anche
+            # Trasferimenti in "Movimenti", creando due voci indistinguibili.
+            if default["key"] == "trasferimenti" and _normalized_title(item.get("label")) == "movimenti":
+                item["label"] = "Trasferimenti"
+                repaired = True
             items.append(item)
         items.sort(key=lambda x: (str(x.get("section") or ""), int(x.get("sort_order") or 100), str(x.get("label") or "")))
+        if repaired:
+            await db.settings.update_one(
+                {"_id": "navigation_config"},
+                {"$set": {"items": [{k: x.get(k) for k in ("key", "label", "section", "active", "sort_order")} for x in items], "updated_at": _now(), "migration": "r49-fix-trasferimenti"}},
+                upsert=True,
+            )
         return {"items": items}
 
     @router.put("/config/navigation")
@@ -187,9 +281,12 @@ def build_router(db, deps):
         for row in raw:
             if not isinstance(row, dict) or row.get("key") not in allowed:
                 continue
+            label = str(row.get("label") or row["key"]).strip()[:80]
+            if row["key"] == "trasferimenti" and _normalized_title(label) == "movimenti":
+                label = "Trasferimenti"
             cleaned.append({
                 "key": row["key"],
-                "label": str(row.get("label") or row["key"]).strip()[:80],
+                "label": label,
                 "section": _normalize_section(row.get("section"), allow_principale=True),
                 "active": bool(row.get("active", True)),
                 "sort_order": int(row.get("sort_order") or 100),
@@ -203,11 +300,13 @@ def build_router(db, deps):
 
     @router.get("/modules")
     async def list_modules(current=Depends(deps.require_password_current)):
+        await _purge_retired_import_artifacts()
         rows = await db.custom_modules.find({"active": {"$ne": False}}).sort([("section", 1), ("sort_order", 1), ("name", 1)]).to_list(length=500)
         return {"items": [clean(x) for x in rows if module_visible(x, current)]}
 
     @router.get("/modules/all")
     async def list_modules_all(current=Depends(deps.require_admin)):
+        await _purge_retired_import_artifacts()
         rows = await db.custom_modules.find({}).sort([("section", 1), ("sort_order", 1), ("name", 1)]).to_list(length=500)
         return {"items": [clean(x) for x in rows]}
 
@@ -272,9 +371,20 @@ def build_router(db, deps):
         old = await db.custom_modules.find_one({"id": module_id})
         if not old:
             raise HTTPException(404, "Modulo non trovato")
+        attachments = await db.custom_attachments.find({"module_id": module_id}).to_list(length=10000)
+        if attachments:
+            from pathlib import Path
+            for attachment in attachments:
+                path = Path(str(attachment.get("stored_path") or ""))
+                if path.exists() and path.is_file():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+        await db.custom_attachments.delete_many({"module_id": module_id})
         await db.custom_records.delete_many({"module_id": module_id})
         await db.custom_modules.delete_one({"id": module_id})
-        return {"ok": True, "deleted_records": True}
+        return {"ok": True, "deleted_records": True, "deleted_attachments": True}
 
     async def by_slug(slug: str, current: Dict[str, Any]):
         m = await db.custom_modules.find_one({"slug": slug, "active": {"$ne": False}})
