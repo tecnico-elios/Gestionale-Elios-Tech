@@ -20,19 +20,30 @@ function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function StatCard({ icon: Icon, title, value, meta, to }) {
-  return <Link to={to} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-sm hover:border-slate-300 transition block min-w-0">
-    <div className="flex items-start justify-between gap-3"><div className="h-9 w-9 rounded-lg bg-slate-100 flex items-center justify-center text-[#1A456B]"><Icon size={19} weight="bold" /></div><span className="text-2xl font-black text-slate-900">{value}</span></div>
-    <div className="mt-3 text-sm font-bold text-slate-800">{title}</div>
-    <div className="mt-0.5 text-xs text-slate-500 truncate">{meta || "Apri dettaglio"}</div>
-  </Link>;
+function StatCard({ icon: Icon, title, value, meta, to, tone = "blue" }) {
+  return (
+    <Link to={to} className={`r52-dashboard-stat r52-dashboard-stat-${tone}`}>
+      <div className="r52-dashboard-stat-top">
+        <div className="r52-dashboard-stat-icon"><Icon size={20} weight="duotone" /></div>
+        <span className="r52-dashboard-stat-value">{value}</span>
+      </div>
+      <div className="r52-dashboard-stat-title">{title}</div>
+      <div className="r52-dashboard-stat-meta">{meta || "Apri dettaglio"}</div>
+    </Link>
+  );
 }
 
 function TaskRow({ icon: Icon, title, subtitle, detail, to, urgent }) {
-  return <Link to={to} className="flex items-start gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
-    <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${urgent ? "bg-red-50 text-red-600" : "bg-slate-100 text-[#1A456B]"}`}><Icon size={18} weight="bold" /></div>
-    <div className="min-w-0 flex-1"><div className="text-sm font-bold text-slate-900 truncate">{title}</div><div className="text-xs text-slate-600 truncate mt-0.5">{subtitle}</div>{detail && <div className="text-xs text-slate-400 truncate mt-0.5">{detail}</div>}</div>
-  </Link>;
+  return (
+    <Link to={to} className={`r52-dashboard-task ${urgent ? "is-urgent" : ""}`}>
+      <div className="r52-dashboard-task-icon"><Icon size={18} weight="duotone" /></div>
+      <div className="min-w-0 flex-1">
+        <div className="r52-dashboard-task-title">{title}</div>
+        <div className="r52-dashboard-task-subtitle">{subtitle}</div>
+        {detail && <div className="r52-dashboard-task-detail">{detail}</div>}
+      </div>
+    </Link>
+  );
 }
 
 export default function DashboardPage() {
@@ -154,26 +165,69 @@ export default function DashboardPage() {
     [Headset, "Assistenza", "/assistenza"],
   ];
 
-  return <div className="max-w-[1500px] mx-auto px-4 sm:px-6 py-5 space-y-5" data-testid="dashboard-page">
-    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3"><div><div className="text-xs uppercase tracking-[.16em] text-[#1A456B] font-semibold">Elios Tech</div><h1 className="text-3xl font-black text-slate-900">Dashboard operativa</h1><p className="text-sm text-slate-500 mt-1">Priorità tecniche, installazioni, assistenze, ordini e magazzino in un'unica vista.</p></div><div className="flex items-center gap-3"><div className="text-xs text-slate-400">{refreshedAt ? `Aggiornato ${refreshedAt.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}</div><Button variant="outline" onClick={() => load()} disabled={loading}><ArrowClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna</Button></div></div>
+  return (
+    <div className="r52-dashboard" data-testid="dashboard-page">
+      <div className="r52-commandbar">
+        <div>
+          <div className="r52-commandbar-title">Quadro operativo</div>
+          <div className="r52-commandbar-subtitle">Priorità e carichi di lavoro aggiornati dal database gestionale.</div>
+        </div>
+        <div className="r52-commandbar-actions">
+          <span className="r52-last-update">{refreshedAt ? `Aggiornato ${refreshedAt.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+          <Button variant="outline" onClick={() => load()} disabled={loading} className="r52-outline-button">
+            <ArrowClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna
+          </Button>
+        </div>
+      </div>
 
-    {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && <div className="r52-alert r52-alert-danger">{error}</div>}
 
-    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-      <StatCard icon={CalendarBlank} title="Programmate" value={programmate.length} meta={`${programmateOggi} oggi`} to="/installazioni" />
-      <StatCard icon={Wrench} title="Da installare" value={daInstallare.length} meta="da programmare / confermate" to="/installazioni" />
-      <StatCard icon={Headset} title="Assistenze" value={assistenzeAperte.length} meta="aperte o in lavorazione" to="/assistenza" />
-      <StatCard icon={ClipboardText} title="Sopralluoghi" value={sopralluoghiAperti.length} meta="da gestire" to="/sopralluoghi" />
-      <StatCard icon={ShoppingCart} title="Ordini aperti" value={ordiniAperti.length} meta={`${preventiviAperti.length} preventivi aperti`} to="/clienti-ordini" />
-      <StatCard icon={Package} title="Magazzino critico" value={magazzinoCritico} meta={`${data.esauriti.length} esauriti`} to="/inventario" />
+      <section>
+        <div className="r52-section-heading">
+          <div><div className="r52-section-kicker">Situazione</div><h2>Indicatori principali</h2></div>
+        </div>
+        <div className="r52-dashboard-stat-grid">
+          <StatCard icon={CalendarBlank} title="Programmate" value={programmate.length} meta={`${programmateOggi} oggi`} to="/installazioni" tone="blue" />
+          <StatCard icon={Wrench} title="Da installare" value={daInstallare.length} meta="da programmare / confermate" to="/installazioni" tone="navy" />
+          <StatCard icon={Headset} title="Assistenze" value={assistenzeAperte.length} meta="aperte o in lavorazione" to="/assistenza" tone="teal" />
+          <StatCard icon={ClipboardText} title="Sopralluoghi" value={sopralluoghiAperti.length} meta="da gestire" to="/sopralluoghi" tone="violet" />
+          <StatCard icon={ShoppingCart} title="Ordini aperti" value={ordiniAperti.length} meta={`${preventiviAperti.length} preventivi aperti`} to="/clienti-ordini" tone="amber" />
+          <StatCard icon={Package} title="Magazzino critico" value={magazzinoCritico} meta={`${data.esauriti.length} esauriti`} to="/inventario" tone="red" />
+        </div>
+      </section>
+
+      <div className="r52-dashboard-main-grid">
+        <section className="r52-panel r52-panel-flush">
+          <div className="r52-panel-heading">
+            <div><div className="r52-section-kicker">Priorità</div><h2>Da fare</h2><p>Attività che richiedono attenzione o programmazione.</p></div>
+            <span className="r52-count-pill">{tasks.length}</span>
+          </div>
+          <div className="r52-task-list">
+            {loading && !refreshedAt ? (
+              <div className="r52-empty-state">Caricamento attività…</div>
+            ) : tasks.length ? tasks.map((task) => <TaskRow key={task.key} {...task} />) : (
+              <div className="r52-empty-state"><CheckCircle size={30} className="text-emerald-500" weight="fill" /><strong>Nessuna priorità aperta</strong><span>Il quadro operativo è libero da attività urgenti.</span></div>
+            )}
+          </div>
+        </section>
+
+        <section className="r52-panel">
+          <div className="r52-panel-heading compact">
+            <div><div className="r52-section-kicker">Navigazione</div><h2>Flusso gestionale</h2><p>Accesso rapido alle fasi operative.</p></div>
+          </div>
+          <div className="r52-flow-list">
+            {quickFlow.map(([Icon, label, to], i) => (
+              <Link key={to} to={to} className="r52-flow-link">
+                <div className="r52-flow-icon"><Icon size={17} weight="duotone" /></div>
+                <div className="r52-flow-label">{label}</div>
+                <span className="r52-flow-step">{String(i + 1).padStart(2, "0")}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
-
-    <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(330px,.65fr)] gap-5">
-      <section className="bg-white border border-slate-200 rounded-xl overflow-hidden"><div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between"><div><h2 className="font-black text-slate-900">Da fare</h2><p className="text-xs text-slate-500">Attività che richiedono attenzione</p></div><span className="text-xs font-bold text-slate-500">{tasks.length}</span></div>{loading && !refreshedAt ? <div className="p-8 text-center text-sm text-slate-400">Caricamento…</div> : tasks.length ? tasks.map((task) => <TaskRow key={task.key} {...task} />) : <div className="p-8 text-center"><CheckCircle size={28} className="mx-auto text-emerald-500" weight="fill" /><div className="text-sm font-semibold text-slate-700 mt-2">Nessuna priorità aperta</div></div>}</section>
-
-      <section className="bg-white border border-slate-200 rounded-xl p-4 h-fit"><h2 className="font-black text-slate-900">Flusso gestionale</h2><p className="text-xs text-slate-500 mt-1 mb-3">Accesso rapido alle fasi operative.</p><div className="grid sm:grid-cols-2 xl:grid-cols-1 gap-2">{quickFlow.map(([Icon, label, to], i) => <Link key={to} to={to} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50"><div className="h-8 w-8 rounded-lg bg-slate-100 text-[#1A456B] flex items-center justify-center"><Icon size={16} /></div><div className="flex-1 text-sm font-semibold text-slate-800">{label}</div><span className="text-xs text-slate-400">{i + 1}</span></Link>)}</div></section>
-    </div>
-  </div>;
+  );
 }
 
 function includesAny(value, values) {
