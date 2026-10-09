@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "craco start",
-    "build": "craco build",
+    "start": "node scripts/apply-r54-copy.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
@@ -81,7 +81,6 @@
     "**/axios/form-data": "4.0.6",
     "**/jsdom/form-data": "3.0.5",
     "**/postcss-svgo/svgo": "2.8.1",
-    "**/webpack-dev-server/ws": "8.21.0",
     "**/postcss-load-config/yaml": "2.8.3",
     "**/cosmiconfig/yaml": "1.10.3",
     "**/cssnano/yaml": "1.10.3",
