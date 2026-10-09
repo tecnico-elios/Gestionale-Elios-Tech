@@ -7,7 +7,7 @@ import {
   House, Package, ArrowsClockwise, Warning, Gear, SignOut, UsersThree,
   CaretDown, CaretRight, Lock, Robot, ClipboardText, FileText, ShoppingCart,
   Wrench, Headset, List, X, CalendarBlank, SlidersHorizontal, ChartBar,
-  Lightning, Database,
+  Lightning, Database, ArrowsLeftRight,
 } from "@phosphor-icons/react";
 import { useInventoryCtx } from "../lib/InventoryContext";
 import { useAuth } from "../lib/AuthContext";
@@ -36,23 +36,46 @@ const NATIVE_ITEMS = [
   { key: "assistenza", to: "/assistenza", label: "Assistenza", icon: Headset, testid: "nav-assistenza", module: "assistenza", section: "tecnico", order: 40 },
   { key: "inventario", to: "/inventario", label: "Magazzino Elios Tech", icon: Package, testid: "nav-inventario", module: "inventario", section: "gestione", order: 10 },
   { key: "magazzino_verona", to: "/magazzino-verona", label: "Magazzino Verona", icon: Package, testid: "nav-magazzino-verona", module: "inventario", section: "gestione", order: 20 },
-  { key: "trasferimenti", to: "/trasferimenti", label: "Trasferimenti", icon: ArrowsClockwise, testid: "nav-trasferimenti", module: "movimenti", section: "gestione", order: 30 },
+  { key: "trasferimenti", to: "/trasferimenti", label: "Trasferimenti", icon: ArrowsLeftRight, testid: "nav-trasferimenti", module: "movimenti", section: "gestione", order: 30 },
   { key: "arrivi", to: "/arrivi", label: "Arrivi", icon: ArrowsClockwise, testid: "nav-arrivi", module: "arrivi", section: "gestione", order: 40 },
-  { key: "movimenti", to: "/movimenti", label: "Movimenti", icon: ArrowsClockwise, testid: "nav-movimenti", module: "movimenti", section: "gestione", order: 50 },
-  { key: "anomalie", to: "/anomalie", label: "Anomalie", icon: Warning, testid: "nav-anomalie", module: "anomalie", section: "gestione", order: 60 },
+  { key: "spedizioni", to: "/spedizioni", label: "Spedizioni", icon: Package, testid: "nav-spedizioni", module: "spedizioni", section: "gestione", order: 50 },
+  { key: "movimenti", to: "/movimenti", label: "Movimenti", icon: ArrowsClockwise, testid: "nav-movimenti", module: "movimenti", section: "gestione", order: 60 },
+  { key: "anomalie", to: "/anomalie", label: "Anomalie", icon: Warning, testid: "nav-anomalie", module: "anomalie", section: "gestione", order: 70 },
   { key: "ai", to: "/assistente-ai", label: "Assistente AI", icon: Robot, testid: "nav-ai", module: "ai", section: "sistema", order: 10 },
 ];
 
 function SidebarLink({ item, onNavigate }) {
   const Icon = item.icon;
-  return <NavLink to={item.to} end={item.end} onClick={onNavigate} data-testid={item.testid} className={({ isActive }) => `relative flex items-center gap-3 h-11 pl-7 pr-3 rounded-md text-sm font-semibold transition-colors ${isActive ? "bg-white/10 text-white" : "text-slate-300 hover:text-white hover:bg-white/5"}`}>
-    {({ isActive }) => <>{isActive && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-amber-400" />}<Icon size={17} weight={isActive ? "fill" : "regular"} /><span>{item.label}</span></>}
-  </NavLink>;
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      onClick={onNavigate}
+      data-testid={item.testid}
+      className={({ isActive }) => `et-sidebar-link ${isActive ? "is-active" : ""}`}
+    >
+      {({ isActive }) => (
+        <>
+          <span className="et-sidebar-icon"><Icon size={17} weight={isActive ? "fill" : "regular"} /></span>
+          <span className="truncate">{item.label}</span>
+          {isActive && <span className="et-sidebar-active-dot" />}
+        </>
+      )}
+    </NavLink>
+  );
 }
 
 function Section({ section, items, open, onToggle, onNavigate }) {
   const Icon = section.icon;
-  return <div className="space-y-1"><button type="button" onClick={onToggle} className="w-full h-11 px-3 rounded-md flex items-center justify-between text-slate-200 hover:bg-white/5 hover:text-white" data-testid={`menu-section-${section.key}`}><span className="flex items-center gap-3 text-sm font-bold"><Icon size={18} />{section.label}</span>{open ? <CaretDown size={15} /> : <CaretRight size={15} />}</button>{open && <div className="space-y-1 pb-1">{items.map((item) => <SidebarLink key={item.to} item={item} onNavigate={onNavigate} />)}</div>}</div>;
+  return (
+    <div className="space-y-1">
+      <button type="button" onClick={onToggle} className="et-sidebar-section" data-testid={`menu-section-${section.key}`}>
+        <span className="flex items-center gap-3"><Icon size={17} /><span>{section.label}</span></span>
+        {open ? <CaretDown size={14} /> : <CaretRight size={14} />}
+      </button>
+      {open && <div className="space-y-1 pb-2">{items.map((item) => <SidebarLink key={item.to} item={item} onNavigate={onNavigate} />)}</div>}
+    </div>
+  );
 }
 
 export default function AppLayout() {
@@ -71,8 +94,13 @@ export default function AppLayout() {
   const loadGeneralSettings = async () => {
     try {
       const { data } = await axios.get(`${API}/settings`);
-      setGeneralSettings((p) => ({ ...p, ...(data.general || {}) }));
-      if (data?.general?.app_name) document.title = data.general.app_name;
+      const general = data.general || {};
+      setGeneralSettings((p) => ({ ...p, ...general }));
+      if (general.app_name) document.title = general.app_name;
+      try { window.localStorage.setItem("elios_general_settings", JSON.stringify(general)); } catch {}
+      if (general.primary_color && /^#[0-9a-fA-F]{6}$/.test(general.primary_color)) {
+        document.documentElement.style.setProperty("--et-brand-primary", general.primary_color);
+      }
     } catch {}
   };
   const loadCustomModules = async () => {
@@ -103,7 +131,13 @@ export default function AppLayout() {
   const configuredNativeItems = useMemo(() => NATIVE_ITEMS.map((item) => {
     const cfg = navSettings[item.key] || {};
     const rawSection = cfg.section || item.section;
-    return { ...item, label: cfg.label || item.label, section: rawSection === "commerciale" ? "amministrazione" : rawSection, active: cfg.active !== false, order: Number(cfg.sort_order ?? item.order ?? 100) };
+    return {
+      ...item,
+      label: cfg.label || item.label,
+      section: rawSection === "commerciale" ? "amministrazione" : rawSection,
+      active: cfg.active !== false,
+      order: Number(cfg.sort_order ?? item.order ?? 100),
+    };
   }), [navSettings]);
   const allowedNativeItems = configuredNativeItems.filter((item) => item.active && (!item.module || hasPermission(item.module, "view")));
   const principalItems = allowedNativeItems.filter((item) => item.section === "principale").sort((a, b) => a.order - b.order);
@@ -112,12 +146,15 @@ export default function AppLayout() {
     { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", order: 900 },
     { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", order: 910 },
     { to: "/admin/moduli", label: "Costruttore gestionale", icon: SlidersHorizontal, testid: "nav-module-builder", order: 920 },
-    { to: "/admin/migrazione-notion", label: "Importazione Notion", icon: Database, testid: "nav-notion-migration", order: 930 },
+    { to: "/admin/migrazione-notion", label: "Importazione da Notion", icon: Database, testid: "nav-notion-migration", order: 930 },
   ] : [];
 
   const sectionItems = (sectionKey) => {
     const native = allowedNativeItems.filter((item) => item.section === sectionKey);
-    const dynamic = customModules.filter((m) => (m.section === "commerciale" ? "amministrazione" : (m.section || "amministrazione")) === sectionKey).filter((m) => !String(m.slug || "").startsWith("report-")).map((m) => ({ to: `/moduli/${m.slug}`, label: m.name, icon: FileText, testid: `nav-custom-${m.slug}`, order: Number(m.sort_order || 100) }));
+    const dynamic = customModules
+      .filter((m) => (m.section === "commerciale" ? "amministrazione" : (m.section || "amministrazione")) === sectionKey)
+      .filter((m) => !String(m.slug || "").startsWith("report-"))
+      .map((m) => ({ to: `/moduli/${m.slug}`, label: m.name, icon: FileText, testid: `nav-custom-${m.slug}`, order: Number(m.sort_order || 100) }));
     return [...native, ...dynamic, ...(sectionKey === "sistema" ? systemExtra : [])].sort((a, b) => Number(a.order || 100) - Number(b.order || 100));
   };
 
@@ -125,7 +162,12 @@ export default function AppLayout() {
     const native = NATIVE_ITEMS.find((i) => location.pathname.startsWith(i.to));
     return native?.section || (location.pathname.startsWith("/admin") ? "sistema" : "amministrazione");
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [openSections, setOpenSections] = useState({ amministrazione: initialSection === "amministrazione", tecnico: initialSection === "tecnico", gestione: initialSection === "gestione", sistema: initialSection === "sistema" || location.pathname.startsWith("/admin") });
+  const [openSections, setOpenSections] = useState({
+    amministrazione: initialSection === "amministrazione",
+    tecnico: initialSection === "tecnico",
+    gestione: initialSection === "gestione",
+    sistema: initialSection === "sistema" || location.pathname.startsWith("/admin"),
+  });
 
   useEffect(() => {
     const native = configuredNativeItems.find((i) => location.pathname.startsWith(i.to));
@@ -135,24 +177,101 @@ export default function AppLayout() {
     if (key && key !== "principale") setOpenSections((prev) => ({ ...prev, [key]: true }));
   }, [location.pathname, customModules, configuredNativeItems]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [location.pathname]);
+
   const resetSectionAndNavigate = () => {
     setSectionResetKey((v) => v + 1);
     if (typeof window !== "undefined" && window.innerWidth < 1024) setSidebarOpen(false);
   };
   const refreshAll = async () => {
-    try { await refresh(); window.dispatchEvent(new Event("elios:refresh-dashboard")); toast.success("Dati aggiornati"); }
-    catch { toast.error("Aggiornamento fallito"); }
+    try {
+      await refresh();
+      window.dispatchEvent(new Event("elios:refresh-dashboard"));
+      toast.success("Dati aggiornati");
+    } catch {
+      toast.error("Aggiornamento fallito");
+    }
   };
   const handleLogout = () => { setMenuOpen(false); logout(); navigate("/login", { replace: true }); };
-  const roleLabel = { admin: "Admin", responsabile: "Responsabile", operator: "Operatore", tecnico: "Tecnico", commerciale: "Profilo legacy" }[user?.role] || user?.role || "";
+  const roleLabel = { admin: "Admin", responsabile: "Responsabile", operator: "Operatore", tecnico: "Tecnico", commerciale: "Profilo storico" }[user?.role] || user?.role || "";
   const companyName = generalSettings.company_name || "Elios Tech S.r.l.";
   const appName = generalSettings.app_name || "Gestionale Elios Tech";
+  const currentNative = configuredNativeItems.find((i) => location.pathname === i.to || location.pathname.startsWith(`${i.to}/`));
+  const currentCustom = customModules.find((m) => location.pathname.startsWith(`/moduli/${m.slug}`));
+  const currentTitle = location.pathname.startsWith("/admin/migrazione-notion") ? "Importazione da Notion" : location.pathname.startsWith("/admin/moduli") ? "Costruttore gestionale" : location.pathname.startsWith("/admin/utenti") ? "Utenti e permessi" : location.pathname === "/admin" ? "Impostazioni" : currentCustom?.name || currentNative?.label || "Gestionale";
 
-  return <div className="min-h-screen bg-slate-50" data-testid="app-layout">
-    <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-[#1A456B] border-b border-white/10 text-white shadow-sm"><div className="h-full px-3 sm:px-4 flex items-center justify-between gap-3"><div className="flex items-center gap-2 min-w-0"><button type="button" onClick={() => setSidebarOpen((v) => !v)} className="h-10 w-10 inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 hover:bg-white/10" aria-label={sidebarOpen ? "Chiudi menu" : "Apri menu"}>{sidebarOpen ? <X size={20} /> : <List size={22} />}</button><button type="button" onClick={() => { setSectionResetKey((v) => v + 1); navigate("/dashboard"); }} className="flex items-center gap-3 min-w-0 rounded-md px-1 py-1 hover:bg-white/5"><EliosLogo size={30} /><div className="hidden sm:block text-left min-w-0"><div className="text-[10px] tracking-[0.18em] uppercase text-amber-300/90 font-semibold truncate max-w-[220px]">{companyName}</div><div className="text-sm font-bold text-white/95 truncate max-w-[240px]">{appName}</div></div></button></div>
-      <div className="flex items-center gap-2 shrink-0"><button type="button" onClick={refreshAll} disabled={loading} className="h-10 px-3 rounded-md bg-white/5 border border-white/10 text-slate-100 hover:border-amber-300/50 flex items-center gap-2 disabled:opacity-60"><ArrowsClockwise size={16} className={loading ? "animate-spin" : ""} /><span className="hidden md:inline text-sm">Aggiorna</span></button>{user && <div className="relative"><button type="button" onClick={() => setMenuOpen((v) => !v)} className="h-10 px-3 rounded-md bg-white/5 border border-white/10 flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${user.role === "admin" ? "bg-amber-400" : "bg-emerald-400"}`} /><span className="hidden sm:inline text-sm font-semibold">{user.full_name || user.username}</span><CaretDown size={13} /></button>{menuOpen && <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-md shadow-xl z-50 overflow-hidden"><div className="px-3 py-2 border-b bg-slate-50"><div className="text-sm font-semibold text-slate-800">{user.full_name || user.username}</div><div className="text-xs text-slate-500">@{user.username} · {roleLabel}</div></div><button type="button" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-700 hover:bg-amber-50 flex items-center gap-2"><Lock size={15} /> Cambia password</button><button type="button" onClick={handleLogout} className="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t"><SignOut size={15} /> Esci</button></div>}</div>}</div></div></header>
+  return (
+    <div className="et-app-shell" data-testid="app-layout">
+      <header className="et-topbar">
+        <div className="h-full px-3 sm:px-5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <button type="button" onClick={() => setSidebarOpen((v) => !v)} className="et-icon-btn-dark" aria-label={sidebarOpen ? "Chiudi menu" : "Apri menu"}>
+              {sidebarOpen ? <X size={20} /> : <List size={22} />}
+            </button>
+            <button type="button" onClick={() => navigate("/dashboard")} className="et-brand-button">
+              <span className="et-brand-logo"><EliosLogo size={31} /></span>
+              <span className="hidden sm:block text-left min-w-0">
+                <span className="block text-[10px] tracking-[0.17em] uppercase text-amber-300/90 font-bold truncate max-w-[220px]">{companyName}</span>
+                <span className="block text-sm font-extrabold text-white truncate max-w-[245px]">{appName}</span>
+              </span>
+            </button>
+            <div className="hidden xl:flex items-center gap-2 ml-3 pl-4 border-l border-white/10 min-w-0">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,.12)]" />
+              <span className="text-xs text-slate-300 truncate">{currentTitle}</span>
+            </div>
+          </div>
 
-    <div className="flex min-h-screen pt-16">{sidebarOpen && <div className="fixed inset-x-0 bottom-0 top-16 bg-black/35 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />}<aside className={`fixed top-16 left-0 z-30 h-[calc(100vh-4rem)] w-64 bg-[#1A456B] border-r border-white/10 overflow-y-auto transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}><div className="p-3 space-y-2">{principalItems.map((item) => <SidebarLink key={item.to} item={item} onNavigate={resetSectionAndNavigate} />)}<div className="h-px bg-white/10 my-2" />{SECTION_META.map((section) => { const items = sectionItems(section.key); if (!items.length) return null; return <Section key={section.key} section={section} items={items} open={!!openSections[section.key]} onToggle={() => setOpenSections((p) => ({ ...p, [section.key]: !p[section.key] }))} onNavigate={resetSectionAndNavigate} />; })}</div>{refreshedAt && <div className="sticky bottom-0 px-4 py-3 text-[10px] text-slate-400 bg-[#1A456B] border-t border-white/10">Ultimo aggiornamento: <span className="text-amber-300/80">{fmtTime(refreshedAt)}</span></div>}</aside><main className={`flex-1 min-w-0 min-h-[calc(100vh-4rem)] transition-[margin] duration-200 ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}><Outlet key={`${location.pathname}:${sectionResetKey}`} /></main></div>
-    <ChangeMyPasswordDialog open={pwdOpen} onClose={() => setPwdOpen(false)} />
-  </div>;
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={refreshAll} disabled={loading} className="et-topbar-action">
+              <ArrowsClockwise size={16} className={loading ? "animate-spin" : ""} />
+              <span className="hidden md:inline">Aggiorna</span>
+            </button>
+            {user && <div className="relative">
+              <button type="button" onClick={() => setMenuOpen((v) => !v)} className="et-user-pill">
+                <span className={`w-2 h-2 rounded-full ${user.role === "admin" ? "bg-amber-400" : "bg-emerald-400"}`} />
+                <span className="hidden sm:inline text-sm font-semibold max-w-[180px] truncate">{user.full_name || user.username}</span>
+                <CaretDown size={13} />
+              </button>
+              {menuOpen && <div className="et-user-menu">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+                  <div className="text-sm font-bold text-slate-900 truncate">{user.full_name || user.username}</div>
+                  <div className="text-xs text-slate-500 truncate">@{user.username} · {roleLabel}</div>
+                </div>
+                <button type="button" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} className="et-user-menu-item"><Lock size={15} /> Cambia password</button>
+                <button type="button" onClick={handleLogout} className="et-user-menu-item text-red-600 border-t border-slate-100"><SignOut size={15} /> Esci</button>
+              </div>}
+            </div>}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex min-h-screen pt-[68px]">
+        {sidebarOpen && <div className="fixed inset-x-0 bottom-0 top-[68px] bg-slate-950/45 backdrop-blur-[1px] z-20 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />}
+        <aside className={`et-sidebar ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <div className="px-3 pt-4 pb-3 space-y-2">
+            <div className="px-3 pb-1 text-[9px] uppercase tracking-[.22em] font-bold text-slate-500">Operativo</div>
+            {principalItems.map((item) => <SidebarLink key={item.to} item={item} onNavigate={resetSectionAndNavigate} />)}
+            <div className="h-px bg-white/8 my-3" />
+            {SECTION_META.map((section) => {
+              const items = sectionItems(section.key);
+              if (!items.length) return null;
+              return <Section key={section.key} section={section} items={items} open={!!openSections[section.key]} onToggle={() => setOpenSections((p) => ({ ...p, [section.key]: !p[section.key] }))} onNavigate={resetSectionAndNavigate} />;
+            })}
+          </div>
+          <div className="et-sidebar-footer">
+            <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Database gestionale locale</div>
+            {refreshedAt && <div className="mt-1 text-[10px] text-slate-500">Aggiornato alle <span className="text-slate-300">{fmtTime(refreshedAt)}</span></div>}
+          </div>
+        </aside>
+
+        <main className={`et-main-content ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}>
+          <div className="et-page-host"><Outlet key={`${location.pathname}:${sectionResetKey}`} /></div>
+        </main>
+      </div>
+      <ChangeMyPasswordDialog open={pwdOpen} onClose={() => setPwdOpen(false)} />
+    </div>
+  );
 }
