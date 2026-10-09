@@ -1,10 +1,10 @@
 """Auth routes — login, me, bootstrap primo admin, cambio password personale.
 
-F7 additions:
-  - Login crea una entry in `active_sessions` (sid) e la include nel JWT.
-  - Tracciamento tentativi di login falliti con lockout temporaneo (settings).
-  - Nuovi utenti creati dall'admin ricevono must_change_password=True e devono
-    cambiare password al primo login prima di poter usare l'app.
+R50:
+  - login crea e valida sessioni server-side;
+  - tentativi falliti e lockout usano le impostazioni reali;
+  - durata JWT normale usa `sicurezza.session_ttl_minutes`;
+  - logout per inattività viene applicato da AuthDependencies.
 """
 from __future__ import annotations
 
@@ -62,12 +62,13 @@ def _normalize_username(u: str) -> str:
 
 
 async def _get_sicurezza_settings(db) -> dict:
-    """Legge le impostazioni sicurezza (max_login_attempts, lockout_minutes) dal store."""
     doc = await db.settings.find_one({"_id": "app_settings"}) or {}
     sec = (doc.get("sicurezza") or {}) if isinstance(doc.get("sicurezza"), dict) else {}
     return {
-        "max_login_attempts": int(sec.get("max_login_attempts", 5)),
-        "lockout_minutes": int(sec.get("lockout_minutes", 5)),
+        "session_ttl_minutes": max(15, min(int(sec.get("session_ttl_minutes", 480)), 60 * 24 * 30)),
+        "idle_logout_minutes": max(1, min(int(sec.get("idle_logout_minutes", 30)), 1440)),
+        "max_login_attempts": max(3, min(int(sec.get("max_login_attempts", 5)), 20)),
+        "lockout_minutes": max(1, min(int(sec.get("lockout_minutes", 5)), 1440)),
     }
 
 
@@ -95,7 +96,7 @@ async def _record_login_failure(db, username: str) -> None:
     update = {"count": count, "last_failed_at": now}
     if count >= sec["max_login_attempts"]:
         update["locked_until"] = now + timedelta(minutes=sec["lockout_minutes"])
-        update["count"] = 0  # reset counter after locking
+        update["count"] = 0
     await db.login_attempts.update_one(
         {"username": username},
         {"$set": update},
@@ -135,19 +136,21 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
             "role": auth_mod.ROLE_ADMIN,
             "active": True,
             "password_version": 1,
-            "must_change_password": False,  # bootstrap admin sceglie subito la sua password
+            "must_change_password": False,
             "created_at": datetime.now(timezone.utc),
             "last_login": None,
         }
         res = await db.users.insert_one(doc)
         user = await db.users.find_one({"_id": res.inserted_id})
         sid = await auth_mod.create_session(db, str(user["_id"]), user["username"])
+        sec = await _get_sicurezza_settings(db)
         token = auth_mod.create_access_token(
             user_id=str(user["_id"]),
             username=user["username"],
             role=user["role"],
             password_version=user["password_version"],
             sid=sid,
+            ttl_minutes=sec["session_ttl_minutes"],
         )
         logger.info("Bootstrap admin created: username=%s", username)
         return {"token": token, "user": auth_mod.public_user(user)}
@@ -157,7 +160,6 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
         username = _normalize_username(body.username)
         if not username or not body.password:
             raise HTTPException(400, "Username e password obbligatori")
-        # Lockout check BEFORE any DB lookup (evita side-channel)
         await _check_lockout(db, username)
         user = await db.users.find_one({"username": username})
         if not user:
@@ -189,12 +191,11 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
             )
             raise HTTPException(401, "Credenziali non valide")
         await _record_login_success(db, username)
-        await db.users.update_one(
-            {"_id": user["_id"]},
-            {"$set": {"last_login": datetime.now(timezone.utc)}},
-        )
-        user["last_login"] = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login": now}})
+        user["last_login"] = now
         sid = await auth_mod.create_session(db, str(user["_id"]), user["username"])
+        sec = await _get_sicurezza_settings(db)
         token = auth_mod.create_access_token(
             user_id=str(user["_id"]),
             username=user["username"],
@@ -202,6 +203,7 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
             password_version=int(user.get("password_version", 1)),
             remember=bool(body.remember_me),
             sid=sid,
+            ttl_minutes=sec["session_ttl_minutes"],
         )
         await event_logger.log_event(
             db, category="AUTH", event_type="LOGIN_RIUSCITO",
@@ -220,9 +222,6 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
 
     @router.post("/logout")
     async def logout(current=Depends(deps.get_current_user)):
-        """Elimina la sessione lato server (invalida il JWT corrente).
-        Nota: non usa require_password_current perché anche un utente in stato
-        must_change_password deve poter fare logout."""
         sid = current.get("_sid")
         if sid:
             await db.active_sessions.delete_one({"sid": sid})
@@ -241,8 +240,6 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
 
     @router.post("/change-my-password")
     async def change_my_password(body: ChangeMyPasswordBody, current=Depends(deps.get_current_user)):
-        # Nota: usa get_current_user (NON require_password_current) perché
-        # un utente con must_change_password=True DEVE poter usare questa rotta.
         if not auth_mod.verify_password(body.old_password, current.get("password_hash", "")):
             raise HTTPException(400, "Vecchia password errata")
         try:
@@ -258,22 +255,21 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
                 "must_change_password": False,
             }},
         )
-        # Invalida TUTTE le sessioni esistenti (incluso quella corrente)
         await auth_mod.invalidate_all_sessions_for_user(db, str(current["_id"]))
-        # Crea una nuova sessione per il device che ha appena cambiato password
         new_sid = await auth_mod.create_session(db, str(current["_id"]), current["username"])
+        sec = await _get_sicurezza_settings(db)
         token = auth_mod.create_access_token(
             user_id=str(current["_id"]),
             username=current["username"],
             role=current["role"],
             password_version=new_pv,
             sid=new_sid,
+            ttl_minutes=sec["session_ttl_minutes"],
         )
         return {"ok": True, "token": token}
 
     @router.post("/forgot-password")
     async def forgot_password(body: ForgotPasswordBody):
-        """Flusso 'Password dimenticata' via email one-time token (1h)."""
         username = _normalize_username(body.username)
         user = await db.users.find_one({"username": username})
         generic = {
@@ -315,8 +311,7 @@ def build_router(db, deps: auth_mod.AuthDependencies, send_email_fn=None, fronte
           <p style="text-align:center;margin:24px 0">
             <a href="{link}" style="display:inline-block;padding:12px 24px;background:#0f172a;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">Reimposta password</a>
           </p>
-          <p style="color:#64748b;font-size:12px">Il link è valido per <strong>1 ora</strong> e può essere usato una sola volta.
-          Se non hai richiesto tu il reset, ignora questa email.</p>
+          <p style="color:#64748b;font-size:12px">Il link è valido per <strong>1 ora</strong> e può essere usato una sola volta. Se non hai richiesto tu il reset, ignora questa email.</p>
           <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
           <p style="color:#94a3b8;font-size:11px">Gestionale Elios Tech · Database locale · Accesso protetto</p>
         </div>
