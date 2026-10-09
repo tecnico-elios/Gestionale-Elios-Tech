@@ -1,0 +1,141 @@
+/* ============================================================
+   R55 — Testata pagina unificata nella barra superiore
+   ============================================================ */
+
+/* La vecchia fascia pagina non deve più occupare spazio. */
+.r52-page-banner { display: none !important; }
+
+/* Più spazio utile subito sotto la topbar. */
+.r52-page-host {
+  padding-top: 12px !important;
+}
+
+.r55-topbar {
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 10px 30px -24px rgba(2, 18, 35, .75);
+}
+
+.r55-topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #f5c542 0 7rem, rgba(245,197,66,.08) 7rem 100%);
+  pointer-events: none;
+}
+
+.r55-topbar.r55-section-tecnico::after {
+  background: linear-gradient(90deg, #52d2c6 0 7rem, rgba(82,210,198,.08) 7rem 100%);
+}
+.r55-topbar.r55-section-amministrazione::after {
+  background: linear-gradient(90deg, #f5c542 0 7rem, rgba(245,197,66,.08) 7rem 100%);
+}
+.r55-topbar.r55-section-gestione::after {
+  background: linear-gradient(90deg, #67a7db 0 7rem, rgba(103,167,219,.08) 7rem 100%);
+}
+.r55-topbar.r55-section-sistema::after {
+  background: linear-gradient(90deg, #b9a6ff 0 7rem, rgba(185,166,255,.08) 7rem 100%);
+}
+
+.r55-topbar-page {
+  min-width: 0;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-left: 12px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255,255,255,.10);
+}
+
+.r55-topbar-page-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #eaf4fb;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.055);
+}
+
+.r55-topbar-page-copy {
+  min-width: 0;
+  max-width: min(46vw, 650px);
+}
+
+.r55-topbar-page-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 1px;
+  color: #9fb6c9;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+}
+
+.r55-local-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52,211,153,.10);
+}
+
+.r55-topbar-page-row {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.r55-topbar-page-title {
+  flex: 0 0 auto;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+}
+
+.r55-topbar-page-description {
+  min-width: 0;
+  color: #aebfce;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 1024px) {
+  .r55-topbar-page { display: flex; }
+}
+
+@media (max-width: 1280px) {
+  .r55-topbar-page-description { display: none; }
+  .r55-topbar-page-copy { max-width: 240px; }
+}
+
+@media (max-width: 1100px) {
+  .r55-topbar-page {
+    margin-left: 8px;
+    padding-left: 10px;
+  }
+  .r55-topbar-page-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .r55-topbar-page-title { font-size: 14px; }
+}
+
+@media (max-width: 1023px) {
+  .r52-page-host { padding-top: 10px !important; }
+}
