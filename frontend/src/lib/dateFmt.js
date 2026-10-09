@@ -1,20 +1,44 @@
-// F29 — Format helpers per date italiane (GG/MM/AAAA).
-// Uso: import { formatDateIT } from "../lib/dateFmt";
-// Input: "2026-09-16" (ISO date) o Date. Output: "16/09/2026". "" se falsy.
+// R50 — Formattazione data coerente con Admin → Impostazioni → Generali.
+// La configurazione generale viene memorizzata da AppLayout in localStorage.
+function configuredFormat() {
+  try {
+    const raw = window.localStorage.getItem("elios_general_settings");
+    const cfg = raw ? JSON.parse(raw) : {};
+    return cfg?.date_format || "DD/MM/YYYY";
+  } catch {
+    return "DD/MM/YYYY";
+  }
+}
+
+function formatParts(y, m, d) {
+  const fmt = configuredFormat();
+  if (fmt === "YYYY-MM-DD") return `${y}-${m}-${d}`;
+  if (fmt === "MM/DD/YYYY") return `${m}/${d}/${y}`;
+  return `${d}/${m}/${y}`;
+}
+
 export function formatDateIT(iso) {
   if (!iso) return "";
   try {
     if (iso instanceof Date) {
       const d = iso;
-      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+      return formatParts(
+        String(d.getFullYear()),
+        String(d.getMonth() + 1).padStart(2, "0"),
+        String(d.getDate()).padStart(2, "0"),
+      );
     }
     const s = String(iso).trim();
-    // ISO YYYY-MM-DD → parse manuale per evitare timezone shift
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-    // Fallback: datetime completo
+    if (m) return formatParts(m[1], m[2], m[3]);
     const d = new Date(s);
-    if (isNaN(d.getTime())) return s;
-    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  } catch { return String(iso || ""); }
+    if (Number.isNaN(d.getTime())) return s;
+    return formatParts(
+      String(d.getFullYear()),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    );
+  } catch {
+    return String(iso || "");
+  }
 }
