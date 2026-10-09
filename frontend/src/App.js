@@ -19,6 +19,7 @@ import CommessePage from "@/pages/CommessePage";
 import CommercialInsightsPage from "@/pages/CommercialInsightsPage";
 import ReportsPage from "@/pages/ReportsPage";
 import AdminPage from "@/pages/AdminPage";
+import NotionMigrationPage from "@/pages/NotionMigrationPage";
 import { FeaturesProvider } from "@/lib/FeaturesContext";
 import AdminUsersPage from "@/pages/AdminUsersPage";
 import LoginPage from "@/pages/LoginPage";
@@ -100,6 +101,7 @@ function App() {
                       <Route path="/assistente-ai" element={<ProtectedRoute permission="ai"><AIAssistantPage /></ProtectedRoute>} />
                       <Route path="/moduli/:slug" element={<CustomModulePage />} />
                       <Route path="/admin/moduli" element={<ProtectedRoute requireAdmin><ModuleBuilderPage /></ProtectedRoute>} />
+                      <Route path="/admin/migrazione-notion" element={<ProtectedRoute requireAdmin><NotionMigrationPage /></ProtectedRoute>} />
                       <Route path="/commesse" element={<ProtectedRoute permission="commesse"><CommessePage /></ProtectedRoute>} />
                       <Route path="/fatturato" element={<ProtectedRoute permission="commesse"><CommercialInsightsPage mode="fatturato" /></ProtectedRoute>} />
                       <Route path="/wallbox" element={<ProtectedRoute permission="commesse"><CommercialInsightsPage mode="wallbox" /></ProtectedRoute>} />
@@ -114,22 +116,8 @@ function App() {
                       <Route path="/ordini-clienti" element={<Navigate to="/clienti-ordini" replace />} />
                       <Route path="/installazioni" element={<ProtectedRoute permission="installazioni"><InstallazioniPage /></ProtectedRoute>} />
                       <Route path="/assistenza" element={<ProtectedRoute permission="assistenza"><AssistenzaPage /></ProtectedRoute>} />
-                      <Route
-                        path="/admin"
-                        element={
-                          <ProtectedRoute requireAdmin>
-                            <AdminPage />
-                          </ProtectedRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/utenti"
-                        element={
-                          <ProtectedRoute requireAdmin>
-                            <AdminUsersPage />
-                          </ProtectedRoute>
-                        }
-                      />
+                      <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminPage /></ProtectedRoute>} />
+                      <Route path="/admin/utenti" element={<ProtectedRoute requireAdmin><AdminUsersPage /></ProtectedRoute>} />
                     </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
