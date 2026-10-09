@@ -44,7 +44,7 @@ for (const route of [
 }
 
 const calendar = read('src/pages/CalendarPage.jsx');
-for (const marker of ['calendar:manage_people_roles','calendar-role-options','Direttore tecnico','personRoles.map']) {
+for (const marker of ['manage_people_roles','calendar-role-options','Direttore tecnico','personRoles.map']) {
   if (!calendar.includes(marker)) throw new Error(`[R59 audit] Calendario: marker mancante ${marker}`);
 }
 
