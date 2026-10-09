@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "node scripts/apply-r54-copy.js && craco start",
-    "build": "node scripts/apply-r54-copy.js && craco build",
+    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
