@@ -6,6 +6,7 @@ Design:
   - Session invalidation after password reset uses `password_version`.
   - `active_sessions` tracks server-side sessions without storing device data.
   - `must_change_password` blocks operational routes until the password is changed.
+  - R50: durata sessione e logout per inattività leggono le impostazioni reali del gestionale.
 """
 from __future__ import annotations
 
@@ -37,8 +38,6 @@ ROLE_ADMIN = "admin"
 ROLE_RESPONSABILE = "responsabile"
 ROLE_OPERATOR = "operator"
 ROLE_TECNICO = "tecnico"
-# Compatibilità sola lettura con eventuali utenti creati nelle revisioni precedenti.
-# Non è più un ruolo assegnabile dall'admin.
 LEGACY_ROLE_COMMERCIALE = "commerciale"
 VALID_ROLES = {ROLE_ADMIN, ROLE_RESPONSABILE, ROLE_OPERATOR, ROLE_TECNICO}
 
@@ -48,7 +47,6 @@ def _perms(modules, actions=("view", "create", "edit", "delete", "export")):
 
 
 def default_permissions_for_role(role: str):
-    """Permessi predefiniti; l'Admin può personalizzarli utente per utente."""
     if role == ROLE_ADMIN:
         return _perms(PERMISSION_MODULES) | LEGACY_PERMISSIONS
     if role == ROLE_OPERATOR:
@@ -66,8 +64,6 @@ def default_permissions_for_role(role: str):
         ]
         return _perms(mods) | {"gestione_commesse", "modifica_retroattiva", "installazioni:view_all"}
     if role == LEGACY_ROLE_COMMERCIALE:
-        # R48: il reparto Commerciale/Lead è stato rimosso. Gli account storici
-        # mantengono soltanto l'accesso minimo ai Clienti/Ordini e al calendario.
         return _perms(["ordini_clienti"], ("view", "create", "edit", "export")) | _perms(["commesse"], ("view", "export")) | _perms(["calendar"], ("view",))
     return set()
 
@@ -112,8 +108,6 @@ def _request_module_action(request: Request):
     if path.startswith("/api/crm/"):
         tail = path[len("/api/crm/"):].split("/", 1)[0]
         module = {
-            # La vecchia rotta lead resta protetta solo per compatibilità dati,
-            # ma non ha più un modulo/permesso dedicato nel gestionale.
             "lead": "ordini_clienti",
             "clienti": "ordini_clienti",
             "contatti": "ordini_clienti",
@@ -219,9 +213,16 @@ def create_access_token(
     password_version: int,
     remember: bool = False,
     sid: Optional[str] = None,
+    ttl_minutes: Optional[int] = None,
 ) -> str:
     now = datetime.now(timezone.utc)
-    ttl_min = _remember_ttl_minutes() if remember else _access_ttl_minutes()
+    if remember:
+        ttl_min = _remember_ttl_minutes()
+    else:
+        try:
+            ttl_min = max(15, min(int(ttl_minutes), 60 * 24 * 30)) if ttl_minutes is not None else _access_ttl_minutes()
+        except (TypeError, ValueError):
+            ttl_min = _access_ttl_minutes()
     payload = {
         "sub": user_id,
         "username": username,
@@ -322,6 +323,14 @@ class AuthDependencies:
     def __init__(self, db):
         self.db = db
 
+    async def _idle_logout_minutes(self) -> int:
+        try:
+            cfg = await self.db.settings.find_one({"_id": "app_settings"}, {"sicurezza": 1}) or {}
+            sec = cfg.get("sicurezza") or {}
+            return max(1, min(int(sec.get("idle_logout_minutes", 30)), 1440))
+        except Exception:
+            return 30
+
     async def get_current_user(
         self,
         request: Request,
@@ -344,6 +353,14 @@ class AuthDependencies:
             sess = await self.db.active_sessions.find_one({"sid": sid})
             if not sess:
                 raise HTTPException(401, "Sessione disconnessa")
+            idle_minutes = await self._idle_logout_minutes()
+            last_activity = sess.get("last_activity") or sess.get("created_at")
+            if isinstance(last_activity, datetime):
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - last_activity > timedelta(minutes=idle_minutes):
+                    await self.db.active_sessions.delete_one({"sid": sid})
+                    raise HTTPException(401, "Sessione scaduta per inattività — rieffettua il login")
             await touch_session(self.db, sid)
             doc["_sid"] = sid
         module, action = _request_module_action(request)
