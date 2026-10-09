@@ -46,8 +46,8 @@ function replaceRegex(text, regex, replacement, label) {
   );
   s = replaceOnce(
     s,
-    '  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Programmazione degli interventi, tecnici assegnati, attività e avanzamento installazioni." },\n  "/assistenza":',
-    '  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Programmazione delle installazioni assegnate a ENRICO e RICCARDO." },\n  "/interventi-tecnici": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Interventi tecnici di RICCARDO, storici e futuri, separati dalle installazioni." },\n  "/assistenza":',
+    '  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Interventi programmati e completati." },\n  "/assistenza":',
+    '  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Installazioni ENRICO e RICCARDO, programmate e completate." },\n  "/interventi-tecnici": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Interventi tecnici di RICCARDO, storici e futuri, separati dalle installazioni." },\n  "/assistenza":',
     'technical page metadata'
   );
   write(rel, s);
@@ -97,7 +97,7 @@ function replaceRegex(text, regex, replacement, label) {
 
   s = replaceRegex(
     s,
-    /    <div className="et-card p-3 sm:p-4 flex items-center justify-between gap-3">[\s\S]*?<\/div>\n\n    \{loading \?/, 
+    /    <div className="et-card p-3 sm:p-4 flex items-center justify-between gap-3">[\s\S]*?<\/div>\n\n    \{loading \?/,
     `    <div className="et-card p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <Button variant="outline" size="icon" onClick={() => { setMonth((m) => shiftMonth(m,-1)); setPeriodFilter("all"); }}><CaretLeft size={18}/></Button>
