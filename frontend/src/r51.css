@@ -1,0 +1,447 @@
+/* ============================================================
+   R51 — Elios Tech unified premium UI
+   Coerenza visiva globale per tutte le pagine operative.
+   ============================================================ */
+:root {
+  --r51-surface: #ffffff;
+  --r51-surface-soft: #f8fafc;
+  --r51-surface-blue: #f3f8fc;
+  --r51-border: #dfe7ef;
+  --r51-border-strong: #cad7e3;
+  --r51-text: #16283a;
+  --r51-muted: #64748b;
+  --r51-brand: #1a456b;
+  --r51-brand-2: #2d6ea3;
+  --r51-accent: #f6c344;
+  --r51-radius: 14px;
+  --r51-radius-sm: 10px;
+  --r51-shadow: 0 10px 30px -25px rgba(15, 45, 70, .62), 0 1px 2px rgba(15,23,42,.035);
+}
+
+/* ---------- Layout comune ---------- */
+.et-page-host > div[class*="max-w-"] {
+  width: min(100%, 1660px);
+}
+.et-page-host h1 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 850;
+  color: var(--r51-text);
+  letter-spacing: -.035em;
+}
+.et-page-host h2,
+.et-page-host h3 {
+  color: var(--r51-text);
+}
+.et-page-host p { color: var(--r51-muted); }
+
+/* Tutte le superfici operative parlano la stessa lingua */
+.et-page-host .bg-white.border,
+.et-page-host section.bg-white,
+.et-page-host .et-card,
+.et-page-host .et-card-elevated {
+  border-color: var(--r51-border) !important;
+  border-radius: var(--r51-radius) !important;
+  box-shadow: var(--r51-shadow);
+}
+.et-page-host .bg-slate-50 {
+  background-color: var(--r51-surface-soft) !important;
+}
+
+/* ---------- Toolbar / filtri ---------- */
+.et-page-host .r51-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--r51-border);
+  border-radius: var(--r51-radius);
+  background: rgba(255,255,255,.94);
+  box-shadow: var(--r51-shadow);
+}
+.et-page-host .r51-section-title {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -.015em;
+}
+.et-page-host .r51-kicker {
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--r51-brand-2);
+}
+
+/* ---------- Form ---------- */
+.et-page-host label,
+.et-page-host [data-radix-label] {
+  color: #41556a;
+  font-weight: 700;
+}
+.et-page-host input:not([type="checkbox"]):not([type="radio"]),
+.et-page-host textarea,
+.et-page-host select {
+  border-radius: 10px !important;
+  border-color: var(--r51-border-strong) !important;
+  background: #fff;
+}
+.et-page-host input:not([type="checkbox"]):not([type="radio"]):focus,
+.et-page-host textarea:focus,
+.et-page-host select:focus {
+  border-color: #77a6c9 !important;
+  box-shadow: 0 0 0 3px rgba(45,110,163,.11) !important;
+}
+
+/* ---------- Tabelle ---------- */
+.et-page-host table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.et-page-host table thead {
+  background: linear-gradient(180deg, #f9fbfd, #f4f7fa) !important;
+}
+.et-page-host table thead th {
+  color: #55697d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .025em;
+  border-bottom: 1px solid var(--r51-border) !important;
+}
+.et-page-host table tbody tr {
+  transition: background-color .13s ease, box-shadow .13s ease;
+}
+.et-page-host table tbody tr:hover {
+  background: #f5f9fc !important;
+}
+.et-page-host table tbody td {
+  border-color: #edf1f5 !important;
+}
+
+/* ---------- Tabs / segmented controls ---------- */
+.et-page-host .r51-tabs {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 5px;
+  border: 1px solid var(--r51-border);
+  border-radius: 12px;
+  background: #f5f8fb;
+  scrollbar-width: thin;
+}
+.et-page-host .r51-tab {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #607286;
+  font-size: 13px;
+  font-weight: 750;
+}
+.et-page-host .r51-tab:hover { background: rgba(255,255,255,.8); color: var(--r51-brand); }
+.et-page-host .r51-tab.is-active {
+  background: #fff;
+  color: var(--r51-brand);
+  box-shadow: 0 2px 8px -5px rgba(15,23,42,.4);
+}
+
+/* ---------- Empty / loading ---------- */
+.et-page-host .r51-empty {
+  padding: 34px 20px;
+  text-align: center;
+  border: 1px dashed #ccd7e2;
+  border-radius: var(--r51-radius);
+  background: #fbfcfd;
+  color: var(--r51-muted);
+}
+
+/* ============================================================
+   CLIENTI / ORDINI
+   ============================================================ */
+[data-testid="elios-tech-ordini-page"] > div:first-child {
+  padding: 3px 0 2px;
+}
+[data-testid="elios-tech-ordini-page"] > div:first-child h1::after {
+  content: "Archivio operativo ordinato dal più recente";
+  display: block;
+  margin-top: 5px;
+  color: #718196;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+[data-testid="elios-tech-ordini-page"] table {
+  font-variant-numeric: tabular-nums;
+}
+[data-testid="elios-tech-ordini-page"] table thead th:first-child,
+[data-testid="elios-tech-ordini-page"] table tbody td:first-child {
+  background: #fbfdff;
+}
+[data-testid="elios-tech-ordini-page"] table tbody td:first-child > div {
+  color: var(--r51-brand);
+}
+[data-testid="elios-tech-ordini-page"] table tbody tr {
+  cursor: pointer;
+}
+[data-testid="elios-tech-ordini-page"] table tbody tr:hover {
+  box-shadow: inset 3px 0 0 var(--r51-accent);
+}
+
+/* ============================================================
+   CALENDARIO R51
+   ============================================================ */
+[data-testid="company-calendar-page"] {
+  --cal-hour: #47647d;
+}
+.r51-calendar-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.r51-calendar-period {
+  color: var(--r51-text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: clamp(18px, 2vw, 25px);
+  font-weight: 800;
+  letter-spacing: -.025em;
+}
+.r51-calendar-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+.r51-calendar-stat {
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--r51-border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--r51-shadow);
+}
+.r51-calendar-stat strong {
+  display: block;
+  color: var(--r51-text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 21px;
+  line-height: 1.1;
+}
+.r51-calendar-stat span {
+  display: block;
+  margin-top: 4px;
+  color: var(--r51-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.r51-calendar-week-wrap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.r51-calendar-week {
+  min-width: 1120px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.r51-calendar-day {
+  min-width: 0;
+  min-height: 430px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--r51-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--r51-shadow);
+}
+.r51-calendar-day.is-today {
+  border-color: #9abbd3;
+  box-shadow: inset 0 3px 0 var(--r51-accent), var(--r51-shadow);
+}
+.r51-calendar-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 11px 10px;
+  border-bottom: 1px solid #edf1f5;
+  background: linear-gradient(180deg, #fbfdff, #f7fafc);
+}
+.r51-calendar-day.is-today .r51-calendar-day-head {
+  background: #f3f8fc;
+}
+.r51-calendar-day-name {
+  color: #66788b;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.r51-calendar-day-date {
+  color: var(--r51-text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1.05;
+}
+.r51-calendar-count {
+  min-width: 25px;
+  height: 25px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eaf2f8;
+  color: var(--r51-brand);
+  font-size: 11px;
+  font-weight: 800;
+}
+.r51-calendar-day-body {
+  flex: 1;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: #fff;
+}
+.r51-event-card {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 9px 8px;
+  text-align: left;
+  border: 1px solid #e2e8ef;
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: #fff;
+  transition: transform .13s ease, box-shadow .13s ease, border-color .13s ease;
+}
+.r51-event-card:hover {
+  transform: translateY(-1px);
+  border-color: #cad7e3;
+  box-shadow: 0 8px 20px -16px rgba(15,23,42,.55);
+}
+.r51-event-time {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  color: #4f6377;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.r51-event-title {
+  margin-top: 4px;
+  color: var(--r51-text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.r51-event-meta {
+  margin-top: 4px;
+  color: #718196;
+  font-size: 10px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.r51-event-category {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(15,23,42,.055);
+  color: #55697d;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.r51-calendar-add-slot {
+  margin-top: auto;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px dashed #cfdae4;
+  border-radius: 9px;
+  color: #718196;
+  font-size: 11px;
+  font-weight: 700;
+}
+.r51-calendar-add-slot:hover {
+  color: var(--r51-brand);
+  border-color: #9ebbd0;
+  background: #f7fafc;
+}
+.r51-calendar-month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0,1fr));
+  gap: 6px;
+}
+.r51-calendar-month-cell {
+  min-width: 0;
+  min-height: 145px;
+  padding: 8px;
+  border: 1px solid var(--r51-border);
+  border-radius: 11px;
+  background: #fff;
+}
+.r51-calendar-month-cell.is-today {
+  box-shadow: inset 0 3px 0 var(--r51-accent);
+  border-color: #9abbd3;
+}
+.r51-calendar-day-agenda {
+  display: grid;
+  gap: 8px;
+}
+.r51-calendar-day-agenda .r51-event-card {
+  padding: 13px;
+}
+.r51-calendar-filter-panel {
+  border: 1px solid var(--r51-border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 13px;
+  box-shadow: var(--r51-shadow);
+}
+.r51-resource-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+/* Dialog interni più leggibili */
+[data-radix-dialog-content] {
+  border-radius: 17px !important;
+  border-color: var(--r51-border) !important;
+}
+
+@media (max-width: 1100px) {
+  .r51-calendar-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 640px) {
+  .et-page-host .r51-toolbar { padding: 9px; }
+  .r51-calendar-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .r51-calendar-stat { padding: 9px 10px; }
+  .r51-calendar-week { min-width: 980px; }
+  .r51-calendar-day { min-height: 380px; }
+  .r51-calendar-month { min-width: 760px; }
+  .r51-calendar-month-cell { min-height: 120px; }
+  [data-testid="elios-tech-ordini-page"] > div:first-child h1::after { font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .r51-event-card { transition: none; }
+  .r51-event-card:hover { transform: none; }
+}
