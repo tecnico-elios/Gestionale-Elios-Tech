@@ -2,13 +2,10 @@ import { API } from "./apiBase";
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 
-
 const TOKEN_KEY = "elios_jwt";
 const REMEMBER_KEY = "elios_remember";
-
 const AuthContext = createContext(null);
 
-// Storage strategy — per-device only (localStorage se Rimani collegato, sessionStorage altrimenti)
 function readStoredToken() {
   try {
     return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || null;
@@ -16,9 +13,11 @@ function readStoredToken() {
     return null;
   }
 }
+
 function isRememberSet() {
   try { return localStorage.getItem(REMEMBER_KEY) === "1"; } catch { return false; }
 }
+
 function writeStoredToken(token, remember) {
   try {
     sessionStorage.removeItem(TOKEN_KEY);
@@ -37,14 +36,11 @@ function writeStoredToken(token, remember) {
   } catch {}
 }
 
-// Interceptor per Bearer + auto-logout su 401
 axios.interceptors.request.use((config) => {
   const t = readStoredToken();
   if (t) {
     config.headers = config.headers || {};
-    if (!config.headers.Authorization) {
-      config.headers.Authorization = `Bearer ${t}`;
-    }
+    if (!config.headers.Authorization) config.headers.Authorization = `Bearer ${t}`;
   }
   return config;
 });
@@ -54,30 +50,26 @@ axios.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       writeStoredToken(null, false);
-      if (!window.location.pathname.startsWith("/login") &&
-          !window.location.pathname.startsWith("/reset-password")) {
+      if (!window.location.pathname.startsWith("/login") && !window.location.pathname.startsWith("/reset-password")) {
         window.dispatchEvent(new Event("elios:auth-expired"));
       }
     }
-    // 403 password_change_required → redirect a /force-change-password
     if (err?.response?.status === 403) {
       const d = err?.response?.data?.detail;
       const code = (typeof d === "object" && d) ? d.code : null;
-      if (code === "password_change_required" &&
-          !window.location.pathname.startsWith("/force-change-password") &&
-          !window.location.pathname.startsWith("/login")) {
+      if (code === "password_change_required" && !window.location.pathname.startsWith("/force-change-password") && !window.location.pathname.startsWith("/login")) {
         window.dispatchEvent(new Event("elios:must-change-password"));
       }
     }
     return Promise.reject(err);
-  }
+  },
 );
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined);
   const [bootstrap, setBootstrap] = useState(null);
   const idleTimerRef = useRef(null);
-  const idleLimitMinRef = useRef(30); // aggiornato dopo il login dalle settings
+  const idleLimitMinRef = useRef(30);
 
   const refreshMe = useCallback(async () => {
     const t = readStoredToken();
@@ -128,21 +120,17 @@ export function AuthProvider({ children }) {
   };
 
   const logout = useCallback(async () => {
-    // Best-effort: chiama /auth/logout per rimuovere la sessione lato server
     try { await axios.post(`${API}/auth/logout`); } catch {}
     writeStoredToken(null, false);
     setUser(null);
   }, []);
 
-  // Idle-logout timer — resettato ad ogni activity (mouse/keyboard/touch)
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     const mins = Math.max(1, idleLimitMinRef.current || 30);
     idleTimerRef.current = setTimeout(() => {
       logout();
-      if (!window.location.pathname.startsWith("/login")) {
-        window.location.replace("/login?reason=idle");
-      }
+      if (!window.location.pathname.startsWith("/login")) window.location.replace("/login?reason=idle");
     }, mins * 60 * 1000);
   }, [logout]);
 
@@ -156,9 +144,7 @@ export function AuthProvider({ children }) {
         idleLimitMinRef.current = m;
         resetIdleTimer();
       }
-    } catch {
-      // Errore di rete o configurazione — il valore predefinito di 30 minuti resta valido
-    }
+    } catch {}
   }, [resetIdleTimer]);
 
   useEffect(() => {
@@ -166,9 +152,7 @@ export function AuthProvider({ children }) {
     refreshBootstrap();
     const onExpired = () => setUser(null);
     const onMustChange = () => {
-      if (!window.location.pathname.startsWith("/force-change-password")) {
-        window.location.replace("/force-change-password");
-      }
+      if (!window.location.pathname.startsWith("/force-change-password")) window.location.replace("/force-change-password");
     };
     window.addEventListener("elios:auth-expired", onExpired);
     window.addEventListener("elios:must-change-password", onMustChange);
@@ -178,7 +162,6 @@ export function AuthProvider({ children }) {
     };
   }, [refreshMe, refreshBootstrap]);
 
-  // Attiva idle timer + listener quando c'è un user autenticato
   useEffect(() => {
     if (!user) {
       if (idleTimerRef.current) {
@@ -210,9 +193,7 @@ export function AuthProvider({ children }) {
     isAdmin: !!user && user.role === "admin",
     isOperator: !!user && user.role === "operator",
     isResponsabile: !!user && user.role === "responsabile",
-    isCommerciale: !!user && user.role === "commerciale",
     isTecnico: !!user && user.role === "tecnico",
-    // Permessi effettivi calcolati dal backend. Supporta sia modulo sia modulo:azione.
     hasPermission: (module, action = "view") => {
       if (!user) return false;
       if (user.role === "admin") return true;
