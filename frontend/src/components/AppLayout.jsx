@@ -44,6 +44,32 @@ const NATIVE_ITEMS = [
   { key: "ai", to: "/assistente-ai", label: "Assistente AI", icon: Robot, testid: "nav-ai", module: "ai", section: "sistema", order: 10 },
 ];
 
+const PAGE_META = {
+  "/dashboard": { section: "principale", eyebrow: "Operativo", icon: House, description: "Situazione generale del gestionale, attività da gestire e indicatori principali." },
+  "/calendario": { section: "principale", eyebrow: "Operativo", icon: CalendarBlank, description: "Agenda condivisa di installazioni, sopralluoghi, assistenze e attività interne." },
+  "/clienti-ordini": { section: "amministrazione", eyebrow: "Amministrazione", icon: ShoppingCart, description: "Anagrafica clienti, ordini, dati commerciali e storico in un'unica vista ordinata." },
+  "/commesse": { section: "amministrazione", eyebrow: "Amministrazione", icon: Wrench, description: "Gestione completa delle commesse, materiali, servizi, avanzamento e collegamenti operativi." },
+  "/fatturato": { section: "amministrazione", eyebrow: "Amministrazione", icon: ChartBar, description: "Lettura sintetica del fatturato e dell'andamento economico delle commesse." },
+  "/wallbox": { section: "amministrazione", eyebrow: "Amministrazione", icon: Lightning, description: "Analisi delle wallbox gestite, quantità e distribuzione per attività e commessa." },
+  "/report": { section: "amministrazione", eyebrow: "Amministrazione", icon: FileText, description: "Report operativi e riepiloghi esportabili del lavoro svolto." },
+  "/sopralluoghi": { section: "tecnico", eyebrow: "Tecnico", icon: ClipboardText, description: "Pianificazione e gestione dei sopralluoghi con cliente, sede, note e stato." },
+  "/preventivi": { section: "tecnico", eyebrow: "Tecnico", icon: FileText, description: "Creazione, revisione e gestione dei preventivi collegati a clienti e commesse." },
+  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Programmazione degli interventi, tecnici assegnati, attività e avanzamento installazioni." },
+  "/assistenza": { section: "tecnico", eyebrow: "Tecnico", icon: Headset, description: "Richieste di assistenza, interventi, assegnazioni e storico tecnico." },
+  "/inventario": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Disponibilità, articoli, seriali e giacenze del Magazzino Elios Tech." },
+  "/magazzino-verona": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Disponibilità, articoli, seriali e giacenze del Magazzino Verona." },
+  "/trasferimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsLeftRight, description: "Trasferimenti di materiale tra le sedi con quantità, seriali e tracciabilità." },
+  "/arrivi": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Registrazione degli arrivi a magazzino e aggiornamento delle disponibilità." },
+  "/spedizioni": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Preparazione e controllo delle spedizioni collegate a clienti e commesse." },
+  "/movimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Storico dei movimenti di magazzino e tracciamento delle variazioni." },
+  "/anomalie": { section: "gestione", eyebrow: "Gestione", icon: Warning, description: "Anomalie da verificare e situazioni che richiedono attenzione operativa." },
+  "/assistente-ai": { section: "sistema", eyebrow: "Sistema", icon: Robot, description: "Assistente interno per consultare e interpretare i dati del gestionale." },
+  "/admin": { section: "sistema", eyebrow: "Sistema", icon: Gear, description: "Configurazione generale del gestionale e delle preferenze aziendali." },
+  "/admin/utenti": { section: "sistema", eyebrow: "Sistema", icon: UsersThree, description: "Gestione utenti, ruoli, autorizzazioni e accessi al gestionale." },
+  "/admin/moduli": { section: "sistema", eyebrow: "Sistema", icon: SlidersHorizontal, description: "Creazione e configurazione dei moduli personalizzati del gestionale." },
+  "/admin/migrazione-notion": { section: "sistema", eyebrow: "Sistema", icon: Database, description: "Migrazione una tantum dei dati legacy verso il database autonomo del gestionale." },
+};
+
 function SidebarLink({ item, onNavigate }) {
   const Icon = item.icon;
   return (
@@ -202,6 +228,17 @@ export default function AppLayout() {
   const currentNative = configuredNativeItems.find((i) => location.pathname === i.to || location.pathname.startsWith(`${i.to}/`));
   const currentCustom = customModules.find((m) => location.pathname.startsWith(`/moduli/${m.slug}`));
   const currentTitle = location.pathname.startsWith("/admin/migrazione-notion") ? "Importazione da Notion" : location.pathname.startsWith("/admin/moduli") ? "Costruttore gestionale" : location.pathname.startsWith("/admin/utenti") ? "Utenti e permessi" : location.pathname === "/admin" ? "Impostazioni" : currentCustom?.name || currentNative?.label || "Gestionale";
+  const pageMeta = PAGE_META[location.pathname] || {
+    section: currentCustom?.section === "commerciale" ? "amministrazione" : (currentCustom?.section || currentNative?.section || "amministrazione"),
+    eyebrow: currentCustom ? "Modulo gestionale" : "Gestionale",
+    icon: currentNative?.icon || FileText,
+    description: currentCustom?.description || "Area operativa del Gestionale Elios Tech.",
+  };
+  const CurrentPageIcon = pageMeta.icon || currentNative?.icon || FileText;
+  const currentSection = pageMeta.section || "amministrazione";
+  const routeToken = location.pathname.startsWith("/moduli/")
+    ? "custom"
+    : (location.pathname.replace(/^\/+/, "").replace(/[^a-z0-9]+/gi, "-") || "dashboard");
 
   return (
     <div className="et-app-shell" data-testid="app-layout">
@@ -267,8 +304,23 @@ export default function AppLayout() {
           </div>
         </aside>
 
-        <main className={`et-main-content ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}>
-          <div className="et-page-host"><Outlet key={`${location.pathname}:${sectionResetKey}`} /></div>
+        <main className={`et-main-content r52-main-shell r52-section-${currentSection} ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}>
+          <section className="r52-page-banner" aria-label={`Sezione ${currentTitle}`}>
+            <div className="r52-page-banner-inner">
+              <div className="r52-page-identity">
+                <div className="r52-page-icon"><CurrentPageIcon size={27} weight="duotone" /></div>
+                <div className="min-w-0">
+                  <div className="r52-page-kicker">{pageMeta.eyebrow}</div>
+                  <h1 className="r52-page-title">{currentTitle}</h1>
+                  <p className="r52-page-subtitle">{pageMeta.description}</p>
+                </div>
+              </div>
+              <div className="r52-page-state"><span className="r52-page-state-dot" /> Database gestionale locale</div>
+            </div>
+          </section>
+          <div className={`et-page-host r52-page-host r52-route-${routeToken}`} data-r52-route={routeToken}>
+            <Outlet key={`${location.pathname}:${sectionResetKey}`} />
+          </div>
         </main>
       </div>
       <ChangeMyPasswordDialog open={pwdOpen} onClose={() => setPwdOpen(false)} />
