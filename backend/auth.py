@@ -1,22 +1,11 @@
 """Auth core — bcrypt hashing, JWT tokens, FastAPI dependencies.
 
-Design (Prompt 220 §Auth) + F7 estensioni:
-  - Users stored in MongoDB `users` collection. NEVER in Notion.
-  - Passwords: bcrypt hash only. NEVER plaintext (DB/logs/Notion/frontend/source).
-  - Ruoli: Admin, Responsabile, Operatore, Commerciale e Tecnico.
-  - Session invalidation after password reset via `password_version` — the JWT
-    embeds `pwv`, and `get_current_user` rejects tokens whose `pwv` no longer
-    matches the user's current `password_version`.
-  - `active_sessions` MongoDB collection tracks per-JWT session:
-      {sid, user_id, username, created_at, last_activity, last_login}
-    Ogni JWT contiene `sid` (session id). `get_current_user` verifica che la
-    sessione esista ancora (l'admin può disconnetterla via DELETE /admin/sessions/{sid}).
-    Ad ogni chiamata autenticata `last_activity` viene aggiornata.
-    NON viene mai salvata informazione sul dispositivo (IP/UA) — solo tempo.
-  - `must_change_password`: se True l'utente può usare SOLO /auth/me e
-    /auth/change-my-password. Ogni altra rotta ritorna 403 con codice specifico.
-  - Bootstrap: NO auto-seeded admin. Endpoint `POST /api/auth/bootstrap`
-    works ONLY when `db.users` is empty (see routes/auth_routes.py).
+Design:
+  - Users stored in MongoDB `users`. Passwords are bcrypt hashes only.
+  - Supported roles: Admin, Responsabile, Operatore, Tecnico.
+  - Session invalidation after password reset uses `password_version`.
+  - `active_sessions` tracks server-side sessions without storing device data.
+  - `must_change_password` blocks operational routes until the password is changed.
 """
 from __future__ import annotations
 
@@ -29,31 +18,29 @@ from typing import Optional, Dict, Any
 import bcrypt
 import jwt
 from bson import ObjectId
-from fastapi import HTTPException, Depends, Header, Request
+from fastapi import HTTPException, Header, Request
 
 logger = logging.getLogger(__name__)
 
-# Permessi granulari del Gestionale Elios Tech.
-# Ogni permesso è nel formato "modulo:azione". Le azioni supportate sono
-# visualizzazione, creazione, modifica, eliminazione ed esportazione.
 PERMISSION_ACTIONS = ["view", "create", "edit", "delete", "export"]
 PERMISSION_MODULES = [
-    "dashboard", "calendar", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
+    "dashboard", "calendar", "clienti", "contatti", "sedi", "sopralluoghi",
     "preventivi", "ordini_clienti", "commesse", "installazioni", "assistenza",
     "inventario", "arrivi", "spedizioni", "movimenti", "anomalie",
     "ai", "impostazioni", "utenti", "importazione_dati",
 ]
 
-# Permessi legacy ancora usati da alcune funzioni specialistiche.
 LEGACY_PERMISSIONS = {"gestione_commesse", "modifica_retroattiva"}
 SPECIAL_PERMISSIONS = {"installazioni:view_all"}
 
 ROLE_ADMIN = "admin"
 ROLE_RESPONSABILE = "responsabile"
 ROLE_OPERATOR = "operator"
-ROLE_COMMERCIALE = "commerciale"
 ROLE_TECNICO = "tecnico"
-VALID_ROLES = {ROLE_ADMIN, ROLE_RESPONSABILE, ROLE_OPERATOR, ROLE_COMMERCIALE, ROLE_TECNICO}
+# Compatibilità sola lettura con eventuali utenti creati nelle revisioni precedenti.
+# Non è più un ruolo assegnabile dall'admin.
+LEGACY_ROLE_COMMERCIALE = "commerciale"
+VALID_ROLES = {ROLE_ADMIN, ROLE_RESPONSABILE, ROLE_OPERATOR, ROLE_TECNICO}
 
 
 def _perms(modules, actions=("view", "create", "edit", "delete", "export")):
@@ -61,29 +48,27 @@ def _perms(modules, actions=("view", "create", "edit", "delete", "export")):
 
 
 def default_permissions_for_role(role: str):
-    """Permessi predefiniti. L'Admin può poi personalizzarli utente per utente."""
+    """Permessi predefiniti; l'Admin può personalizzarli utente per utente."""
     if role == ROLE_ADMIN:
         return _perms(PERMISSION_MODULES) | LEGACY_PERMISSIONS
     if role == ROLE_OPERATOR:
-        # L'operatore lavora sulle commesse esistenti e sui flussi di magazzino.
-        # La creazione di nuove commesse resta separata e può essere concessa dall'Admin.
-        base = _perms(["inventario", "arrivi", "spedizioni"], ("view", "create", "edit")) | _perms(["calendar"], ("view",))
+        base = _perms(["inventario", "arrivi", "spedizioni"], ("view", "create", "edit"))
+        base |= _perms(["calendar"], ("view",))
         base |= _perms(["commesse"], ("view", "edit"))
         return base | {"gestione_commesse"}
-    if role == ROLE_COMMERCIALE:
-        # Il Commerciale usa Lead e la scheda unificata Elios Tech Ordini.
-        return _perms(["lead", "ordini_clienti"]) | _perms(["commesse"], ("view", "export")) | _perms(["calendar"], ("view",))
     if role == ROLE_TECNICO:
-        # Profilo operativo essenziale: il tecnico vede e aggiorna solo le installazioni
-        # assegnate a lui. Accessi extra possono essere concessi dall'Admin dalla matrice.
         return _perms(["dashboard", "calendar"], ("view",)) | _perms(["installazioni"], ("view", "edit", "export"))
     if role == ROLE_RESPONSABILE:
         mods = [
-            "dashboard", "calendar", "lead", "clienti", "contatti", "sedi", "sopralluoghi",
+            "dashboard", "calendar", "clienti", "contatti", "sedi", "sopralluoghi",
             "preventivi", "ordini_clienti", "commesse", "installazioni", "assistenza",
             "inventario", "arrivi", "spedizioni", "movimenti", "anomalie", "ai",
         ]
         return _perms(mods) | {"gestione_commesse", "modifica_retroattiva", "installazioni:view_all"}
+    if role == LEGACY_ROLE_COMMERCIALE:
+        # R48: il reparto Commerciale/Lead è stato rimosso. Gli account storici
+        # mantengono soltanto l'accesso minimo ai Clienti/Ordini e al calendario.
+        return _perms(["ordini_clienti"], ("view", "create", "edit", "export")) | _perms(["commesse"], ("view", "export")) | _perms(["calendar"], ("view",))
     return set()
 
 
@@ -93,14 +78,14 @@ def effective_permissions(user_doc):
     role = user_doc.get("role")
     if role == ROLE_ADMIN or is_master_user(user_doc):
         return default_permissions_for_role(ROLE_ADMIN)
-    # Se l'Admin ha personalizzato la matrice, usa esattamente quella.
     if user_doc.get("permissions_customized"):
-        return set(user_doc.get("permissions") or [])
+        valid = set(PERMISSION_MODULES) | LEGACY_PERMISSIONS | SPECIAL_PERMISSIONS
+        valid |= {f"{m}:{a}" for m in PERMISSION_MODULES for a in PERMISSION_ACTIONS}
+        return {p for p in (user_doc.get("permissions") or []) if p in valid}
     return default_permissions_for_role(role)
 
 
 def has_permission(user_doc, module: str, action: str = "view") -> bool:
-    """Controllo permessi compatibile sia con la nuova matrice sia con i permessi legacy."""
     if not user_doc:
         return False
     if user_doc.get("role") == ROLE_ADMIN or is_master_user(user_doc):
@@ -110,20 +95,16 @@ def has_permission(user_doc, module: str, action: str = "view") -> bool:
         return module in perms
     if module not in PERMISSION_MODULES:
         return False
-    # Retrocompatibilità: un vecchio permesso bare "inventario" equivale a tutte le azioni.
     return module in perms or f"{module}:{action}" in perms
 
 
 def _request_module_action(request: Request):
-    """Mappa le API del gestionale alla matrice permessi. None = nessun gate aggiuntivo."""
     path = request.url.path or ""
     method = request.method.upper()
     if not path.startswith("/api/"):
         return None, None
-    # Auth e bootstrap devono restare accessibili all'utente autenticato.
     if path.startswith("/api/auth/") or path == "/api/time":
         return None, None
-    # Tutte le rotte amministrative continuano ad avere require_admin dove previsto.
     if path.startswith("/api/admin/"):
         return None, None
 
@@ -131,9 +112,16 @@ def _request_module_action(request: Request):
     if path.startswith("/api/crm/"):
         tail = path[len("/api/crm/"):].split("/", 1)[0]
         module = {
-            "lead": "lead", "clienti": "ordini_clienti", "contatti": "ordini_clienti",
-            "sedi": "ordini_clienti", "sopralluoghi": "sopralluoghi", "preventivi": "preventivi",
-            "ordini-clienti": "ordini_clienti", "installazioni": "installazioni",
+            # La vecchia rotta lead resta protetta solo per compatibilità dati,
+            # ma non ha più un modulo/permesso dedicato nel gestionale.
+            "lead": "ordini_clienti",
+            "clienti": "ordini_clienti",
+            "contatti": "ordini_clienti",
+            "sedi": "ordini_clienti",
+            "sopralluoghi": "sopralluoghi",
+            "preventivi": "preventivi",
+            "ordini-clienti": "ordini_clienti",
+            "installazioni": "installazioni",
             "assistenza": "assistenza",
         }.get(tail)
         if tail == "meta":
@@ -161,7 +149,6 @@ def _request_module_action(request: Request):
     elif path.startswith("/api/ai"):
         module = "ai"
     elif path.startswith("/api/files"):
-        # I file vengono autorizzati dalla rotta in base alla risorsa padre.
         module = None
 
     if not module:
@@ -173,22 +160,15 @@ def _request_module_action(request: Request):
     elif method in {"PUT", "PATCH"}:
         action = "edit"
     else:
-        # POST su una collection crea; POST su /commesse/<id>/... modifica il record.
-        if module == "commesse" and path.count("/") > 3:
-            action = "edit"
-        else:
-            action = "create"
+        action = "edit" if module == "commesse" and path.count("/") > 3 else "create"
     return module, action
 
 
 JWT_ALGORITHM = "HS256"
-# Account master protetto — non modificabile/eliminabile/disattivabile da nessuno,
-# neanche da altri Admin. Confronto case-insensitive sull'email.
 MASTER_EMAIL = "tecnico@eliostech.org"
 
 
 def is_master_user(user_doc) -> bool:
-    """True se l'utente è l'account master protetto (Riccardo Biuso)."""
     if not user_doc:
         return False
     email = str(user_doc.get("email") or "").strip().lower()
@@ -210,14 +190,11 @@ def _access_ttl_minutes() -> int:
 
 
 def _remember_ttl_minutes() -> int:
-    """Durata token quando l'utente ha spuntato 'Rimani collegato'."""
     try:
-        return int(os.environ.get("JWT_REMEMBER_TTL_MINUTES", str(60 * 24 * 30)))  # 30 giorni
+        return int(os.environ.get("JWT_REMEMBER_TTL_MINUTES", str(60 * 24 * 30)))
     except ValueError:
         return 60 * 24 * 30
 
-
-# ---------- Password hashing ----------
 
 def hash_password(password: str) -> str:
     if not password or len(password) < 6:
@@ -234,8 +211,6 @@ def verify_password(plain: str, hashed: str) -> bool:
     except (ValueError, TypeError):
         return False
 
-
-# ---------- JWT ----------
 
 def create_access_token(
     user_id: str,
@@ -271,10 +246,7 @@ def decode_token(token: str) -> Dict[str, Any]:
         raise HTTPException(401, "Token non valido")
 
 
-# ---------- Sanitization ----------
-
 def public_user(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Strip sensitive fields before exposing a user document via API."""
     if not doc:
         return {}
     return {
@@ -295,10 +267,7 @@ def public_user(doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# ---------- Session helpers ----------
-
 async def create_session(db, user_id: str, username: str) -> str:
-    """Crea una nuova sessione in `active_sessions` e ritorna il session id."""
     sid = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
     await db.active_sessions.insert_one({
@@ -313,7 +282,6 @@ async def create_session(db, user_id: str, username: str) -> str:
 
 
 async def touch_session(db, sid: str) -> None:
-    """Aggiorna last_activity — best-effort, non blocca la request se fallisce."""
     if not sid:
         return
     try:
@@ -326,7 +294,6 @@ async def touch_session(db, sid: str) -> None:
 
 
 async def invalidate_all_sessions_for_user(db, user_id: str) -> int:
-    """Elimina tutte le sessioni di un utente (usato dopo reset password / disattivazione)."""
     try:
         res = await db.active_sessions.delete_many({"user_id": str(user_id)})
         return int(res.deleted_count or 0)
@@ -334,13 +301,9 @@ async def invalidate_all_sessions_for_user(db, user_id: str) -> int:
         return 0
 
 
-# ---------- FastAPI dependencies ----------
-
 def _extract_token(request: Request, authorization: Optional[str]) -> str:
     if authorization and authorization.lower().startswith("bearer "):
         return authorization[7:].strip()
-    # NO cookie fallback: i cookie possono essere sincronizzati tra dispositivi
-    # via Chrome Sync o iCloud Keychain. Solo Bearer header è per-device.
     raise HTTPException(401, "Autenticazione richiesta")
 
 
@@ -356,9 +319,6 @@ async def _load_user_from_db(db, user_id: str) -> Dict[str, Any]:
 
 
 class AuthDependencies:
-    """Bound to the db handle from server.py. Exposes FastAPI dependencies
-    that DON'T need `db` to be passed explicitly at call sites."""
-
     def __init__(self, db):
         self.db = db
 
@@ -375,25 +335,20 @@ class AuthDependencies:
         if not user_id:
             raise HTTPException(401, "Token malformato")
         doc = await _load_user_from_db(self.db, user_id)
-        # Invalidation: JWT pwv must match user's current password_version
         if int(payload.get("pwv", 0)) != int(doc.get("password_version", 1)):
             raise HTTPException(401, "Sessione scaduta — rieffettua il login")
         if not doc.get("active", True):
             raise HTTPException(403, "Utente disattivato")
-        # Session check — se il JWT ha un sid, deve esistere in active_sessions
         sid = payload.get("sid")
         if sid:
             sess = await self.db.active_sessions.find_one({"sid": sid})
             if not sess:
                 raise HTTPException(401, "Sessione disconnessa")
-            # Touch last_activity (best-effort, non blocca)
             await touch_session(self.db, sid)
             doc["_sid"] = sid
-        # Gate permessi applicato anche lato backend: nascondere una voce nel menu non basta.
         module, action = _request_module_action(request)
         if module and not has_permission(doc, module, action):
             raise HTTPException(403, f"Permesso negato: {module}/{action}")
-        # must_change_password: guard applied by require_password_current below
         return doc
 
     async def require_password_current(
@@ -401,8 +356,6 @@ class AuthDependencies:
         request: Request,
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
-        """Come get_current_user ma blocca l'accesso se must_change_password=True.
-        Usa questa in tutte le rotte NON coinvolte nel cambio password."""
         user = await self.get_current_user(request, authorization)
         if user.get("must_change_password"):
             raise HTTPException(
@@ -429,8 +382,6 @@ class AuthDependencies:
         request: Request,
         authorization: Optional[str] = Header(default=None),
     ) -> Optional[Dict[str, Any]]:
-        """Return the current user if a valid token is present, else None.
-        Never raises. Used to gracefully upgrade F6 endpoints during migration."""
         try:
             return await self.get_current_user(request, authorization)
         except HTTPException:
