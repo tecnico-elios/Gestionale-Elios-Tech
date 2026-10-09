@@ -6,10 +6,8 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
-import { Eye, EyeSlash, Lock } from "@phosphor-icons/react";
-
-
+import { Eye, EyeSlash, Lock, CheckCircle, ArrowLeft } from "@phosphor-icons/react";
+import EliosLogo from "../components/EliosLogo";
 
 function formatError(err) {
   const d = err?.response?.data?.detail;
@@ -34,14 +32,8 @@ export default function ResetPasswordPage() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (newPwd !== confirm) {
-      toast.error("Le password non coincidono");
-      return;
-    }
-    if (newPwd.length < 6) {
-      toast.error("Almeno 6 caratteri");
-      return;
-    }
+    if (newPwd !== confirm) { toast.error("Le password non coincidono"); return; }
+    if (newPwd.length < 6) { toast.error("Almeno 6 caratteri"); return; }
     setBusy(true);
     try {
       await axios.post(`${API}/auth/reset-password`, { token, new_password: newPwd });
@@ -50,79 +42,47 @@ export default function ResetPasswordPage() {
       setTimeout(() => navigate("/login", { replace: true }), 1200);
     } catch (err) {
       toast.error("Errore", { description: formatError(err) });
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" data-testid="reset-password-page">
-      <Card className="w-full max-w-sm border-slate-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock size={20} /> Reimposta password
-          </CardTitle>
-          <CardDescription>
-            Inserisci la nuova password. Il link è valido una sola volta e per 1 ora.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="r52-auth-page" data-testid="reset-password-page">
+      <aside className="r52-auth-brand-panel">
+        <div className="r52-auth-brand-content">
+          <div className="r52-auth-logo"><EliosLogo size={46} /></div>
+          <div className="r52-auth-eyebrow">Gestionale Elios Tech</div>
+          <h1>Accesso sicuro al tuo spazio operativo.</h1>
+          <p>Reimposta la password e torna al gestionale mantenendo invariati dati, ruoli e autorizzazioni.</p>
+        </div>
+      </aside>
+      <main className="r52-auth-form-panel">
+        <div className="r52-auth-card">
+          <div className="r52-auth-card-icon"><Lock size={24} weight="duotone" /></div>
+          <div className="r52-auth-card-kicker">Sicurezza account</div>
+          <h2>Reimposta password</h2>
+          <p className="r52-auth-card-copy">Inserisci la nuova password. Il link è valido una sola volta e per 1 ora.</p>
+
           {done ? (
-            <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3">
-              Password aggiornata. Reindirizzamento al login…
-            </div>
+            <div className="r52-auth-success"><CheckCircle size={20} weight="fill" /><div><b>Password aggiornata</b><span>Reindirizzamento al login…</span></div></div>
           ) : (
-            <form onSubmit={submit} className="space-y-3">
+            <form onSubmit={submit} className="r52-auth-form">
               <div>
                 <Label>Nuova password</Label>
-                <div className="relative">
-                  <Input
-                    type={show ? "text" : "password"}
-                    value={newPwd}
-                    onChange={(e) => setNewPwd(e.target.value)}
-                    required
-                    minLength={6}
-                    className="h-11 mt-1 pr-10"
-                    autoFocus
-                    data-testid="reset-new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShow((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 mt-0.5"
-                    tabIndex={-1}
-                  >
-                    {show ? <EyeSlash size={16} /> : <Eye size={16} />}
-                  </button>
+                <div className="relative mt-1">
+                  <Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={6} className="h-12 pr-10" autoFocus data-testid="reset-new-password" />
+                  <button type="button" onClick={() => setShow((s) => !s)} className="r52-auth-eye" tabIndex={-1} aria-label={show ? "Nascondi password" : "Mostra password"}>{show ? <EyeSlash size={17} /> : <Eye size={17} />}</button>
                 </div>
               </div>
               <div>
                 <Label>Ripeti password</Label>
-                <Input
-                  type={show ? "text" : "password"}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  required
-                  minLength={6}
-                  className="h-11 mt-1"
-                  data-testid="reset-confirm-password"
-                />
+                <Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="reset-confirm-password" />
               </div>
-              <Button
-                type="submit"
-                disabled={busy}
-                className="h-11 w-full et-btn-primary border-0"
-                data-testid="reset-submit-btn"
-              >
-                {busy ? "Aggiorno…" : "Aggiorna password"}
-              </Button>
-              <Link to="/login" className="block text-center text-sm text-slate-500 hover:text-slate-900">
-                Torna al login
-              </Link>
+              <Button type="submit" disabled={busy} className="h-12 w-full et-btn-primary border-0" data-testid="reset-submit-btn">{busy ? "Aggiorno…" : "Aggiorna password"}</Button>
+              <Link to="/login" className="r52-auth-back"><ArrowLeft size={15} /> Torna al login</Link>
             </form>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </main>
     </div>
   );
 }
