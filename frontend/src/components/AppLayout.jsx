@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   ChartBar,
   Lightning,
+  Database,
 } from "@phosphor-icons/react";
 import { useInventoryCtx } from "../lib/InventoryContext";
 import { useAuth } from "../lib/AuthContext";
@@ -225,6 +226,7 @@ export default function AppLayout() {
     { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", module: "impostazioni", order: 900 },
     { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", module: "utenti", order: 910 },
     { to: "/admin/moduli", label: "Costruttore gestionale", icon: SlidersHorizontal, testid: "nav-module-builder", module: "impostazioni", order: 920 },
+    { to: "/admin/migrazione-notion", label: "Importazione Notion", icon: Database, testid: "nav-notion-migration", module: "impostazioni", order: 930 },
   ] : [];
 
   const sectionItems = (sectionKey) => {
