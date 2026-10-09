@@ -38,17 +38,10 @@ import ModuleBuilderPage from "@/pages/ModuleBuilderPage";
 function LandingRedirect() {
   const { hasPermission } = useAuth();
   const targets = [
-    ["dashboard", "/dashboard"],
-    ["calendar", "/calendario"],
-    ["ordini_clienti", "/clienti-ordini"],
-    ["commesse", "/commesse"],
-    ["inventario", "/inventario"],
-    ["arrivi", "/arrivi"],
-    ["spedizioni", "/spedizioni"],
-    ["sopralluoghi", "/sopralluoghi"],
-    ["preventivi", "/preventivi"],
-    ["installazioni", "/installazioni"],
-    ["assistenza", "/assistenza"],
+    ["dashboard", "/dashboard"], ["calendar", "/calendario"], ["ordini_clienti", "/clienti-ordini"],
+    ["commesse", "/commesse"], ["inventario", "/inventario"], ["arrivi", "/arrivi"],
+    ["spedizioni", "/spedizioni"], ["sopralluoghi", "/sopralluoghi"], ["preventivi", "/preventivi"],
+    ["installazioni", "/installazioni"], ["assistenza", "/assistenza"],
   ];
   const found = targets.find(([module]) => hasPermission(module, "view"));
   return <Navigate to={found ? found[1] : "/login"} replace />;
@@ -56,9 +49,7 @@ function LandingRedirect() {
 
 function PasswordGate({ children }) {
   const { isAuthenticated, mustChangePassword } = useAuth();
-  if (isAuthenticated && mustChangePassword) {
-    return <Nav to="/force-change-password" replace />;
-  }
+  if (isAuthenticated && mustChangePassword) return <Nav to="/force-change-password" replace />;
   return children;
 }
 
