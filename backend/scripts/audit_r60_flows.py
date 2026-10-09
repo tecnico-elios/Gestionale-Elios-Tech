@@ -7,6 +7,7 @@ files = [
     ROOT / "calendar_installation_sync.py",
     ROOT / "routes" / "calendar_routes.py",
     ROOT / "routes" / "crm_routes.py",
+    ROOT / "server.py",
 ]
 for path in files:
     py_compile.compile(str(path), doraise=True)
@@ -14,6 +15,7 @@ for path in files:
 sync = (ROOT / "calendar_installation_sync.py").read_text(encoding="utf-8")
 calendar = (ROOT / "routes" / "calendar_routes.py").read_text(encoding="utf-8")
 crm = (ROOT / "routes" / "crm_routes.py").read_text(encoding="utf-8")
+server = (ROOT / "server.py").read_text(encoding="utf-8")
 
 for marker in [
     "sync_calendar_event_to_installation",
@@ -46,4 +48,12 @@ for marker in [
     if marker not in crm:
         raise RuntimeError(f"R60 audit: marker CRM mancante: {marker}")
 
-print("[R60 audit] OK: sincronizzazione Calendario → Installazioni, cliente/sede e anti-duplicati verificati.")
+for marker in [
+    "R60 Calendar→Installazioni startup sync",
+    'sync_all_calendar_installations(db, actor="startup", force=False)',
+    "startup sync failed",
+]:
+    if marker not in server:
+        raise RuntimeError(f"R60 audit: marker startup mancante: {marker}")
+
+print("[R60 audit] OK: sincronizzazione Calendario → Installazioni, cliente/sede, anti-duplicati e startup sync verificati.")
