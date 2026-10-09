@@ -3,6 +3,7 @@ import "@/r50.css";
 import "@/r51.css";
 import "@/r52.css";
 import "@/r52-pages.css";
+import "@/r52-extra.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { InventoryProvider } from "@/lib/InventoryContext";
