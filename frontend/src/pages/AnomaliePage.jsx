@@ -2,15 +2,13 @@ import { API } from "../lib/apiBase";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Warning, ArrowsClockwise, MagnifyingGlass, Trash } from "@phosphor-icons/react";
+import { Warning, ArrowsClockwise, MagnifyingGlass, Trash, ShieldWarning, CheckCircle } from "@phosphor-icons/react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { useAuth } from "../lib/AuthContext";
 import { fmtDateTime, useTz } from "../lib/tz";
 import { appConfirm } from "../lib/appConfirm";
-
-
 
 const KIND_LABEL = {
   submit_blocked_serials: "Seriale non valido",
@@ -79,98 +77,63 @@ export default function AnomaliePage() {
   }, [items, q]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4" data-testid="anomalie-page">
-      <div className="flex items-end justify-between gap-3 flex-wrap">
+    <div className="r52-anomalies-workspace" data-testid="anomalie-page">
+      <div className="r52-commandbar">
         <div>
-          <div className="flex items-center gap-2 text-amber-600">
-            <Warning size={16} weight="bold" />
-            <span className="et-eyebrow text-amber-700">Registro eventi</span>
-          </div>
-          <h1 className="et-page-heading text-3xl sm:text-4xl mt-1">Anomalie</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            {items.length} event{items.length === 1 ? "o" : "i"} registrat{items.length === 1 ? "o" : "i"}.
-          </p>
+          <div className="r52-commandbar-title">Registro anomalie</div>
+          <div className="r52-commandbar-subtitle">Eventi bloccanti, seriali non validi e situazioni da verificare.</div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={load} disabled={loading} data-testid="anomalie-refresh">
-            <ArrowsClockwise size={16} className={loading ? "animate-spin mr-1" : "mr-1"} />
-            Aggiorna
+        <div className="r52-commandbar-actions">
+          <div className={`r52-anomaly-summary ${items.length ? "has-items" : "is-clear"}`}>
+            {items.length ? <ShieldWarning size={16} weight="fill" /> : <CheckCircle size={16} weight="fill" />}
+            <span>{items.length ? `${items.length} anomal${items.length === 1 ? "ia" : "ie"}` : "Nessuna anomalia"}</span>
+          </div>
+          <Button variant="outline" onClick={load} disabled={loading} className="r52-outline-button" data-testid="anomalie-refresh">
+            <ArrowsClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna
           </Button>
           {isAdmin && items.length > 0 && (
             <Button variant="outline" onClick={clearAll} className="border-red-300 text-red-600 hover:bg-red-50" data-testid="anomalie-clear-all">
-              <Trash size={16} className="mr-1" /> Elimina tutte
+              <Trash size={16} /> Elimina tutte
             </Button>
           )}
         </div>
       </div>
 
-      <div className="relative max-w-md">
-        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cerca per tipo, operatore, prodotto, seriale…"
-          className="pl-10 h-10"
-          data-testid="anomalie-search"
-        />
-      </div>
-
-      {error && (
-        <div className="border border-red-200 bg-red-50 text-red-700 p-4 rounded-md text-sm">
-          {error}
+      <section className="r52-panel r52-panel-flush">
+        <div className="r52-anomalies-filterbar">
+          <div className="relative flex-1 min-w-[220px] max-w-xl">
+            <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca tipo, operatore, prodotto o seriale…" className="pl-10 h-11" data-testid="anomalie-search" />
+          </div>
+          <span className="r52-count-pill">{filtered.length}</span>
         </div>
-      )}
 
-      {loading && !items.length ? (
-        <div className="text-slate-500 py-12 text-center text-sm">Caricamento anomalie…</div>
-      ) : (
-        <div className="et-card-elevated overflow-hidden">
+        {error && <div className="r52-alert r52-alert-danger m-4">{error}</div>}
+
+        {loading && !items.length ? (
+          <div className="r52-empty-state">Caricamento anomalie…</div>
+        ) : filtered.length === 0 ? (
+          <div className="r52-empty-state"><CheckCircle size={32} weight="fill" className="text-emerald-500" /><strong>Nessuna anomalia registrata</strong><span>Il registro non contiene eventi corrispondenti alla ricerca.</span></div>
+        ) : (
           <div className="overflow-x-auto">
-            <table className="et-table" data-testid="anomalie-table">
-              <thead>
-                <tr>
-                  <th>Data/Ora</th>
-                  <th>Tipo</th>
-                  <th>Operatore</th>
-                  <th>Prodotto/Seriale</th>
-                  <th>Descrizione</th>
-                  {isAdmin && <th className="w-10"></th>}
-                </tr>
-              </thead>
+            <table data-testid="anomalie-table">
+              <thead><tr><th>Data/Ora</th><th>Tipo</th><th>Operatore</th><th>Prodotto / seriale</th><th>Descrizione</th>{isAdmin && <th className="w-12">Azioni</th>}</tr></thead>
               <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 6 : 5} className="text-center py-10 text-slate-400 text-sm">Nessuna anomalia registrata.</td></tr>
-                ) : filtered.map((a, idx) => (
-                  <tr key={a.id || idx} className="hover:bg-slate-50" data-testid={`anom-row-${idx}`}>
-                    <td className="px-3 py-2 font-mono-tight text-xs text-slate-600 whitespace-nowrap">
-                      {fmtDateTime(a.created_at)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Badge variant="outline" className="border-amber-300 text-amber-800 bg-amber-50">
-                        {KIND_LABEL[a.kind] || a.kind}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-slate-700">{a.operator || "—"}</td>
-                    <td className="px-3 py-2 font-mono-tight text-xs text-slate-700">
-                      {a.product || "—"}{a.serial_or_code ? ` · ${a.serial_or_code}` : ""}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600 max-w-md">{a.description}</td>
-                    {isAdmin && (
-                      <td className="px-2 py-2">
-                        <Button variant="outline" size="icon" onClick={() => deleteOne(a)}
-                          className="h-8 w-8 border-red-300 text-red-600 hover:bg-red-50"
-                          data-testid={`anom-delete-${idx}`}>
-                          <Trash size={14} />
-                        </Button>
-                      </td>
-                    )}
+                {filtered.map((a, idx) => (
+                  <tr key={a.id || idx} data-testid={`anom-row-${idx}`}>
+                    <td className="font-mono-tight text-xs whitespace-nowrap">{fmtDateTime(a.created_at)}</td>
+                    <td><Badge variant="outline" className="border-amber-300 text-amber-800 bg-amber-50"><Warning size={12} className="mr-1" />{KIND_LABEL[a.kind] || a.kind}</Badge></td>
+                    <td>{a.operator || "—"}</td>
+                    <td className="font-mono-tight text-xs">{a.product || "—"}{a.serial_or_code ? ` · ${a.serial_or_code}` : ""}</td>
+                    <td className="max-w-md text-slate-600">{a.description}</td>
+                    {isAdmin && <td><Button variant="ghost" size="icon" onClick={() => deleteOne(a)} className="h-8 w-8 text-red-600 hover:bg-red-50" data-testid={`anom-delete-${idx}`} aria-label="Elimina anomalia"><Trash size={14} /></Button></td>}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </section>
     </div>
   );
 }
