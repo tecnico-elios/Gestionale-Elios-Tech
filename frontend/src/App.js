@@ -1,4 +1,5 @@
 import "@/App.css";
+import "@/r50.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { InventoryProvider } from "@/lib/InventoryContext";
@@ -16,7 +17,7 @@ import AnomaliePage from "@/pages/AnomaliePage";
 import ChecklistPage from "@/pages/ChecklistPage";
 import AIAssistantPage from "@/pages/AIAssistantPage";
 import CommessePage from "@/pages/CommessePage";
-import CommercialInsightsPage from "@/pages/CommercialInsightsPage";
+import CommesseInsightsPage from "@/pages/CommesseInsightsPage";
 import ReportsPage from "@/pages/ReportsPage";
 import AdminPage from "@/pages/AdminPage";
 import NotionMigrationPage from "@/pages/NotionMigrationPage";
@@ -42,6 +43,7 @@ function LandingRedirect() {
     ["commesse", "/commesse"],
     ["inventario", "/inventario"],
     ["arrivi", "/arrivi"],
+    ["spedizioni", "/spedizioni"],
     ["sopralluoghi", "/sopralluoghi"],
     ["preventivi", "/preventivi"],
     ["installazioni", "/installazioni"],
@@ -71,23 +73,8 @@ function App() {
                   <Routes>
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/reset-password" element={<ResetPasswordPage />} />
-                    <Route
-                      path="/force-change-password"
-                      element={
-                        <ProtectedRoute>
-                          <ForceChangePasswordPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      element={
-                        <ProtectedRoute>
-                          <PasswordGate>
-                            <AppLayout />
-                          </PasswordGate>
-                        </ProtectedRoute>
-                      }
-                    >
+                    <Route path="/force-change-password" element={<ProtectedRoute><ForceChangePasswordPage /></ProtectedRoute>} />
+                    <Route element={<ProtectedRoute><PasswordGate><AppLayout /></PasswordGate></ProtectedRoute>}>
                       <Route path="/" element={<LandingRedirect />} />
                       <Route path="/dashboard" element={<ProtectedRoute permission="dashboard"><DashboardPage /></ProtectedRoute>} />
                       <Route path="/calendario" element={<ProtectedRoute permission="calendar"><CalendarPage /></ProtectedRoute>} />
@@ -103,8 +90,8 @@ function App() {
                       <Route path="/admin/moduli" element={<ProtectedRoute requireAdmin><ModuleBuilderPage /></ProtectedRoute>} />
                       <Route path="/admin/migrazione-notion" element={<ProtectedRoute requireAdmin><NotionMigrationPage /></ProtectedRoute>} />
                       <Route path="/commesse" element={<ProtectedRoute permission="commesse"><CommessePage /></ProtectedRoute>} />
-                      <Route path="/fatturato" element={<ProtectedRoute permission="commesse"><CommercialInsightsPage mode="fatturato" /></ProtectedRoute>} />
-                      <Route path="/wallbox" element={<ProtectedRoute permission="commesse"><CommercialInsightsPage mode="wallbox" /></ProtectedRoute>} />
+                      <Route path="/fatturato" element={<ProtectedRoute permission="commesse"><CommesseInsightsPage mode="fatturato" /></ProtectedRoute>} />
+                      <Route path="/wallbox" element={<ProtectedRoute permission="commesse"><CommesseInsightsPage mode="wallbox" /></ProtectedRoute>} />
                       <Route path="/report" element={<ProtectedRoute permission="commesse"><ReportsPage /></ProtectedRoute>} />
                       <Route path="/clienti-ordini" element={<ProtectedRoute permission="ordini_clienti"><EliosTechOrdiniPage /></ProtectedRoute>} />
                       <Route path="/elios-tech-ordini" element={<Navigate to="/clienti-ordini" replace />} />
