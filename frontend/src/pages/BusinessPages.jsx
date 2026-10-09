@@ -1,14 +1,5 @@
-import { API } from "../lib/apiBase";
-import axios from "axios";
-import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
-import { ArrowSquareOut } from "@phosphor-icons/react";
-import { Button } from "../components/ui/button";
 import RegistryPage from "./RegistryPage";
-import { appConfirm } from "../lib/appConfirm";
 import InstallazioniCalendarPage from "./InstallazioniCalendarPage";
-
-
 
 const F = (key, label, extra = {}) => ({ key, label, ...extra });
 
@@ -25,47 +16,6 @@ const CLIENT_LOOKUP = { lookupResource: "clienti", lookupLabel: clientLabel };
 const SITE_LOOKUP = { lookupResource: "sedi", lookupLabel: siteLabel };
 const ORDER_LOOKUP = { lookupResource: "ordini-clienti", lookupLabel: orderLabel };
 const COMMESSA_LOOKUP = { lookupEndpoint: "crm/lookups/commesse", lookupKey: "commesse", lookupLabel: commessaLabel };
-
-export const LeadPage = () => {
-  const navigate = useNavigate();
-  const convert = async (lead, reload) => {
-    if (!(await appConfirm({ title: "Converti in cliente", message: `Convertire “${lead.nome || "questo Lead"}” in cliente?`, confirmLabel: "Converti" }))) return;
-    try {
-      const { data } = await axios.post(`${API}/crm/lead/${lead.id}/convert`);
-      toast.success(data.created ? "Cliente creato" : "Cliente già presente", { description: "Apertura di Clienti / Ordini…" });
-      await reload?.();
-      navigate(`/elios-tech-ordini?cliente=${encodeURIComponent(data.cliente.id)}`);
-    } catch (e) {
-      const detail = e?.response?.data?.detail;
-      toast.error("Conversione non riuscita", { description: typeof detail === "string" ? detail : e?.message || "Errore" });
-    }
-  };
-  return (
-    <RegistryPage
-      resource="lead"
-      title="Lead"
-      subtitle="I Lead servono esclusivamente per gestire contatti e appuntamenti commerciali prima della vendita."
-      newLabel="Nuovo Lead"
-      fields={[
-        F("nome", "Azienda / Nome", { required: true }),
-        F("referente", "Referente"),
-        F("telefono", "Telefono"),
-        F("email", "Email", { type: "email" }),
-        F("agente", "Commerciale / Agente"),
-        F("data_appuntamento", "Data appuntamento", { type: "date" }),
-        F("ora_appuntamento", "Ora appuntamento", { type: "time" }),
-        F("stato", "Stato", { options: ["Da contattare", "Appuntamento da fissare", "Appuntamento fissato", "Appuntamento svolto", "Venduto", "Perso"], default: "Da contattare" }),
-        F("note", "Note appuntamento", { type: "textarea", full: true }),
-      ]}
-      columns={[F("nome", "Lead"), F("referente", "Referente"), F("data_appuntamento", "Appuntamento"), F("agente", "Commerciale"), F("stato", "Stato")]}
-      rowActions={(lead, { reload }) => lead.stato !== "Perso" ? (
-        <Button variant="outline" size="sm" className="h-9" onClick={() => convert(lead, reload)} title="Converti in cliente">
-          <ArrowSquareOut size={16} /> <span className="hidden xl:inline">Converti</span>
-        </Button>
-      ) : null}
-    />
-  );
-};
 
 export const ClientiPage = () => (
   <RegistryPage
