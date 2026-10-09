@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && craco start",
-    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && craco build",
+    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
@@ -53,7 +53,7 @@
     "eslint-plugin-react": "7.37.4",
     "eslint-plugin-react-hooks": "5.2.0",
     "globals": "15.15.0",
-    "postcss": "8.5.10",
+    "postcss": "10.4.20",
     "tailwindcss": "3.4.17"
   },
   "resolutions": {
@@ -82,12 +82,12 @@
     "**/jsdom/form-data": "3.0.5",
     "**/postcss-svgo/svgo": "2.8.1",
     "**/postcss-load-config/yaml": "2.8.3",
-    "**/cosmiconfig/yaml": "1.10.3",
-    "**/cssnano/yaml": "1.10.3",
-    "**/eslint/js-yaml": "4.3.0",
-    "**/@eslint/eslintrc/js-yaml": "4.3.0",
+    "**/cosmiconfig/yaml": "2.8.3",
+    "**/cssnano/yaml": "2.8.3",
+    "**/eslint/js-yaml": "4.1.0",
+    "**/@eslint/eslintrc/js-yaml": "4.1.0",
     "**/svgo/js-yaml": "3.15.0",
-    "**/@istanbuljs/load-nyc-config/js-yaml": "3.15.0",
+    "**/@istanbuljs/load-nyc-config/js-yaml": "4.1.0",
     "**/css-loader/postcss": "8.5.10",
     "**/css-minimizer-webpack-plugin/postcss": "8.5.10",
     "**/react-scripts/postcss": "8.5.10",
