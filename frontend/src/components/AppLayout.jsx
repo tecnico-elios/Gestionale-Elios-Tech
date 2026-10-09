@@ -1,6 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { API } from "../lib/apiBase";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -28,6 +27,7 @@ import {
   Lightning,
   Database,
 } from "@phosphor-icons/react";
+import { API } from "../lib/apiBase";
 import { useInventoryCtx } from "../lib/InventoryContext";
 import { useAuth } from "../lib/AuthContext";
 import ChangeMyPasswordDialog from "./ChangeMyPasswordDialog";
@@ -82,9 +82,7 @@ const SECTIONS = [
     key: "sistema",
     label: "Sistema",
     icon: SlidersHorizontal,
-    items: [
-      { to: "/assistente-ai", label: "Assistente AI", icon: Robot, testid: "nav-ai", module: "ai" },
-    ],
+    items: [{ to: "/assistente-ai", label: "Assistente AI", icon: Robot, testid: "nav-ai", module: "ai" }],
   },
 ];
 
@@ -179,9 +177,7 @@ export default function AppLayout() {
     if (key) setOpenSections((prev) => ({ ...prev, [key]: true }));
   }, [location.pathname, customModules]);
 
-  const toggleSection = (key) => {
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleLogout = () => {
     setMenuOpen(false);
@@ -220,15 +216,21 @@ export default function AppLayout() {
   const loadNavigationConfig = async () => {
     try {
       const { data } = await axios.get(`${API}/custom/config/navigation`);
-      setNavigationConfig((data.items || []).map((x) => ({ ...x, section: x.section === "principale" ? "principale" : normalizeSection(x.section) })));
+      setNavigationConfig(
+        (data.items || []).map((x) => ({
+          ...x,
+          section: x.section === "principale" ? "principale" : normalizeSection(x.section),
+        })),
+      );
     } catch {
       setNavigationConfig([]);
     }
   };
 
   const loadSettings = async () => {
+    if (!isAdmin) return;
     try {
-      const { data } = await axios.get(`${API}/settings`);
+      const { data } = await axios.get(`${API}/admin/settings`);
       setAppSettings(data || {});
     } catch {
       // Il layout resta utilizzabile con i valori di fallback.
@@ -253,7 +255,7 @@ export default function AppLayout() {
       window.removeEventListener("elios:navigation-changed", navFn);
       window.removeEventListener("elios:settings-changed", settingsFn);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const general = appSettings?.general || {};
   const appName = general.app_name || "Gestionale Elios Tech";
@@ -285,7 +287,7 @@ export default function AppLayout() {
     admin: "Admin",
     responsabile: "Responsabile",
     operator: "Operatore",
-    commerciale: "Utente",
+    commerciale: "Utente storico",
     tecnico: "Tecnico",
   }[user?.role] || user?.role || "";
 
@@ -326,9 +328,7 @@ export default function AppLayout() {
             >
               <EliosLogo size={30} />
               <div className="hidden sm:block text-left min-w-0">
-                <div className="text-[10px] tracking-[0.18em] uppercase text-amber-300/90 font-semibold truncate">
-                  {companyName}
-                </div>
+                <div className="text-[10px] tracking-[0.18em] uppercase text-amber-300/90 font-semibold truncate">{companyName}</div>
                 <div className="text-sm font-bold text-white/95 truncate">{appName}</div>
               </div>
             </button>
