@@ -27,10 +27,31 @@ def _person_matches(value: Any, allowed: set[str]) -> bool:
     return bool(tokens & allowed) or any(text.startswith(f"{name} ") or text == name for name in allowed)
 
 
+def _event_text(event: Dict[str, Any]) -> str:
+    return _norm(" ".join(str(event.get(k) or "") for k in ("title", "description", "category")))
+
+
 def _is_installation(event: Dict[str, Any]) -> bool:
+    text = _event_text(event)
+    return "installaz" in text
+
+
+def _is_assistance(event: Dict[str, Any]) -> bool:
     category = _norm(event.get("category"))
-    text = _norm(f"{event.get('title') or ''} {event.get('description') or ''}")
-    return "installaz" in category or "installaz" in text
+    text = _event_text(event)
+    # L'importatore classifica già come Assistenza anche gli eventi con
+    # "intervento", "config" o "onboarding"; manteniamo quindi quel criterio.
+    return category == "assistenza" or "assistenza" in text
+
+
+def _is_technical(event: Dict[str, Any]) -> bool:
+    if _is_assistance(event):
+        return True
+    text = _event_text(event)
+    return any(token in text for token in (
+        "intervento tecnico", "intervento", "tecnico", "configur", "onboarding",
+        "attivazione", "avviamento", "collaudo", "manutenzione",
+    ))
 
 
 def _event_resource_names(event: Dict[str, Any], resources: List[Dict[str, Any]]) -> List[str]:
@@ -38,13 +59,25 @@ def _event_resource_names(event: Dict[str, Any], resources: List[Dict[str, Any]]
     return [str(r.get("name") or "") for r in resources if str(r.get("id") or "") in wanted]
 
 
+def _event_person_hints(event: Dict[str, Any], resources: List[Dict[str, Any]]) -> List[str]:
+    hints = list(_event_resource_names(event, resources))
+    for key in (
+        "resource_name", "source_calendar", "source_calendar_name", "source_google_name",
+        "calendar_name", "source_name", "source_file", "import_calendar",
+    ):
+        value = str(event.get(key) or "").strip()
+        if value:
+            hints.append(value)
+    return hints
+
+
 def _event_has_person(event: Dict[str, Any], resources: List[Dict[str, Any]], allowed: set[str]) -> bool:
-    return any(_person_matches(name, allowed) for name in _event_resource_names(event, resources))
+    return any(_person_matches(name, allowed) for name in _event_person_hints(event, resources))
 
 
 def _event_primary_person(event: Dict[str, Any], resources: List[Dict[str, Any]]) -> str:
-    names = _event_resource_names(event, resources)
-    return names[0] if names else str(event.get("resource_name") or "")
+    hints = _event_person_hints(event, resources)
+    return hints[0] if hints else ""
 
 
 def _parse_event_dt(value: Any) -> Optional[datetime]:
@@ -166,9 +199,11 @@ async def sync_calendar_event_operations(db, event: Dict[str, Any], actor: str =
         return {"event_id": "", "installation": "skipped", "technical": "skipped", "assistance": "skipped"}
 
     is_installation = _is_installation(event)
+    is_technical = _is_technical(event) and not is_installation
+    is_assistance = _is_assistance(event) and not is_installation
     allowed_installation = is_installation and _event_has_person(event, resources, INSTALLATION_PEOPLE)
-    riccardo = _event_has_person(event, resources, TECHNICAL_PEOPLE)
-    ivan = _event_has_person(event, resources, ASSISTANCE_PEOPLE)
+    riccardo_technical = is_technical and _event_has_person(event, resources, TECHNICAL_PEOPLE)
+    ivan_assistance = is_assistance and _event_has_person(event, resources, ASSISTANCE_PEOPLE)
 
     result: Dict[str, Any] = {"event_id": event_id, "installation": "skipped", "technical": "skipped", "assistance": "skipped"}
 
@@ -183,7 +218,7 @@ async def sync_calendar_event_operations(db, event: Dict[str, Any], actor: str =
         if deleted.deleted_count:
             result["installation"] = "removed"
 
-    if riccardo and not is_installation:
+    if riccardo_technical:
         await _upsert_technical(db, event, actor, resources)
         result["technical"] = "synced"
     else:
@@ -191,7 +226,7 @@ async def sync_calendar_event_operations(db, event: Dict[str, Any], actor: str =
         if deleted.deleted_count:
             result["technical"] = "removed"
 
-    if ivan:
+    if ivan_assistance:
         await _upsert_assistance(db, event, actor, resources)
         result["assistance"] = "synced"
     else:
@@ -230,13 +265,14 @@ async def sync_all_calendar_operations(db, actor: str = "calendar-operations") -
             stats["errors"].append({"event_id": str(event.get("id") or ""), "title": str(event.get("title") or ""), "error": str(exc)})
 
     # Elimina soltanto record creati dal calendario rimasti orfani; i record manuali restano intatti.
-    orphan_query = {"calendar_event_id": {"$nin": list(event_ids)}}
-    inst_orphans = await db.crm_installazioni.delete_many({"$and": [orphan_query, {"$or": [{"calendar_source": "calendar_events"}, {"import_source": {"$regex": "^calendar"}}]}]})
-    tech_orphans = await db.crm_interventi_tecnici.delete_many({"$and": [orphan_query, {"import_source": "calendar-riccardo"}]})
-    ass_orphans = await db.crm_assistenza.delete_many({"$and": [orphan_query, {"import_source": "calendar-ivan"}]})
-    stats["installations_removed"] += int(inst_orphans.deleted_count or 0)
-    stats["technical_removed"] += int(tech_orphans.deleted_count or 0)
-    stats["assistance_removed"] += int(ass_orphans.deleted_count or 0)
+    if event_ids:
+        orphan_query = {"calendar_event_id": {"$nin": list(event_ids)}}
+        inst_orphans = await db.crm_installazioni.delete_many({"$and": [orphan_query, {"$or": [{"calendar_source": "calendar_events"}, {"import_source": {"$regex": "^calendar"}}]}]})
+        tech_orphans = await db.crm_interventi_tecnici.delete_many({"$and": [orphan_query, {"import_source": "calendar-riccardo"}]})
+        ass_orphans = await db.crm_assistenza.delete_many({"$and": [orphan_query, {"import_source": "calendar-ivan"}]})
+        stats["installations_removed"] += int(inst_orphans.deleted_count or 0)
+        stats["technical_removed"] += int(tech_orphans.deleted_count or 0)
+        stats["assistance_removed"] += int(ass_orphans.deleted_count or 0)
 
     await db.settings.update_one(
         {"_id": "calendar_operations_sync"},
