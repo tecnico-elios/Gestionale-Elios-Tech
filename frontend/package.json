@@ -23,8 +23,8 @@
     "tailwindcss-animate": "1.0.7"
   },
   "scripts": {
-    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && craco start",
-    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && craco build",
+    "start": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles.js && craco start",
+    "build": "node scripts/apply-r54-copy.js && node scripts/apply-r55-unified-header.js && node scripts/apply-r56.js && node scripts/apply-r58-calendar-roles.js && craco build",
     "test": "craco test"
   },
   "browserslist": {
