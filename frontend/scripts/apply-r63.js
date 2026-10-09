@@ -17,10 +17,14 @@ if (!src.includes('function DataBackupOnlyPane()')) {
   src = src.replace(marker, pane + marker);
 }
 
-const oldData = 'if (category === "data") return <NotionMigrationPane />;';
+const candidates = [
+  'if (category === "data") return <DataToolsPane />;',
+  'if (category === "data") return <NotionMigrationPane />;',
+];
 const newData = 'if (category === "data") return <DataBackupOnlyPane />;';
 if (!src.includes(newData)) {
-  if (!src.includes(oldData)) throw new Error('[R63] ramo Dati e backup non trovato');
+  const oldData = candidates.find((candidate) => src.includes(candidate));
+  if (!oldData) throw new Error('[R63] ramo Dati e backup non trovato');
   src = src.replace(oldData, newData);
 }
 
