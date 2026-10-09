@@ -6,6 +6,7 @@ import "@/r52-pages.css";
 import "@/r52-extra.css";
 import "@/r52-polish.css";
 import "@/r55.css";
+import "@/r56.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { InventoryProvider } from "@/lib/InventoryContext";
