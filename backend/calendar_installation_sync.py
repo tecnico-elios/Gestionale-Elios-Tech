@@ -117,8 +117,7 @@ async def _match_client_and_site(
                 return existing_client, existing_site
             return existing_client, await _best_site(db, existing_client, event.get("location"), sites)
 
-    # 1) L'indirizzo è il segnale più affidabile quando il titolo del calendario usa
-    # un nome abbreviato diverso dalla ragione sociale presente in anagrafica.
+    # Indirizzo/sede: segnale molto affidabile quando il titolo usa un nome abbreviato.
     location = event.get("location") or ""
     if location and sites:
         ranked_sites = sorted(((_site_score(site, location), site) for site in sites), key=lambda x: x[0], reverse=True)
@@ -128,8 +127,8 @@ async def _match_client_and_site(
             if cid and any(str(c.get("id") or "") == cid for c in clients):
                 return cid, str(site.get("id") or "") or None
 
-    # 2) Ragione sociale/nome, anche abbreviati: richiede segnali abbastanza forti
-    # o un token distintivo per evitare collegamenti sbagliati.
+    # Ragione sociale/nome, anche abbreviati. I criteri sono volutamente prudenti:
+    # in caso di parità/ambiguità non viene creato un collegamento sbagliato.
     hay_raw = " ".join(str(event.get(k) or "") for k in ("title", "description", "location"))
     hay = _norm(hay_raw)
     hay_tokens = set(_tokens(hay_raw))
@@ -157,7 +156,6 @@ async def _match_client_and_site(
                 score = max(score, int(125 + 25 * len(matched) + 30 * coverage))
             elif len(matched) == 1:
                 token = matched[0]
-                # Un solo token è accettato soltanto se molto distintivo.
                 if any(ch.isdigit() for ch in token) and len(token) >= 3:
                     score = max(score, 145 + len(token))
                 elif len(token) >= 8:
@@ -298,6 +296,7 @@ async def sync_calendar_event_to_installation(
         "shadow_source_key": f"installazione:{installation_id}",
         "calendar_installation_synced_at": _now(),
         "calendar_installation_synced_source_updated_at": source_stamp,
+        "calendar_client_link_pending": not bool(client_id),
     }
     if client_id: event_update["cliente_id"] = client_id
     if site_id: event_update["sede_id"] = site_id
@@ -310,25 +309,41 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
         {"category": {"$regex": "^Installazione$", "$options": "i"}},
         {"title": {"$regex": "installaz", "$options": "i"}},
     ]}
-    query: Dict[str, Any] = category_match
-    if not force:
-        # Ritenta anche gli eventi ancora senza cliente: quando l'anagrafica viene
-        # importata/aggiornata il collegamento si completa senza interventi manuali.
-        query = {"$and": [category_match, {"$or": [
-            {"calendar_installation_synced_at": {"$exists": False}},
-            {"$expr": {"$ne": ["$updated_at", "$calendar_installation_synced_source_updated_at"]}},
-            {"cliente_id": {"$exists": False}},
-            {"cliente_id": None},
-            {"cliente_id": ""},
-        ]}]}
-    rows = await db.calendar_events.find(query).sort("start", 1).to_list(length=50000)
+
+    # Carica una volta sola le anagrafiche: evita centinaia di query ripetute e rende
+    # possibile capire quando l'elenco clienti è cambiato e serve ritentare i link pendenti.
     clients = await db.crm_clienti.find({"archived": {"$ne": True}}).to_list(length=20000)
     sites = await db.crm_sedi.find({}).to_list(length=20000)
     resources = await db.calendar_resources.find({"active": {"$ne": False}}).to_list(length=2000)
+    state = await db.settings.find_one({"_id": "calendar_installations_sync"}) or {}
+    stamps = [str(c.get("updated_at") or c.get("created_at") or "") for c in clients]
+    latest_client_stamp = max(stamps, default="")
+    client_revision = f"{len(clients)}:{latest_client_stamp}"
+    previous_revision = str(state.get("client_revision") or "")
+    first_revision = not bool(previous_revision)
+    revision_changed = previous_revision != client_revision
+
+    query: Dict[str, Any] = category_match
+    if not force and not first_revision:
+        conditions: List[Dict[str, Any]] = [
+            {"calendar_installation_synced_at": {"$exists": False}},
+            {"$expr": {"$ne": ["$updated_at", "$calendar_installation_synced_source_updated_at"]}},
+        ]
+        # Solo quando l'anagrafica clienti cambia vengono riesaminate le installazioni
+        # rimaste senza associazione: niente 323 controlli inutili a ogni apertura pagina.
+        if revision_changed:
+            conditions.extend([
+                {"calendar_client_link_pending": True},
+                {"calendar_client_link_pending": {"$exists": False}},
+            ])
+        query = {"$and": [category_match, {"$or": conditions}]}
+
+    rows = await db.calendar_events.find(query).sort("start", 1).to_list(length=50000)
     stats = {
         "checked": len(rows), "created": 0, "updated": 0, "linked": 0,
         "clients_linked": 0, "clients_to_link": 0,
         "clients_available": len(clients), "sites_available": len(sites),
+        "client_revision": client_revision, "client_revision_changed": revision_changed,
         "errors": [],
     }
     for event in rows:
@@ -343,5 +358,9 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
             elif action not in ("skipped", None): stats["clients_to_link"] += 1
         except Exception as exc:
             stats["errors"].append({"event_id": str(event.get("id") or ""), "title": str(event.get("title") or ""), "error": str(exc)})
-    await db.settings.update_one({"_id": "calendar_installations_sync"}, {"$set": {"last_run_at": _now(), "last_result": stats}}, upsert=True)
+    await db.settings.update_one(
+        {"_id": "calendar_installations_sync"},
+        {"$set": {"last_run_at": _now(), "last_result": stats, "client_revision": client_revision}},
+        upsert=True,
+    )
     return stats
