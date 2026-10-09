@@ -20,8 +20,8 @@ def patch(path: Path, changes):
 calendar = ROOT / "routes" / "calendar_routes.py"
 patch(calendar, [
     (
-        "import zipfile\nfrom zoneinfo import ZoneInfo",
-        "import zipfile\nfrom zoneinfo import ZoneInfo\nfrom calendar_installation_sync import sync_all_calendar_installations, sync_calendar_event_to_installation",
+        "import auth as auth_mod\nfrom zoneinfo import ZoneInfo",
+        "import auth as auth_mod\nfrom zoneinfo import ZoneInfo\nfrom calendar_installation_sync import sync_all_calendar_installations, sync_calendar_event_to_installation",
         "calendar sync import",
     ),
     (
