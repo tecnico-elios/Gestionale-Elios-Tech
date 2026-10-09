@@ -1,0 +1,42 @@
+/* R61 — leggibilità hover e piccoli aggiustamenti calendario/installazioni */
+
+/* I controlli chiari devono restare leggibili anche al passaggio del mouse. */
+.r52-page-host button.bg-white:hover,
+.r52-page-host button[class*="bg-white"]:hover,
+.r51-toolbar button.bg-white:hover,
+.r51-calendar-filter-panel button.bg-white:hover,
+.r51-calendar-filter-panel button[class*="bg-white"]:hover {
+  color: #173e60 !important;
+  background-color: #f0f7fc !important;
+  border-color: #9fbdd2 !important;
+}
+
+/* Non lasciare che hover generici rendano bianchi testi su superfici chiare. */
+.r52-page-host .bg-white button:not(.et-btn-primary):not([class*="bg-[#"]):hover,
+.r52-page-host .bg-slate-50 button:not(.et-btn-primary):not([class*="bg-[#"]):hover {
+  text-shadow: none !important;
+}
+
+/* Selezioni/filtri del calendario: contrasto esplicito in tutti gli stati. */
+.r51-calendar-filter-panel button {
+  color: #475569;
+}
+.r51-calendar-filter-panel button:hover {
+  color: #173e60 !important;
+}
+.r51-calendar-filter-panel button[class*="bg-slate-100"] {
+  color: #17283a !important;
+}
+
+/* Dialog persone e ruoli: campi e select sempre ad alto contrasto. */
+[data-testid="company-calendar-page"] select,
+[data-testid="company-calendar-page"] input {
+  color: #17283a !important;
+}
+
+/* Testi tecnici lunghi importati: leggibili e con a-capo corretti. */
+[data-testid="installazioni-calendar-page"] .whitespace-pre-wrap {
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.55;
+}
