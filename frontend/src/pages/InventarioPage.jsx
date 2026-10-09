@@ -9,9 +9,8 @@ import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { MagnifyingGlass, Package, Plus, PencilSimple, Archive, Barcode } from "@phosphor-icons/react";
+import { MagnifyingGlass, Package, Plus, PencilSimple, Archive, Barcode, ArrowsClockwise, Warning, CheckCircle } from "@phosphor-icons/react";
 import { appConfirm } from "../lib/appConfirm";
-
 
 const EMPTY = {
   name: "", code: "", category: "", brand: "", unit: "pz", tipo_gestione: "a_quantita",
@@ -89,9 +88,9 @@ export function ProductDialog({ open, onClose, product, onSaved, warehouseId, wa
             <div><Label>Cavo</Label><Input className="mt-1 h-12" value={form.cable || ""} onChange={(e) => set("cable", e.target.value)} placeholder="Es. 5 MT" /></div>
             <div className="sm:col-span-2"><Label>Fornitore principale</Label><Input className="mt-1 h-12" value={form.supplier} onChange={(e) => set("supplier", e.target.value)} /></div>
             <div className="sm:col-span-2"><Label>Note</Label><Textarea className="mt-1" rows={4} value={form.notes} onChange={(e) => set("notes", e.target.value)} /></div>
-            {edit && form.tipo_gestione === "a_seriale" && <div className="sm:col-span-2 rounded-md border border-slate-200 bg-slate-50 p-4">
+            {edit && form.tipo_gestione === "a_seriale" && <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3"><div><Label>Seriali disponibili · {warehouseName}</Label><p className="text-xs text-slate-500 mt-1">Seriali realmente presenti nel magazzino.</p></div><Badge variant="outline">{serials.length} seriali</Badge></div>
-              {serialsLoading ? <div className="text-sm text-slate-500 mt-3">Caricamento seriali…</div> : serials.length ? <div className="mt-3 max-h-44 overflow-y-auto grid sm:grid-cols-2 gap-2">{serials.map((sn) => <div key={sn} className="font-mono text-sm bg-white border rounded px-3 py-2 flex items-center gap-2"><Barcode size={16} className="text-slate-400" />{sn}</div>)}</div> : <div className="text-sm text-slate-500 mt-3">Nessun seriale disponibile.</div>}
+              {serialsLoading ? <div className="text-sm text-slate-500 mt-3">Caricamento seriali…</div> : serials.length ? <div className="mt-3 max-h-44 overflow-y-auto grid sm:grid-cols-2 gap-2">{serials.map((sn) => <div key={sn} className="font-mono text-sm bg-white border rounded-lg px-3 py-2 flex items-center gap-2"><Barcode size={16} className="text-slate-400" />{sn}</div>)}</div> : <div className="text-sm text-slate-500 mt-3">Nessun seriale disponibile.</div>}
             </div>}
           </div>
           <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit" disabled={saving}>{saving ? "Salvataggio…" : "Salva prodotto"}</Button></DialogFooter>
@@ -140,42 +139,69 @@ export default function InventarioPage({ warehouseId = "elios-tech", warehouseNa
     return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Disponibile</Badge>;
   };
 
+  const stats = useMemo(() => {
+    const out = { available: 0, low: 0, empty: 0, serialized: 0 };
+    items.forEach((it) => {
+      const qty = Number(it.quantity) || 0;
+      const threshold = Number(it.low_stock_threshold) || 0;
+      if (qty <= 0) out.empty += 1;
+      else if (threshold > 0 && qty <= threshold) out.low += 1;
+      else out.available += 1;
+      if (it.tipo_gestione === "a_seriale") out.serialized += 1;
+    });
+    return out;
+  }, [items]);
+
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-4" data-testid="inventario-page">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+    <div className="r52-inventory-workspace" data-testid="inventario-page">
+      <div className="r52-commandbar">
         <div>
-          <div className="et-eyebrow">Gestione · Database locale</div>
-          <h1 className="et-page-heading text-3xl sm:text-4xl mt-1">{warehouseName}</h1>
-          <p className="text-slate-500 mt-1 text-sm">{items.length} prodotti. Le giacenze di questo deposito sono separate dagli altri magazzini.</p>
+          <div className="r52-commandbar-title">Catalogo e giacenze</div>
+          <div className="r52-commandbar-subtitle">{warehouseName} · disponibilità separate dagli altri depositi.</div>
         </div>
-        {canCreate && <Button className="h-12" onClick={() => setDialog({ open: true, product: null })}><Plus size={18} /> Nuovo prodotto</Button>}
+        <div className="r52-commandbar-actions">
+          <Button variant="outline" onClick={refresh} disabled={loading} className="r52-outline-button"><ArrowsClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna</Button>
+          {canCreate && <Button onClick={() => setDialog({ open: true, product: null })}><Plus size={18} /> Nuovo prodotto</Button>}
+        </div>
       </div>
 
-      <div className="relative max-w-lg">
-        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca prodotto, codice, marca, categoria o posizione…" className="pl-10 h-12" autoComplete="off" />
+      <div className="r52-inventory-stats">
+        <div className="r52-mini-stat"><Package size={18} /><div><b>{items.length}</b><span>Prodotti</span></div></div>
+        <div className="r52-mini-stat is-ok"><CheckCircle size={18} /><div><b>{stats.available}</b><span>Disponibili</span></div></div>
+        <div className="r52-mini-stat is-warning"><Warning size={18} /><div><b>{stats.low}</b><span>Sotto scorta</span></div></div>
+        <div className="r52-mini-stat is-danger"><Archive size={18} /><div><b>{stats.empty}</b><span>Esauriti</span></div></div>
+        <div className="r52-mini-stat"><Barcode size={18} /><div><b>{stats.serialized}</b><span>A seriale</span></div></div>
       </div>
 
-      {error && <div className="border border-red-200 bg-red-50 text-red-700 p-4 rounded-md text-sm">{error}</div>}
-      {loading && !items.length ? <div className="text-slate-500 py-12 text-center">Caricamento magazzino…</div> : (
-        <>
-          <div className="md:hidden space-y-2">
+      <section className="r52-panel r52-panel-flush">
+        <div className="r52-inventory-filterbar">
+          <div className="relative flex-1 min-w-[230px] max-w-2xl">
+            <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca prodotto, codice, marca, categoria o posizione…" className="pl-10 h-11" autoComplete="off" />
+          </div>
+          <span className="r52-count-pill">{filtered.length}</span>
+        </div>
+
+        {error && <div className="r52-alert r52-alert-danger m-4">{error}</div>}
+        {loading && !items.length ? <div className="r52-empty-state">Caricamento magazzino…</div> : <>
+          <div className="md:hidden r52-inventory-mobile-list">
             {filtered.map((it) => (
-              <div key={it.id} className="bg-white border border-slate-200 rounded-md p-4 space-y-3">
-                <div className="flex items-start gap-3"><Package size={20} className="text-slate-400 mt-1" /><div className="min-w-0 flex-1"><div className="font-semibold text-slate-900">{it.name}</div><div className="text-xs text-slate-500">{it.code || "Senza codice"} · {it.category || "Senza categoria"}</div></div>{qtyBadge(it)}</div>
-                <div className="grid grid-cols-2 gap-2 text-sm"><div><span className="text-slate-500">Giacenza</span><div className="font-semibold">{Number(it.quantity) || 0} {it.unit || "pz"}</div></div><div><span className="text-slate-500">Gestione</span><div className="font-semibold">{it.tipo_gestione === "a_seriale" ? "A seriale" : "A quantità"}</div></div><div><span className="text-slate-500">Posizione</span><div>{it.location || "—"}</div></div><div><span className="text-slate-500">Marca</span><div>{it.brand || "—"}</div></div></div>
-                {(canEdit || canDelete) && <div className="flex gap-2 pt-1">{canEdit && <Button variant="outline" className="h-11 flex-1" onClick={() => setDialog({ open: true, product: it })}><PencilSimple size={16} /> Modifica</Button>}{canDelete && <Button variant="outline" className="h-11 text-red-600 border-red-200" onClick={() => archive(it)}><Archive size={16} /> Disattiva</Button>}</div>}
+              <div key={it.id} className="r52-inventory-mobile-card">
+                <div className="flex items-start gap-3"><div className="r52-inventory-product-icon"><Package size={19} weight="duotone" /></div><div className="min-w-0 flex-1"><div className="font-bold text-slate-900">{it.name}</div><div className="text-xs text-slate-500 mt-0.5">{it.code || "Senza codice"} · {it.category || "Senza categoria"}</div></div>{qtyBadge(it)}</div>
+                <div className="grid grid-cols-2 gap-3 text-sm mt-3"><div><span className="r52-mobile-label">Giacenza</span><div className="font-bold">{Number(it.quantity) || 0} {it.unit || "pz"}</div></div><div><span className="r52-mobile-label">Gestione</span><div>{it.tipo_gestione === "a_seriale" ? "A seriale" : "A quantità"}</div></div><div><span className="r52-mobile-label">Posizione</span><div>{it.location || "—"}</div></div><div><span className="r52-mobile-label">Marca</span><div>{it.brand || "—"}</div></div></div>
+                {(canEdit || canDelete) && <div className="flex gap-2 pt-3 mt-3 border-t border-slate-100">{canEdit && <Button variant="outline" className="h-10 flex-1" onClick={() => setDialog({ open: true, product: it })}><PencilSimple size={16} /> Modifica</Button>}{canDelete && <Button variant="outline" className="h-10 text-red-600 border-red-200" onClick={() => archive(it)}><Archive size={16} /> Disattiva</Button>}</div>}
               </div>
             ))}
+            {!filtered.length && <div className="r52-empty-state">Nessun prodotto trovato.</div>}
           </div>
 
-          <div className="hidden md:block et-card-elevated overflow-hidden">
-            <div className="overflow-x-auto"><table className="et-table"><thead><tr><th>Prodotto</th><th>Codice</th><th>Categoria</th><th>Posizione</th><th className="text-right">Quantità</th><th className="text-center">Gestione</th><th>Stato</th><th className="text-right">Azioni</th></tr></thead><tbody>
-              {filtered.length === 0 ? <tr><td colSpan="8" className="text-center py-10 text-slate-400">Nessun prodotto trovato.</td></tr> : filtered.map((it) => <tr key={it.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-medium"><div className="flex items-center gap-2"><Package size={14} className="text-slate-400" /><div><div>{it.name}</div>{it.brand && <div className="text-xs text-slate-400">{it.brand}</div>}</div></div></td><td className="px-4 py-3 font-mono-tight text-xs text-slate-500">{it.code || "—"}</td><td className="px-4 py-3 text-slate-500">{it.category || "—"}</td><td className="px-4 py-3 text-slate-500">{it.location || "—"}</td><td className="px-4 py-3 text-right font-semibold">{Number(it.quantity) || 0} <span className="text-slate-400 text-xs font-normal">{it.unit || "pz"}</span></td><td className="px-4 py-3 text-center"><Badge variant="outline" className={it.tipo_gestione === "a_seriale" ? "border-amber-300 text-amber-800 bg-amber-50" : "border-slate-300 text-slate-600"}>{it.tipo_gestione === "a_seriale" ? "A seriale" : "A quantità"}</Badge></td><td className="px-4 py-3">{qtyBadge(it)}</td><td className="px-4 py-3"><div className="flex justify-end gap-1">{it.tipo_gestione === "a_seriale" && <Button variant="outline" size="sm" onClick={() => setDialog({ open: true, product: it })}>Seriali ({Number(it.quantity) || 0})</Button>}{canEdit && <Button variant="ghost" size="icon" onClick={() => setDialog({ open: true, product: it })}><PencilSimple /></Button>}{canDelete && <Button variant="ghost" size="icon" className="text-red-600" onClick={() => archive(it)}><Archive /></Button>}</div></td></tr>)}
-            </tbody></table></div>
+          <div className="hidden md:block overflow-x-auto">
+            <table><thead><tr><th>Prodotto</th><th>Codice</th><th>Categoria</th><th>Posizione</th><th className="text-right">Quantità</th><th className="text-center">Gestione</th><th>Stato</th><th className="text-right">Azioni</th></tr></thead><tbody>
+              {filtered.length === 0 ? <tr><td colSpan="8" className="text-center py-10 text-slate-400">Nessun prodotto trovato.</td></tr> : filtered.map((it) => <tr key={it.id}><td className="font-medium"><div className="flex items-center gap-2"><div className="r52-table-product-icon"><Package size={14} /></div><div><div className="font-bold text-slate-800">{it.name}</div>{it.brand && <div className="text-xs text-slate-400">{it.brand}</div>}</div></div></td><td className="font-mono-tight text-xs text-slate-500">{it.code || "—"}</td><td>{it.category || "—"}</td><td>{it.location || "—"}</td><td className="text-right font-bold">{Number(it.quantity) || 0} <span className="text-slate-400 text-xs font-normal">{it.unit || "pz"}</span></td><td className="text-center"><Badge variant="outline" className={it.tipo_gestione === "a_seriale" ? "border-amber-300 text-amber-800 bg-amber-50" : "border-slate-300 text-slate-600"}>{it.tipo_gestione === "a_seriale" ? "A seriale" : "A quantità"}</Badge></td><td>{qtyBadge(it)}</td><td><div className="flex justify-end gap-1">{it.tipo_gestione === "a_seriale" && <Button variant="outline" size="sm" onClick={() => setDialog({ open: true, product: it })}>Seriali ({Number(it.quantity) || 0})</Button>}{canEdit && <Button variant="ghost" size="icon" onClick={() => setDialog({ open: true, product: it })} aria-label="Modifica"><PencilSimple /></Button>}{canDelete && <Button variant="ghost" size="icon" className="text-red-600" onClick={() => archive(it)} aria-label="Disattiva"><Archive /></Button>}</div></td></tr>)}
+            </tbody></table>
           </div>
-        </>
-      )}
+        </>}
+      </section>
 
       <ProductDialog open={dialog.open} product={dialog.product} warehouseId={warehouseId} warehouseName={warehouseName} onClose={() => setDialog({ open: false, product: null })} onSaved={refresh} />
     </div>
