@@ -3,19 +3,17 @@ import axios from "axios";
 import { API } from "../lib/apiBase";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { ChartBar, Lightning, CalendarBlank } from "@phosphor-icons/react";
+import { ChartBar, Lightning, CalendarBlank, TrendUp } from "@phosphor-icons/react";
 
 const MONTHS = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
 const euro = (v) => `€ ${Number(v || 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const getYear = (d) => { const m = String(d || "").match(/^(\d{4})/); return m ? Number(m[1]) : null; };
 const getMonth = (d) => { const m = String(d || "").match(/^\d{4}-(\d{2})/); return m ? Number(m[1]) - 1 : null; };
 
-function Stat({ label, value, sub, Icon }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <div className="flex justify-between gap-3">
-      <div><div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">{label}</div><div className="mt-1 text-3xl font-black text-slate-950">{value}</div><div className="mt-2 text-xs text-slate-400">{sub}</div></div>
-      <div className="h-11 w-11 rounded-xl bg-[#edf5fb] border border-[#dce8f1] flex items-center justify-center text-[#1A456B]"><Icon size={22} weight="bold" /></div>
-    </div>
+function Metric({ label, value, sub, Icon }) {
+  return <div className="r52-insight-metric">
+    <div className="r52-insight-metric-icon"><Icon size={21} weight="duotone" /></div>
+    <div className="min-w-0"><div className="r52-insight-metric-label">{label}</div><div className="r52-insight-metric-value">{value}</div><div className="r52-insight-metric-sub">{sub}</div></div>
   </div>;
 }
 
@@ -61,27 +59,42 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
   const annualRevenue = filtered.reduce((s, r) => s + Number(r.fatturato ?? r.capitale ?? 0), 0);
   const annualWb = filtered.reduce((s, r) => s + Number(r.wb_totali ?? r.qty_wb ?? 0), 0);
   const isRevenue = mode === "fatturato";
-  const title = isRevenue ? "Fatturato" : "Wallbox";
   const Icon = isRevenue ? ChartBar : Lightning;
   const dataKey = isRevenue ? "fatturato" : "wallbox";
   const tooltipFormatter = (v) => isRevenue ? euro(v) : `${Number(v || 0).toLocaleString("it-IT")} WB`;
   const yTick = isRevenue ? ((v) => `${Math.round(Number(v) / 1000)}k`) : undefined;
+  const activeMonths = monthly.filter((m) => Number(m[dataKey] || 0) > 0).length;
 
-  return <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-4">
-    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-      <div><div className="text-xs font-semibold tracking-[.16em] uppercase text-[#1A456B]">Amministrazione</div><h1 className="et-page-heading text-3xl sm:text-4xl">{title}</h1><p className="text-sm text-slate-500 mt-1">{isRevenue ? "Analisi del fatturato registrato nel gestionale per mese e per anno." : "Numero di wallbox registrate negli ordini per mese e per anno."}</p></div>
-      <div className="flex items-center gap-2"><CalendarBlank size={18} className="text-slate-400" /><select value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold">{years.length ? years.map((y) => <option key={y} value={y}>{y}</option>) : <option value={year}>{year}</option>}</select></div>
+  return <div className="r52-insights-workspace">
+    <div className="r52-commandbar">
+      <div>
+        <div className="r52-commandbar-title">Analisi {isRevenue ? "economica" : "Wallbox"}</div>
+        <div className="r52-commandbar-subtitle">Dati aggregati dagli ordini e dalle date firma registrate nel gestionale.</div>
+      </div>
+      <div className="r52-commandbar-actions">
+        <CalendarBlank size={17} className="text-slate-400" />
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold">
+          {years.length ? years.map((y) => <option key={y} value={y}>{y}</option>) : <option value={year}>{year}</option>}
+        </select>
+      </div>
     </div>
-    {loading ? <div className="py-12 text-center text-slate-500">Caricamento…</div> : <>
-      <div className="max-w-xl"><Stat label={isRevenue ? "Fatturato annuale" : "Wallbox annuali"} value={isRevenue ? euro(annualRevenue) : annualWb.toLocaleString("it-IT")} sub={isRevenue ? String(year) : `Totale QTY WB · ${year}`} Icon={Icon} /></div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-4"><div><div className="font-black text-slate-900">{isRevenue ? "Fatturato mensile" : "Wallbox mensili"}</div><div className="text-xs text-slate-500 mt-1">Raggruppamento per mese in base alla data firma registrata nel gestionale.</div></div><Icon size={24} className="text-[#1A456B]" /></div>
-        <div className="h-[360px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="name" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Bar dataKey={dataKey} fill="#2d6ea3" radius={[7, 7, 0, 0]} /></BarChart></ResponsiveContainer></div>
+
+    {loading ? <div className="r52-empty-state">Caricamento dati…</div> : <>
+      <div className="r52-insight-metrics-grid">
+        <Metric label={isRevenue ? "Totale anno" : "Wallbox anno"} value={isRevenue ? euro(annualRevenue) : annualWb.toLocaleString("it-IT")} sub={String(year)} Icon={Icon} />
+        <Metric label="Mesi con attività" value={String(activeMonths)} sub="su 12 mesi" Icon={CalendarBlank} />
+        <Metric label={isRevenue ? "Clienti con fatturato" : "Clienti con wallbox"} value={String(filtered.filter((r) => Number(isRevenue ? (r.fatturato ?? r.capitale ?? 0) : (r.wb_totali ?? r.qty_wb ?? 0)) > 0).length)} sub="nel periodo selezionato" Icon={TrendUp} />
       </div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
-        <div className="font-black text-slate-900 mb-4">{isRevenue ? "Andamento fatturato annuale" : "Andamento wallbox annuale"}</div>
-        <div className="h-[300px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={yearly} margin={{ top: 12, right: 18, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="year" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Line type="monotone" dataKey={dataKey} stroke="#2d6ea3" strokeWidth={3} dot={{ r: 4, fill: "#f6c344", stroke: "#1a456b", strokeWidth: 2 }} /></LineChart></ResponsiveContainer></div>
-      </div>
+
+      <section className="r52-panel r52-chart-panel">
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Mensile</div><h2>{isRevenue ? "Fatturato per mese" : "Wallbox per mese"}</h2><p>Distribuzione basata sulla data firma registrata nel gestionale.</p></div><Icon size={23} className="text-[#1A456B]" /></div>
+        <div className="r52-chart-body"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="name" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Bar dataKey={dataKey} fill="#2d6ea3" radius={[7, 7, 0, 0]} /></BarChart></ResponsiveContainer></div>
+      </section>
+
+      <section className="r52-panel r52-chart-panel">
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>{isRevenue ? "Andamento fatturato annuale" : "Andamento wallbox annuale"}</h2><p>Confronto tra gli anni presenti nel database.</p></div></div>
+        <div className="r52-chart-body smaller"><ResponsiveContainer width="100%" height="100%"><LineChart data={yearly} margin={{ top: 12, right: 18, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="year" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Line type="monotone" dataKey={dataKey} stroke="#2d6ea3" strokeWidth={3} dot={{ r: 4, fill: "#f6c344", stroke: "#1a456b", strokeWidth: 2 }} /></LineChart></ResponsiveContainer></div>
+      </section>
     </>}
   </div>;
 }
