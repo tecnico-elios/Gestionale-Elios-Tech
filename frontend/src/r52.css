@@ -1,0 +1,431 @@
+/* ============================================================
+   R52 — Full Elios Tech application redesign
+   Ridisegno strutturale dell'intera interfaccia applicativa.
+   Caricato DOPO R50/R51 per sostituire in modo coerente il look legacy.
+   ============================================================ */
+
+:root {
+  --r52-navy-950: #0b1f31;
+  --r52-navy-900: #102c45;
+  --r52-navy-800: #173e60;
+  --r52-navy-700: #1f527d;
+  --r52-blue-600: #2f6fa5;
+  --r52-amber: #f5c542;
+  --r52-amber-soft: #fff8df;
+  --r52-bg: #f3f6f9;
+  --r52-panel: #ffffff;
+  --r52-panel-soft: #f8fafc;
+  --r52-border: #dce5ed;
+  --r52-border-strong: #c6d4df;
+  --r52-text: #162536;
+  --r52-muted: #66778a;
+  --r52-success: #16855b;
+  --r52-danger: #c43d4a;
+  --r52-warning: #a96e00;
+  --r52-radius: 16px;
+  --r52-radius-sm: 11px;
+  --r52-shadow: 0 12px 32px -26px rgba(18, 49, 74, .6), 0 2px 8px rgba(18, 49, 74, .035);
+}
+
+html, body, #root, .App { background: var(--r52-bg); }
+
+/* ------------------------------------------------------------
+   Struttura pagina
+   ------------------------------------------------------------ */
+.r52-main-shell {
+  background:
+    radial-gradient(circle at 88% 0%, rgba(47,111,165,.06), transparent 25rem),
+    linear-gradient(180deg, #f6f8fa 0, var(--r52-bg) 260px);
+  min-height: calc(100vh - 68px);
+}
+
+.r52-page-banner {
+  position: relative;
+  overflow: hidden;
+  min-height: 132px;
+  padding: 24px clamp(18px, 3vw, 42px);
+  color: white;
+  background:
+    linear-gradient(115deg, rgba(11,31,49,.98), rgba(23,62,96,.97) 58%, rgba(31,82,125,.94));
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.r52-page-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 88% 25%, rgba(245,197,66,.18), transparent 17rem),
+    linear-gradient(90deg, transparent 0 72%, rgba(255,255,255,.028) 72% 73%, transparent 73% 100%);
+}
+.r52-page-banner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--r52-amber) 0 9rem, rgba(245,197,66,.18) 9rem 100%);
+}
+.r52-page-banner-inner {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 1640px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.r52-page-identity { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.r52-page-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: #fff;
+  background: rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 18px 35px -25px rgba(0,0,0,.7);
+}
+.r52-page-kicker {
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: #f6d96f;
+}
+.r52-page-title {
+  margin: 0;
+  color: #fff;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 850;
+  font-size: clamp(24px, 2.4vw, 34px);
+  letter-spacing: -.035em;
+  line-height: 1.06;
+}
+.r52-page-subtitle {
+  margin: 7px 0 0;
+  max-width: 800px;
+  color: #c7d6e4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.r52-page-state {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: #d9e6f0;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.r52-page-state-dot { width: 7px; height: 7px; border-radius: 999px; background: #34d399; box-shadow: 0 0 0 4px rgba(52,211,153,.11); }
+
+.r52-page-host {
+  width: min(100%, 1720px);
+  margin: 0 auto;
+  padding: 22px clamp(14px, 2.25vw, 34px) 46px;
+}
+.r52-page-host > * { min-width: 0; }
+.r52-page-host > div[class*="max-w-"] { width: 100% !important; max-width: none !important; margin-inline: 0 !important; }
+
+/* ------------------------------------------------------------
+   Tipografia e gerarchie interne
+   ------------------------------------------------------------ */
+.r52-page-host h1 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 850;
+  letter-spacing: -.035em;
+  color: var(--r52-text);
+}
+.r52-page-host h2, .r52-page-host h3 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  color: var(--r52-text);
+  letter-spacing: -.018em;
+}
+.r52-page-host p { color: var(--r52-muted); }
+
+/* Le vecchie testate interne diventano sottotestate, non un secondo hero. */
+.r52-page-host > div > div:first-child > h1,
+.r52-page-host > div > header:first-child h1 {
+  font-size: 20px !important;
+  line-height: 1.15 !important;
+  margin-bottom: 4px !important;
+}
+
+/* ------------------------------------------------------------
+   Superfici / card / sezioni
+   ------------------------------------------------------------ */
+.r52-page-host .bg-white,
+.r52-page-host section[class*="bg-white"],
+.r52-page-host .et-card,
+.r52-page-host .et-card-elevated {
+  border-color: var(--r52-border) !important;
+}
+.r52-page-host .bg-white.border,
+.r52-page-host section.bg-white,
+.r52-page-host .et-card,
+.r52-page-host .et-card-elevated,
+.r52-page-host [class*="rounded-xl"][class*="border"][class*="bg-white"],
+.r52-page-host [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
+  border-radius: var(--r52-radius) !important;
+  box-shadow: var(--r52-shadow) !important;
+}
+.r52-page-host .bg-slate-50,
+.r52-page-host .bg-gray-50 { background-color: var(--r52-panel-soft) !important; }
+
+.r52-page-host .shadow-lg,
+.r52-page-host .shadow-xl,
+.r52-page-host .shadow-2xl { box-shadow: var(--r52-shadow) !important; }
+
+/* KPI: trasformazione in card gestionali compatte */
+.r52-page-host [class*="grid"] > [class*="border"][class*="rounded"][class*="bg-white"] {
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.r52-page-host [class*="grid"] > [class*="border"][class*="rounded"][class*="bg-white"]:hover {
+  border-color: #c6d8e6 !important;
+  box-shadow: 0 12px 30px -24px rgba(20,65,100,.7) !important;
+}
+
+/* ------------------------------------------------------------
+   Bottoni
+   ------------------------------------------------------------ */
+.r52-page-host button,
+.r52-page-host a[class*="button"] { transition: all .14s ease; }
+.r52-page-host button[class*="bg-blue"],
+.r52-page-host button[class*="bg-slate-900"],
+.r52-page-host .et-btn-primary {
+  background: linear-gradient(180deg, #235b88, #17466c) !important;
+  color: white !important;
+  border-color: #17466c !important;
+  box-shadow: 0 7px 16px -13px rgba(13,48,76,.8) !important;
+}
+.r52-page-host button[class*="bg-blue"]:hover,
+.r52-page-host button[class*="bg-slate-900"]:hover,
+.r52-page-host .et-btn-primary:hover { filter: brightness(.96); transform: translateY(-1px); }
+.r52-page-host button[class*="border"][class*="bg-white"]:hover { border-color: #aebfcd !important; background: #f8fafc !important; }
+.r52-page-host button[class*="bg-red"],
+.r52-page-host button[class*="text-red"] { box-shadow: none !important; }
+
+/* ------------------------------------------------------------
+   Form / input / select
+   ------------------------------------------------------------ */
+.r52-page-host input:not([type="checkbox"]):not([type="radio"]),
+.r52-page-host select,
+.r52-page-host textarea {
+  border-color: #cfdbe5 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: var(--r52-text) !important;
+  box-shadow: inset 0 1px 1px rgba(15,23,42,.018);
+}
+.r52-page-host input:not([type="checkbox"]):not([type="radio"]):focus,
+.r52-page-host select:focus,
+.r52-page-host textarea:focus {
+  outline: none !important;
+  border-color: #5e8fb5 !important;
+  box-shadow: 0 0 0 3px rgba(47,111,165,.12) !important;
+}
+.r52-page-host label { color: #43566a; font-weight: 650; }
+
+/* ------------------------------------------------------------
+   Tabelle — redesign comune per tutte le aree dati
+   ------------------------------------------------------------ */
+.r52-page-host table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: 13px;
+}
+.r52-page-host table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #edf3f7 !important;
+  color: #3b5063 !important;
+  border-top: 1px solid var(--r52-border) !important;
+  border-bottom: 1px solid var(--r52-border-strong) !important;
+  font-size: 10px !important;
+  line-height: 1.2 !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+.r52-page-host table tbody td {
+  background: #fff;
+  border-bottom-color: #e9eef3 !important;
+  color: #26384a;
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+}
+.r52-page-host table tbody tr:nth-child(even) td { background: #fbfcfd; }
+.r52-page-host table tbody tr:hover td { background: #f3f8fc !important; }
+
+/* Tab / segmented control */
+.r52-page-host [role="tablist"],
+.r52-page-host .r52-segmented,
+.r52-page-host [class*="inline-flex"][class*="rounded"][class*="bg-slate"] {
+  border: 1px solid var(--r52-border);
+  background: #eef3f7 !important;
+  border-radius: 11px !important;
+  padding: 3px;
+}
+
+/* Badge */
+.r52-page-host [class*="rounded-full"][class*="text-xs"],
+.r52-page-host [class*="rounded-full"][class*="text-[10px]"] { font-weight: 750; }
+
+/* ------------------------------------------------------------
+   Dashboard
+   ------------------------------------------------------------ */
+.r52-route-dashboard .grid > [class*="rounded"] {
+  position: relative;
+  overflow: hidden;
+}
+.r52-route-dashboard .grid > [class*="rounded"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--r52-amber), var(--r52-blue-600));
+  opacity: .72;
+}
+.r52-route-dashboard [class*="text-3xl"],
+.r52-route-dashboard [class*="text-4xl"] { color: #123b5d !important; font-family: 'Manrope', system-ui, sans-serif; font-weight: 850 !important; }
+
+/* ------------------------------------------------------------
+   Clienti / Ordini — archivio commerciale
+   ------------------------------------------------------------ */
+.r52-route-clienti-ordini table tbody td:first-child { font-weight: 750; color: #173d5e; }
+.r52-route-clienti-ordini table tbody td:nth-child(2) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.r52-route-clienti-ordini [class*="sticky"] { backdrop-filter: blur(8px); }
+
+/* ------------------------------------------------------------
+   Commesse / preventivi / report / fatturato / wallbox
+   ------------------------------------------------------------ */
+.r52-route-commesse [class*="rounded"][class*="border"],
+.r52-route-preventivi [class*="rounded"][class*="border"],
+.r52-route-fatturato [class*="rounded"][class*="border"],
+.r52-route-wallbox [class*="rounded"][class*="border"],
+.r52-route-report [class*="rounded"][class*="border"] {
+  border-color: var(--r52-border) !important;
+}
+.r52-route-commesse [class*="font-mono"],
+.r52-route-preventivi [class*="font-mono"] { color: #17466c; font-weight: 700; }
+
+/* ------------------------------------------------------------
+   Area tecnica
+   ------------------------------------------------------------ */
+.r52-section-tecnico .r52-page-banner {
+  background: linear-gradient(115deg, #10293d, #174a63 58%, #1d6474);
+}
+.r52-section-tecnico .r52-page-banner::after { background: linear-gradient(90deg, #52d2c6 0 9rem, rgba(82,210,198,.14) 9rem 100%); }
+.r52-section-tecnico .r52-page-kicker { color: #8fe6df; }
+.r52-route-sopralluoghi [class*="border-l-"],
+.r52-route-installazioni [class*="border-l-"],
+.r52-route-assistenza [class*="border-l-"] { border-left-width: 3px !important; }
+
+/* ------------------------------------------------------------
+   Area gestione / magazzino
+   ------------------------------------------------------------ */
+.r52-section-gestione .r52-page-banner {
+  background: linear-gradient(115deg, #14283d, #26445d 58%, #36596d);
+}
+.r52-section-gestione .r52-page-banner::after { background: linear-gradient(90deg, #f5c542 0 9rem, rgba(245,197,66,.13) 9rem 100%); }
+.r52-route-inventario table td,
+.r52-route-magazzino-verona table td,
+.r52-route-arrivi table td,
+.r52-route-spedizioni table td,
+.r52-route-trasferimenti table td,
+.r52-route-movimenti table td { vertical-align: middle; }
+.r52-route-inventario [class*="font-mono"],
+.r52-route-magazzino-verona [class*="font-mono"] { font-size: 12px; color: #41566a; }
+.r52-route-anomalie [class*="bg-red"],
+.r52-route-anomalie [class*="border-red"] { border-color: #efc9cd !important; }
+
+/* ------------------------------------------------------------
+   Sistema / admin / AI / moduli
+   ------------------------------------------------------------ */
+.r52-section-sistema .r52-page-banner {
+  background: linear-gradient(115deg, #172338, #263a57 58%, #314b6a);
+}
+.r52-section-sistema .r52-page-kicker { color: #f5d873; }
+.r52-route-admin [class*="rounded"][class*="border"],
+.r52-route-admin-utenti [class*="rounded"][class*="border"],
+.r52-route-admin-moduli [class*="rounded"][class*="border"],
+.r52-route-admin-migrazione-notion [class*="rounded"][class*="border"] { border-color: #d5e0e8 !important; }
+.r52-route-assistente-ai [class*="max-w-"] { max-width: none !important; }
+.r52-route-assistente-ai textarea { min-height: 74px; }
+
+/* Custom modules: stessa qualità dei moduli nativi */
+.r52-route-custom [class*="rounded"][class*="border"] { border-color: var(--r52-border) !important; }
+
+/* ------------------------------------------------------------
+   Dialog / popup in tutta l'app
+   ------------------------------------------------------------ */
+[data-radix-dialog-content],
+[role="dialog"] {
+  border-radius: 18px !important;
+}
+.r52-page-host [role="dialog"] { border-color: var(--r52-border) !important; }
+
+/* ------------------------------------------------------------
+   Login / password pages
+   ------------------------------------------------------------ */
+[data-testid="login-page"] {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(47,111,165,.09), transparent 28rem),
+    #f3f6f9 !important;
+}
+[data-testid="login-page"] > section:first-child {
+  background:
+    radial-gradient(circle at 77% 32%, rgba(245,197,66,.10), transparent 19rem),
+    linear-gradient(145deg, #0b2135, #17496f 72%, #1f5b87) !important;
+}
+[data-testid="login-card"], [data-testid="bootstrap-card"] {
+  border-radius: 20px !important;
+  background: linear-gradient(160deg, #123754, #1a4b70) !important;
+  border-color: rgba(255,255,255,.09) !important;
+  box-shadow: 0 28px 60px -34px rgba(10,31,49,.7) !important;
+}
+[data-testid="login-card"] input, [data-testid="bootstrap-card"] input {
+  border-radius: 11px !important;
+}
+
+/* ------------------------------------------------------------
+   Responsive
+   ------------------------------------------------------------ */
+@media (max-width: 1023px) {
+  .r52-page-banner { min-height: 118px; padding: 20px 18px; }
+  .r52-page-banner-inner { align-items: flex-start; }
+  .r52-page-state { display: none; }
+  .r52-page-icon { width: 46px; height: 46px; border-radius: 13px; }
+  .r52-page-title { font-size: 25px; }
+  .r52-page-subtitle { font-size: 12px; }
+  .r52-page-host { padding: 16px 12px 34px; }
+}
+@media (max-width: 640px) {
+  .r52-page-banner { min-height: auto; padding: 16px 14px 17px; }
+  .r52-page-identity { gap: 11px; }
+  .r52-page-icon { width: 40px; height: 40px; border-radius: 11px; }
+  .r52-page-title { font-size: 21px; }
+  .r52-page-subtitle { margin-top: 4px; font-size: 11px; line-height: 1.35; }
+  .r52-page-kicker { font-size: 9px; }
+  .r52-page-host { padding: 12px 9px 28px; }
+  .r52-page-host table { font-size: 12px; }
+  .r52-page-host table thead th { font-size: 9px !important; }
+}
