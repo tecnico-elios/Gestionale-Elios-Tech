@@ -27,6 +27,8 @@ for marker in [
     "crm_interventi_tecnici",
     "crm_assistenza",
     "sync_all_calendar_operations",
+    "_is_technical",
+    "_is_assistance",
 ]:
     if marker not in ops:
         raise RuntimeError(f"R62 audit: marker operations mancante: {marker}")
@@ -36,16 +38,21 @@ for marker in ["sync_calendar_event_operations", 'stats["operations_sync"]', "sy
     if marker not in calendar:
         raise RuntimeError(f"R62 audit: hook calendario/import mancante: {marker}")
 
-from calendar_operations_sync import _event_has_person, _is_installation
+from calendar_operations_sync import _event_has_person, _is_assistance, _is_installation, _is_technical
 resources = [
     {"id": "r", "name": "RICCARDO"},
     {"id": "e", "name": "ENRICO"},
     {"id": "i", "name": "IVAN"},
 ]
 assert _is_installation({"title": "Installazione Hotel Stendhal", "category": "Installazione"})
+assert _is_technical({"title": "Intervento tecnico wallbox", "category": "Assistenza"})
+assert not _is_technical({"title": "Riunione commerciale", "category": "Riunione"})
+assert _is_assistance({"title": "Assistenza cliente", "category": "Assistenza"})
+assert not _is_assistance({"title": "Riunione interna", "category": "Riunione"})
 assert _event_has_person({"resource_ids": ["r"]}, resources, {"riccardo"})
 assert _event_has_person({"resource_ids": ["e"]}, resources, {"enrico", "riccardo"})
 assert not _event_has_person({"resource_ids": ["i"]}, resources, {"enrico", "riccardo"})
 assert _event_has_person({"resource_ids": ["i"]}, resources, {"ivan"})
+assert _event_has_person({"resource_ids": [], "source_calendar": "Calendario IVAN"}, resources, {"ivan"})
 
-print("[R62 audit backend] OK: separazione calendario verificata e riallineamento completo limitato all'importazione.")
+print("[R62 audit backend] OK: installazioni, interventi tecnici e assistenze filtrati per persona e tipologia.")
