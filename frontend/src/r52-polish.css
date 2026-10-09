@@ -1,0 +1,184 @@
+/* R52 — universal structural polish for remaining active routes */
+
+/* Elimina i vecchi hero duplicati: se la prima riga contiene un h1 e comandi,
+   mantiene i comandi come toolbar; se contiene solo titolo, la nasconde. */
+.r52-page-host > div > div:first-child:has(h1):has(button) {
+  min-height: 50px;
+  padding: 8px 10px;
+  margin: 0 0 12px !important;
+  border: 1px solid var(--r52-border);
+  border-radius: 13px;
+  background: rgba(255,255,255,.94);
+  box-shadow: var(--r52-shadow);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+}
+.r52-page-host > div > div:first-child:has(h1):has(button) > div:first-child {
+  display: none !important;
+}
+.r52-page-host > div > div:first-child:has(h1):not(:has(button)) {
+  display: none !important;
+}
+
+/* Pagine che hanno un wrapper max-width/padding proprio non devono restringere la R52. */
+.r52-page-host > div[class*="max-w-"] {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* Tabelle e contenitori dati delle pagine legacy diventano pannelli R52. */
+.r52-route-preventivi > div > div[class*="bg-white"][class*="border"],
+.r52-route-report > div > div[class*="bg-white"][class*="border"],
+.r52-route-arrivi > div > div[class*="bg-white"][class*="border"],
+.r52-route-spedizioni > div > div[class*="bg-white"][class*="border"],
+.r52-route-movimenti > div > div[class*="bg-white"][class*="border"],
+.r52-route-admin > div > div[class*="bg-white"][class*="border"],
+.r52-route-admin-utenti > div > div[class*="bg-white"][class*="border"],
+.r52-route-admin-moduli > div > div[class*="bg-white"][class*="border"],
+.r52-route-admin-migrazione-notion > div > div[class*="bg-white"][class*="border"],
+.r52-route-assistente-ai > div > div[class*="bg-white"][class*="border"],
+.r52-route-custom > div > div[class*="bg-white"][class*="border"] {
+  border-radius: 15px !important;
+  border-color: var(--r52-border) !important;
+  box-shadow: var(--r52-shadow) !important;
+  overflow: hidden;
+}
+
+/* Toolbar di ricerca/lista */
+.r52-route-preventivi > div > div[class*="bg-white"] > div:first-child[class*="border-b"],
+.r52-route-report > div > div[class*="bg-white"] > div:first-child[class*="border-b"],
+.r52-route-arrivi > div > div[class*="bg-white"] > div:first-child[class*="border-b"],
+.r52-route-spedizioni > div > div[class*="bg-white"] > div:first-child[class*="border-b"],
+.r52-route-movimenti > div > div[class*="bg-white"] > div:first-child[class*="border-b"] {
+  background: #fbfcfd !important;
+  border-color: var(--r52-border) !important;
+  padding: 12px 14px !important;
+}
+
+/* Commesse: valorizza la natura operativa delle card senza cambiare picking/spedizioni. */
+.r52-route-commesse .et-card,
+.r52-route-commesse .et-card-elevated {
+  position: relative;
+  overflow: hidden;
+}
+.r52-route-commesse .et-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #2f6fa5;
+  opacity: .35;
+}
+.r52-route-commesse [data-testid*="commessa"] button,
+.r52-route-commesse [data-testid*="ship"] button {
+  border-radius: 9px !important;
+}
+
+/* Installazioni / calendario tecnico */
+.r52-route-installazioni > div {
+  max-width: none !important;
+  margin-inline: 0 !important;
+}
+.r52-route-installazioni [class*="rounded"][class*="border"] {
+  border-color: var(--r52-border) !important;
+  box-shadow: 0 8px 22px -22px rgba(16,54,82,.55);
+}
+
+/* Report / analytics: i grafici hanno la stessa superficie. */
+.r52-route-report [class*="h-["],
+.r52-route-fatturato [class*="h-["],
+.r52-route-wallbox [class*="h-["] {
+  min-width: 0;
+}
+
+/* Arrivi / Spedizioni / Movimenti: maggiore densità e gerarchia da magazzino. */
+.r52-route-arrivi table tbody td,
+.r52-route-spedizioni table tbody td,
+.r52-route-movimenti table tbody td {
+  vertical-align: middle;
+}
+.r52-route-arrivi [class*="font-mono"],
+.r52-route-spedizioni [class*="font-mono"],
+.r52-route-movimenti [class*="font-mono"] {
+  font-size: 11px !important;
+  color: #52687a !important;
+}
+
+/* Admin: tab e gruppi leggibili come pannello configurazione. */
+.r52-route-admin [role="tablist"],
+.r52-route-admin-utenti [role="tablist"],
+.r52-route-admin-moduli [role="tablist"] {
+  position: sticky;
+  top: 76px;
+  z-index: 8;
+  background: rgba(243,246,249,.94) !important;
+  backdrop-filter: blur(10px);
+}
+.r52-route-admin h2,
+.r52-route-admin-utenti h2,
+.r52-route-admin-moduli h2,
+.r52-route-admin-migrazione-notion h2 {
+  font-size: 17px !important;
+  font-weight: 850 !important;
+}
+
+/* AI: area conversazione più simile a workspace e meno a form. */
+.r52-route-assistente-ai textarea {
+  border-radius: 12px !important;
+}
+.r52-route-assistente-ai [class*="overflow-y-auto"] {
+  scrollbar-width: thin;
+  scrollbar-color: #b8c7d2 transparent;
+}
+
+/* Custom modules ereditano il look nativo. */
+.r52-route-custom table,
+.r52-route-custom form,
+.r52-route-custom [class*="rounded"][class*="border"] {
+  border-color: var(--r52-border) !important;
+}
+
+/* Login esistente: mantiene la logica ma con la stessa scala della R52. */
+[data-testid="login-page"] h1,
+[data-testid="login-page"] h2 {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+  letter-spacing: -.035em !important;
+}
+[data-testid="login-page"] input {
+  height: 48px !important;
+  border-radius: 10px !important;
+}
+[data-testid="login-page"] button {
+  border-radius: 10px !important;
+}
+
+.r52-auth-notice {
+  margin: 15px 0 18px;
+  padding: 11px 12px;
+  border: 1px solid #eadcae;
+  border-radius: 11px;
+  background: #fff9e8;
+  color: #755817;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .r52-page-host > div > div:first-child:has(h1):has(button) {
+    min-height: 44px;
+    padding: 6px 8px;
+  }
+  .r52-route-admin [role="tablist"],
+  .r52-route-admin-utenti [role="tablist"],
+  .r52-route-admin-moduli [role="tablist"] {
+    position: static;
+  }
+}
