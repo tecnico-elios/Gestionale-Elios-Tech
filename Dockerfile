@@ -30,7 +30,9 @@ RUN python /app/backend/scripts/apply_r60_backend.py \
 RUN python /app/backend/scripts/apply_r61_backend.py \
     && python /app/backend/scripts/audit_r61_flows.py
 RUN python /app/backend/scripts/apply_r62_backend.py \
-    && python /app/backend/scripts/audit_r62_flows.py \
+    && python /app/backend/scripts/audit_r62_flows.py
+RUN python /app/backend/scripts/apply_r63_backend.py \
+    && python /app/backend/scripts/audit_r63_flows.py \
     && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
