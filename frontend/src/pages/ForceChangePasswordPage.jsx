@@ -7,10 +7,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Eye, EyeSlash, Lock, ShieldWarning } from "@phosphor-icons/react";
+import { Eye, EyeSlash, Lock, ShieldWarning, SignOut } from "@phosphor-icons/react";
 import EliosLogo from "../components/EliosLogo";
-
-
 
 function formatError(err) {
   const d = err?.response?.data?.detail;
@@ -19,11 +17,6 @@ function formatError(err) {
   return err?.message || "Errore imprevisto";
 }
 
-/**
- * Pagina di cambio password obbligatorio al primo login.
- * L'utente è autenticato (must_change_password=true) ma non può usare il gestionale
- * finché non completa questa procedura. Reindirizzato qui automaticamente da AuthContext.
- */
 export default function ForceChangePasswordPage() {
   const { user, applyRefreshedToken, refreshMe, logout } = useAuth();
   const navigate = useNavigate();
@@ -35,147 +28,56 @@ export default function ForceChangePasswordPage() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (newPwd.length < 6) {
-      toast.error("La nuova password deve avere almeno 6 caratteri");
-      return;
-    }
-    if (newPwd !== confirm) {
-      toast.error("Le password non coincidono");
-      return;
-    }
-    if (newPwd === oldPwd) {
-      toast.error("La nuova password deve essere diversa da quella temporanea");
-      return;
-    }
+    if (newPwd.length < 6) { toast.error("La nuova password deve avere almeno 6 caratteri"); return; }
+    if (newPwd !== confirm) { toast.error("Le password non coincidono"); return; }
+    if (newPwd === oldPwd) { toast.error("La nuova password deve essere diversa da quella temporanea"); return; }
     setBusy(true);
     try {
-      const { data } = await axios.post(`${API}/auth/change-my-password`, {
-        old_password: oldPwd,
-        new_password: newPwd,
-      });
-      if (data?.token && typeof applyRefreshedToken === "function") {
-        applyRefreshedToken(data.token);
-      }
+      const { data } = await axios.post(`${API}/auth/change-my-password`, { old_password: oldPwd, new_password: newPwd });
+      if (data?.token && typeof applyRefreshedToken === "function") applyRefreshedToken(data.token);
       await refreshMe();
       toast.success("Password aggiornata — benvenuto!");
       navigate("/", { replace: true });
     } catch (err) {
       toast.error("Cambio password fallito", { description: formatError(err) });
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
+  const handleLogout = () => { logout(); navigate("/login", { replace: true }); };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4 relative bg-slate-950"
-      data-testid="force-change-password-page"
-    >
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(circle at 20% 20%, rgba(250,204,21,0.10), transparent 45%), radial-gradient(circle at 80% 80%, rgba(59,130,246,0.08), transparent 50%)",
-        }}
-      />
-      <div className="relative w-full max-w-md rounded-xl bg-slate-900/60 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/50 p-6 sm:p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <EliosLogo size={30} />
-          <div>
-            <div className="text-[10px] tracking-[0.22em] uppercase text-amber-300/80 font-semibold">
-              Primo accesso
-            </div>
-            <div className="font-display text-lg font-bold text-white leading-tight">
-              Imposta la tua password
-            </div>
-          </div>
+    <div className="r52-auth-page" data-testid="force-change-password-page">
+      <aside className="r52-auth-brand-panel">
+        <div className="r52-auth-brand-content">
+          <div className="r52-auth-logo"><EliosLogo size={46} /></div>
+          <div className="r52-auth-eyebrow">Primo accesso</div>
+          <h1>Proteggiamo l’accesso prima di iniziare.</h1>
+          <p>Imposta la tua password personale. Dopo il salvataggio entrerai direttamente nel Gestionale Elios Tech con i permessi assegnati al tuo profilo.</p>
         </div>
+      </aside>
+      <main className="r52-auth-form-panel">
+        <div className="r52-auth-card">
+          <div className="r52-auth-card-icon"><ShieldWarning size={24} weight="duotone" /></div>
+          <div className="r52-auth-card-kicker">Configurazione sicurezza</div>
+          <h2>Imposta la tua password</h2>
+          <div className="r52-auth-notice">Ciao <strong>{user?.full_name || user?.username}</strong>, devi sostituire la password temporanea prima di usare il gestionale.</div>
 
-        <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-400/30 p-3 mb-4 text-amber-100 text-sm">
-          <ShieldWarning size={20} className="shrink-0 text-amber-300 mt-0.5" />
-          <div>
-            Ciao <strong>{user?.full_name || user?.username}</strong>, per motivi di
-            sicurezza devi cambiare la password temporanea prima di usare il gestionale.
-          </div>
-        </div>
-
-        <form onSubmit={submit} className="space-y-3" data-testid="force-change-form">
-          <div>
-            <Label className="text-slate-200 text-sm">Password temporanea (attuale)</Label>
-            <div className="relative mt-1">
-              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Input
-                type={show ? "text" : "password"}
-                value={oldPwd}
-                onChange={(e) => setOldPwd(e.target.value)}
-                required
-                autoFocus
-                className="h-12 pl-9 pr-10 bg-slate-950/50 border-white/10 text-white placeholder:text-slate-500"
-                data-testid="fcp-old-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white"
-                tabIndex={-1}
-              >
-                {show ? <EyeSlash size={18} /> : <Eye size={18} />}
-              </button>
+          <form onSubmit={submit} className="r52-auth-form" data-testid="force-change-form">
+            <div>
+              <Label>Password temporanea</Label>
+              <div className="relative mt-1">
+                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input type={show ? "text" : "password"} value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} required autoFocus className="h-12 pl-9 pr-10" data-testid="fcp-old-password" />
+                <button type="button" onClick={() => setShow((s) => !s)} className="r52-auth-eye" tabIndex={-1} aria-label={show ? "Nascondi password" : "Mostra password"}>{show ? <EyeSlash size={18} /> : <Eye size={18} />}</button>
+              </div>
             </div>
-          </div>
-
-          <div>
-            <Label className="text-slate-200 text-sm">Nuova password (min. 6 caratteri)</Label>
-            <Input
-              type={show ? "text" : "password"}
-              value={newPwd}
-              onChange={(e) => setNewPwd(e.target.value)}
-              required
-              minLength={6}
-              className="h-12 mt-1 bg-slate-950/50 border-white/10 text-white placeholder:text-slate-500"
-              data-testid="fcp-new-password"
-            />
-          </div>
-
-          <div>
-            <Label className="text-slate-200 text-sm">Conferma nuova password</Label>
-            <Input
-              type={show ? "text" : "password"}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              required
-              minLength={6}
-              className="h-12 mt-1 bg-slate-950/50 border-white/10 text-white placeholder:text-slate-500"
-              data-testid="fcp-confirm-password"
-            />
-          </div>
-
-          <Button
-            type="submit"
-            disabled={busy || !oldPwd || !newPwd || !confirm}
-            className="h-12 w-full bg-slate-950/70 hover:bg-slate-900 text-white border border-white/15 rounded-md mt-2 text-base font-semibold tracking-wide shadow-lg shadow-black/40"
-            data-testid="fcp-submit"
-          >
-            {busy ? "Salvo…" : "Imposta password e continua"}
-          </Button>
-
-          <div className="text-center pt-1">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-[12px] text-slate-300/70 hover:text-white underline underline-offset-2"
-              data-testid="fcp-logout"
-            >
-              Annulla e torna al login
-            </button>
-          </div>
-        </form>
-      </div>
+            <div><Label>Nuova password <span className="text-slate-400 font-normal">(min. 6 caratteri)</span></Label><Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="fcp-new-password" /></div>
+            <div><Label>Conferma nuova password</Label><Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="fcp-confirm-password" /></div>
+            <Button type="submit" disabled={busy || !oldPwd || !newPwd || !confirm} className="h-12 w-full et-btn-primary border-0" data-testid="fcp-submit">{busy ? "Salvo…" : "Imposta password e continua"}</Button>
+            <button type="button" onClick={handleLogout} className="r52-auth-back" data-testid="fcp-logout"><SignOut size={15} /> Annulla e torna al login</button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }
