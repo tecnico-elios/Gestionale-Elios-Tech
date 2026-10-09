@@ -19,7 +19,6 @@ for rel in [
 ops = (ROOT / "calendar_operations_sync.py").read_text(encoding="utf-8")
 calendar = (ROOT / "routes" / "calendar_routes.py").read_text(encoding="utf-8")
 crm = (ROOT / "routes" / "crm_routes.py").read_text(encoding="utf-8")
-server = (ROOT / "server.py").read_text(encoding="utf-8")
 
 for marker in [
     'INSTALLATION_PEOPLE = {"enrico", "riccardo"}',
@@ -33,11 +32,9 @@ for marker in [
         raise RuntimeError(f"R62 audit: marker operations mancante: {marker}")
 if '"interventi-tecnici": "crm_interventi_tecnici"' not in crm:
     raise RuntimeError("R62 audit: risorsa CRM interventi tecnici non configurata")
-for marker in ["sync_calendar_event_operations", 'stats["operations_sync"]', "sync_all_calendar_operations"]:
+for marker in ["sync_calendar_event_operations", 'stats["operations_sync"]', "sync_all_calendar_operations", 'actor=current.get("username") or "calendar-import"']:
     if marker not in calendar:
-        raise RuntimeError(f"R62 audit: hook calendario mancante: {marker}")
-if "R62 Calendar operational split startup sync" not in server:
-    raise RuntimeError("R62 audit: startup sync mancante")
+        raise RuntimeError(f"R62 audit: hook calendario/import mancante: {marker}")
 
 from calendar_operations_sync import _event_has_person, _is_installation
 resources = [
@@ -51,4 +48,4 @@ assert _event_has_person({"resource_ids": ["e"]}, resources, {"enrico", "riccard
 assert not _event_has_person({"resource_ids": ["i"]}, resources, {"enrico", "riccardo"})
 assert _event_has_person({"resource_ids": ["i"]}, resources, {"ivan"})
 
-print("[R62 audit backend] OK: Installazioni ENRICO/RICCARDO, Interventi RICCARDO e Assistenza IVAN separati.")
+print("[R62 audit backend] OK: separazione calendario verificata e riallineamento completo limitato all'importazione.")
