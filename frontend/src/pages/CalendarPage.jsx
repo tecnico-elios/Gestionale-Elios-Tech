@@ -6,9 +6,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import {
   CaretLeft, CaretRight, Plus, MapPin, Wrench, ClipboardText,
-  Headset, UsersThree, Gear, Trash, PencilSimple, ArrowSquareOut,
+  Headset, Gear, Trash, PencilSimple, ArrowSquareOut,
   SlidersHorizontal, MagnifyingGlass, UploadSimple, CalendarBlank,
-  Clock, CheckCircle, WarningCircle, ArrowClockwise, X,
+  Clock, CheckCircle, WarningCircle, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
