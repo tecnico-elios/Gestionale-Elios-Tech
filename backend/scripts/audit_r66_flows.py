@@ -25,7 +25,8 @@ failed = [name for name, ok in checks.items() if not ok]
 if failed:
     raise SystemExit("R66 audit failed: " + ", ".join(failed))
 
-codes = normalize_codes(['["PPR2-0-2-4-K-002","MTR-3P-65A"]'])
+# Il valore reale di una property Notion multi_select arriva già come lista Python.
+codes = normalize_codes(["PPR2-0-2-4-K-002", "MTR-3P-65A"])
 assert codes == ["PPR2-0-2-4-K-002", "MTR-3P-65A"], codes
 assert looks_like_wallbox_code(codes[0]) is True
 assert looks_like_wallbox_code(codes[1]) is False
