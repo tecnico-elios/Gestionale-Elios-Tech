@@ -54,7 +54,9 @@ RUN python /app/backend/scripts/prepare_r64_backend.py \
 RUN python /app/backend/scripts/apply_r65_backend.py \
     && python /app/backend/scripts/audit_r65_flows.py
 RUN python /app/backend/scripts/apply_r66_backend.py \
-    && python /app/backend/scripts/audit_r66_flows.py \
+    && python /app/backend/scripts/audit_r66_flows.py
+RUN python /app/backend/scripts/apply_r67_backend.py \
+    && python /app/backend/scripts/audit_r67_flows.py \
     && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
