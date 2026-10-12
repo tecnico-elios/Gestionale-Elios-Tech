@@ -8,7 +8,21 @@ COPY frontend/ ./
 ENV REACT_APP_BACKEND_URL="" \
     GENERATE_SOURCEMAP=false \
     DISABLE_ESLINT_PLUGIN=true
-RUN npm run build
+RUN node scripts/apply-r54-copy.js \
+    && node scripts/apply-r55-unified-header.js \
+    && node scripts/apply-r56.js \
+    && node scripts/apply-r58-calendar-roles-v2.js \
+    && node scripts/apply-r59.js \
+    && node scripts/audit-r59-flows.js \
+    && node scripts/apply-r61-v2.js \
+    && node scripts/audit-r61.js \
+    && node scripts/apply-r62.js \
+    && node scripts/audit-r62.js \
+    && node scripts/apply-r63.js \
+    && node scripts/audit-r63.js \
+    && node scripts/apply-r64.js \
+    && node scripts/audit-r64.js \
+    && npx craco build
 
 # ===== Backend/runtime =====
 FROM python:3.12-slim
@@ -32,7 +46,9 @@ RUN python /app/backend/scripts/apply_r61_backend.py \
 RUN python /app/backend/scripts/apply_r62_backend.py \
     && python /app/backend/scripts/audit_r62_flows.py
 RUN python /app/backend/scripts/apply_r63_backend.py \
-    && python /app/backend/scripts/audit_r63_flows.py \
+    && python /app/backend/scripts/audit_r63_flows.py
+RUN python /app/backend/scripts/apply_r64_backend.py \
+    && python /app/backend/scripts/audit_r64_flows.py \
     && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
