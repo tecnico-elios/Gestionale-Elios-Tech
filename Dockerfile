@@ -20,6 +20,7 @@ RUN node scripts/apply-r54-copy.js \
     && node scripts/audit-r62.js \
     && node scripts/apply-r63.js \
     && node scripts/audit-r63.js \
+    && node scripts/prepare-r64.js \
     && node scripts/apply-r64.js \
     && node scripts/audit-r64.js \
     && npx craco build
