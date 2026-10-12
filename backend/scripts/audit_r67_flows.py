@@ -20,6 +20,9 @@ checks = {
     "vecchio split rimosso": 'str(codes_val).split(",")' not in admin,
     "inventario marcato Elios": '"warehouse_id": "elios-tech"' in admin and '"import_source": "notion_inventory"' in admin,
     "seriale inventario globale": '{"serial_lower": sn.lower()},' in admin,
+    "riparazione codici clienti": 'db.crm_clienti.update_one({"id": _client.get("id")}' in admin,
+    "riparazione codici ordini": 'db.crm_ordini_clienti.update_one({"id": _order.get("id")}' in admin,
+    "statistica riparati": 'order_bridge_stats["normalized_import_records"]' in admin,
     "riconciliazione chiamata": "order_bridge_stats = await reconcile_order_wallbox_serials(" in admin,
     "tracker prima della riconciliazione": admin.find('if notion_service.NOTION_TRACKER_DS_ID:') < admin.find("order_bridge_stats = await reconcile_order_wallbox_serials("),
     "nessun prodotto inventato dal bridge ordine": "async def _ensure_product" not in bridge,
@@ -35,8 +38,10 @@ if failed:
 
 assert normalize_codes(["MTR-1P-100A", "PPR2-M-2-4-K-002"]) == ["MTR-1P-100A", "PPR2-M-2-4-K-002"]
 assert normalize_codes("['MTR-1P-100A', 'PPR2-M-2-4-K-002']") == ["MTR-1P-100A", "PPR2-M-2-4-K-002"]
+# Simula esattamente due elementi già sporcati dal vecchio str(list).split(',').
+assert normalize_codes(["['MTR-1P-100A'", " 'PPR2-M-2-4-K-002']"]) == ["MTR-1P-100A", "PPR2-M-2-4-K-002"]
 assert normalize_serials("1426760\n1433687") == ["1426760", "1433687"]
 assert canonical_order_code("DAZE-DUO-S-2X22") == "OS01IT64TCP"
 assert canonical_order_code("PPR2-0-2-4-K-002") == "PPR2-0-2-4-K-002"
 
-print("[R67 audit backend] OK: Inventario -> Tracker -> Ordini, senza associazioni seriale/prodotto arbitrarie.")
+print("[R67 audit backend] OK: Inventario -> Tracker -> Ordini, con riparazione vecchi codici e senza associazioni arbitrarie.")
