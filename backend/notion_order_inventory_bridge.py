@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import json
 import re
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 WAREHOUSE_ELIOS = "elios-tech"
-GENERIC_WALLBOX_CODE = "WB-NOTION-STORICO"
 
+# Negli Ordini Eliostech alcuni nomi commerciali non coincidono con il codice usato
+# nell'Inventario. Gli alias sono usati SOLO per cercare un prodotto già importato:
+# non creano prodotti e non trasformano accessori in Wallbox.
+ORDER_CODE_ALIASES = {
+    "DAZE-DUO-S-2X22": "OS01IT64TCP",
+    "GOE": "GO-E-CHARGER-GEMINI-FLEX",
+}
+
+# Manteniamo questa funzione per compatibilità con gli audit/versioni precedenti, ma
+# R67 non usa più euristiche di nome per assegnare i seriali: la fonte autorevole è
+# Inventario/Inventory Tracker.
 _ACCESSORY_HINTS = (
     "MTR", "METER", "PED-", "STAND", "CABLE", "CBL", "RFID", "QUADRO",
-    "FUSE", "ADATT", "STAFFA", "RAINCOVER", "HLD-", "FOREX", "POLE",
+    "FUSE", "ADATT", "STAFFA", "RAINCOVER", "HLD-", "FOREX", "POLE", "FAN",
 )
 _WALLBOX_HINTS = (
     "PPR", "PLP", "CPB", "WALLBOX", "AUTEL-WB", "MAXI-CHARGER", "ABL-",
@@ -30,24 +39,15 @@ def _clean_code(value: Any) -> str:
 
 
 def normalize_codes(values: Any) -> List[str]:
-    """Normalizza multi-select Notion, JSON serializzato o stringhe separate da virgola."""
+    """Normalizza correttamente multi-select Notion, JSON e vecchie stringhe Python-list."""
     raw: List[Any] = []
     if isinstance(values, (list, tuple, set)):
-        for item in values:
-            if isinstance(item, str) and item.strip().startswith("["):
-                try:
-                    parsed = json.loads(item)
-                    if isinstance(parsed, list):
-                        raw.extend(parsed)
-                        continue
-                except Exception:
-                    pass
-            raw.append(item)
+        raw.extend(values)
     elif values not in (None, ""):
         text = str(values).strip()
         if text.startswith("["):
             try:
-                parsed = json.loads(text)
+                parsed = json.loads(text.replace("'", '"'))
                 if isinstance(parsed, list):
                     raw.extend(parsed)
                 else:
@@ -74,12 +74,12 @@ def normalize_serials(values: Any) -> List[str]:
     if isinstance(values, (list, tuple, set)):
         parts: Iterable[Any] = values
     else:
-        parts = re.split(r"[,;\n\s]+", str(values or ""))
+        parts = re.split(r"[,;.\n\s]+", str(values or ""))
     out: List[str] = []
     seen = set()
     for value in parts:
         serial = str(value or "").strip().strip("[]\"'")
-        if not serial:
+        if not serial or not re.search(r"\d", serial):
             continue
         key = serial.casefold()
         if key not in seen:
@@ -97,119 +97,98 @@ def looks_like_wallbox_code(code: str) -> bool:
     return any(hint in upper for hint in _WALLBOX_HINTS)
 
 
+def canonical_order_code(code: str) -> str:
+    clean = _clean_code(code)
+    return ORDER_CODE_ALIASES.get(clean.upper(), clean)
+
+
+def _product_is_serial(product: Optional[Dict[str, Any]]) -> bool:
+    if not product:
+        return False
+    if str(product.get("tipo_gestione") or "").casefold() == "a_seriale":
+        return True
+    category = str(product.get("category") or "").casefold()
+    return category in {"wallbox", "go-e"} and str(product.get("tipo_gestione") or "").casefold() != "a_quantita"
+
+
 async def _find_product_by_code(db, code: str) -> Optional[Dict[str, Any]]:
-    if not code:
+    clean = canonical_order_code(code)
+    if not clean:
         return None
-    return await db.products.find_one({
+    low = clean.casefold()
+    product = await db.products.find_one({
         "$and": [
-            {"code": {"$regex": f"^{re.escape(code)}$", "$options": "i"}},
-            {"$or": [{"warehouse_id": WAREHOUSE_ELIOS}, {"warehouse_id": {"$exists": False}}]},
+            {"$or": [
+                {"code_lower": low},
+                {"code": {"$regex": f"^{re.escape(clean)}$", "$options": "i"}},
+            ]},
+            {"$or": [
+                {"warehouse_id": WAREHOUSE_ELIOS},
+                {"warehouse_id": {"$exists": False}},
+                {"warehouse_id": ""},
+            ]},
         ]
     })
+    return product
 
 
-async def _ensure_product(db, code: str, *, generic: bool = False) -> Tuple[Dict[str, Any], bool]:
-    code = code or GENERIC_WALLBOX_CODE
-    existing = await _find_product_by_code(db, code)
-    now = _now()
-    if existing:
-        updates: Dict[str, Any] = {"updated_at": now}
-        if not existing.get("warehouse_id"):
-            updates["warehouse_id"] = WAREHOUSE_ELIOS
-        if not existing.get("tipo_gestione"):
-            updates["tipo_gestione"] = "a_seriale"
-        if updates:
-            await db.products.update_one({"id": existing.get("id")}, {"$set": updates})
-            existing.update(updates)
-        await db.warehouse_stock.update_one(
-            {"product_id": existing.get("id"), "warehouse_id": WAREHOUSE_ELIOS},
-            {"$setOnInsert": {"quantity": 0, "location": "", "low_stock_threshold": 0, "created_at": now}, "$set": {"updated_at": now}},
-            upsert=True,
-        )
-        return existing, False
-
-    pid = str(uuid.uuid4())
-    product = {
-        "id": pid,
-        "warehouse_id": WAREHOUSE_ELIOS,
-        "name": "Wallbox storico da Ordini Elios Tech" if generic else f"Wallbox {code}",
-        "code": code,
-        "category": "Wallbox",
-        "tipo_gestione": "a_seriale",
-        "unit": "pz",
-        "quantity": 0,
-        "active": True,
-        "historical_only": True,
-        "import_source": "notion_ordini",
-        "created_at": now,
-        "updated_at": now,
-    }
-    await db.products.insert_one(product)
-    await db.warehouse_stock.update_one(
-        {"product_id": pid, "warehouse_id": WAREHOUSE_ELIOS},
-        {"$set": {"quantity": 0, "location": "", "low_stock_threshold": 0, "updated_at": now}, "$setOnInsert": {"created_at": now}},
-        upsert=True,
-    )
-    return product, True
-
-
-async def _resolve_wallbox_products(db, codes: Sequence[str], serial_count: int) -> Tuple[List[Dict[str, Any]], int, List[str]]:
-    warnings: List[str] = []
-    chosen: List[Dict[str, Any]] = []
-    created = 0
-
-    # Prima privilegia prodotti già configurati A Seriale: è la fonte più affidabile.
-    existing_by_code: Dict[str, Dict[str, Any]] = {}
-    for code in codes:
-        prod = await _find_product_by_code(db, code)
-        if prod:
-            existing_by_code[code.casefold()] = prod
-            if prod.get("tipo_gestione") == "a_seriale":
-                chosen.append(prod)
-
-    if not chosen:
-        wallbox_codes = [code for code in codes if looks_like_wallbox_code(code)]
-        if not wallbox_codes and len(codes) == 1:
-            wallbox_codes = list(codes)
-        for code in wallbox_codes:
-            prod = existing_by_code.get(code.casefold())
-            if prod is None:
-                prod, was_created = await _ensure_product(db, code)
-                created += int(was_created)
-            elif not prod.get("tipo_gestione"):
-                await db.products.update_one({"id": prod.get("id")}, {"$set": {"tipo_gestione": "a_seriale", "updated_at": _now()}})
-                prod["tipo_gestione"] = "a_seriale"
-            chosen.append(prod)
-
-    # Ordini con SN ma senza codice: non perdiamo il seriale, ma lo separiamo chiaramente.
-    if not chosen and serial_count:
-        prod, was_created = await _ensure_product(db, GENERIC_WALLBOX_CODE, generic=True)
-        chosen = [prod]
-        created += int(was_created)
-        warnings.append("seriali_senza_codice_wallbox")
-
-    # Deduplica mantenendo l'ordine.
-    unique: List[Dict[str, Any]] = []
+async def _serial_products_for_codes(db, codes: Sequence[str]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     seen = set()
-    for prod in chosen:
-        pid = str(prod.get("id") or "")
+    for code in normalize_codes(codes):
+        product = await _find_product_by_code(db, code)
+        if not _product_is_serial(product):
+            continue
+        pid = str(product.get("id") or "")
         if pid and pid not in seen:
             seen.add(pid)
-            unique.append(prod)
-    if len(unique) > 1 and serial_count not in (0, len(unique)):
-        warnings.append("piu_modelli_wallbox_associazione_seriali_ambigua")
-    return unique, created, warnings
+            out.append(product)
+    return out
 
 
-def _pick_timestamp(order_date: str) -> str:
-    value = str(order_date or "").strip()
-    if not value:
-        return _now()
-    if "T" in value:
-        return value
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-        return value + "T12:00:00+00:00"
-    return _now()
+def _order_link(
+    *, order_id: str, notion_page_id: str, order_number: str, order_date: str,
+    client_id: str, company: str,
+) -> Dict[str, str]:
+    return {
+        "order_id": str(order_id or ""),
+        "notion_page_id": str(notion_page_id or ""),
+        "order_number": str(order_number or ""),
+        "order_date": str(order_date or ""),
+        "client_id": str(client_id or ""),
+        "client_name": str(company or ""),
+    }
+
+
+async def _link_order_to_existing_serial(
+    db,
+    serial: str,
+    *, order_id: str, notion_page_id: str, order_number: str, order_date: str,
+    client_id: str, company: str,
+) -> bool:
+    existing = await db.product_serials.find_one({"serial_lower": serial.casefold()})
+    if not existing:
+        return False
+    link = _order_link(
+        order_id=order_id, notion_page_id=notion_page_id, order_number=order_number,
+        order_date=order_date, client_id=client_id, company=company,
+    )
+    update: Dict[str, Any] = {
+        "$addToSet": {"notion_order_links": link},
+        "$set": {"updated_at": _now()},
+    }
+    previous_date = str(existing.get("notion_order_date") or "")
+    if not previous_date or str(order_date or "") >= previous_date:
+        update["$set"].update({
+            "notion_order_page_id": notion_page_id,
+            "notion_order_id": order_id,
+            "notion_order_number": order_number,
+            "notion_order_date": order_date,
+            "notion_client_id": client_id,
+            "notion_client_name": company,
+        })
+    await db.product_serials.update_one({"_id": existing.get("_id")}, update)
+    return True
 
 
 async def sync_order_wallbox_serials(
@@ -225,130 +204,310 @@ async def sync_order_wallbox_serials(
     notion_page_id: str,
     actor: str = "notion-import",
 ) -> Dict[str, Any]:
-    """Registra nel magazzino storico le wallbox vendute senza alterare la giacenza attuale.
+    """R67: durante la lettura Ordini NON inventa più prodotti o movimenti.
 
-    - prodotti mancanti: creati a quantità zero nel Magazzino Elios;
-    - seriali mancanti: creati come `shipped`, quindi NON disponibili a stock;
-    - seriali già presenti: non vengono spostati né resi indisponibili; si aggiunge solo lo storico ordine;
-    - movimento storico: idempotente in local_picks.
+    L'Inventario viene importato prima e l'Inventory Tracker dopo. In questa fase
+    colleghiamo solo eventuali seriali già esistenti. La riconciliazione definitiva
+    viene eseguita da :func:`reconcile_order_wallbox_serials` dopo il Tracker.
     """
-    normalized_codes = normalize_codes(codes)
     normalized_serials = normalize_serials(serials)
-    products, products_created, warnings = await _resolve_wallbox_products(db, normalized_codes, len(normalized_serials))
+    linked = 0
+    for serial in normalized_serials:
+        if await _link_order_to_existing_serial(
+            db, serial,
+            order_id=order_id, notion_page_id=notion_page_id,
+            order_number=order_number, order_date=order_date,
+            client_id=client_id, company=company,
+        ):
+            linked += 1
+    return {
+        "products_created": 0,
+        "products_linked": 0,
+        "serials_created": 0,
+        "serials_linked": linked,
+        "movements_created": 0,
+        "warnings": [],
+        "deferred_to_tracker_reconciliation": True,
+    }
+
+
+def _pick_date(pick: Dict[str, Any]) -> str:
+    return str(pick.get("data_uscita") or pick.get("created_at") or "")
+
+
+async def _load_authoritative_tracker(db) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+    """Restituisce l'ultima uscita Notion per seriale, mantenendo il prodotto relazionato."""
+    products = {str(p.get("id")): p for p in await db.products.find({}).to_list(length=50000)}
+    by_serial: Dict[str, Dict[str, Any]] = {}
+    warnings: List[str] = []
+    rows = await db.local_picks.find({"import_source": "notion"}).to_list(length=100000)
+    for row in rows:
+        product = products.get(str(row.get("product_id") or ""))
+        if not _product_is_serial(product):
+            continue
+        for serial in normalize_serials(row.get("sn")):
+            key = serial.casefold()
+            previous = by_serial.get(key)
+            if previous and str(previous.get("product_id") or "") != str(row.get("product_id") or ""):
+                warnings.append(f"tracker_seriale_{serial}_su_prodotti_diversi")
+            if not previous or _pick_date(row) >= _pick_date(previous):
+                by_serial[key] = row
+    return by_serial, warnings
+
+
+async def _choose_existing_serial_doc(db, serial: str, target_product_id: str) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    docs = await db.product_serials.find({"serial_lower": serial.casefold()}).to_list(length=100)
+    if not docs:
+        return None, []
+    for doc in docs:
+        if str(doc.get("product_id") or "") == target_product_id:
+            return doc, docs
+    # La disponibilità corrente importata dall'Inventario ha priorità su una vecchia
+    # associazione storica in conflitto.
+    for doc in docs:
+        if doc.get("status") == "available":
+            return doc, docs
+    return docs[0], docs
+
+
+async def _upsert_reconciled_serial(
+    db,
+    *, serial: str, target_product: Dict[str, Any], tracker_pick: Optional[Dict[str, Any]],
+    order: Dict[str, Any], warnings: List[str],
+) -> Tuple[bool, bool, int]:
+    """Ritorna (created, moved, duplicates_removed)."""
+    pid = str(target_product.get("id") or "")
+    chosen, docs = await _choose_existing_serial_doc(db, serial, pid)
+    created = False
+    moved = False
+    removed = 0
+    now = _now()
+
+    if chosen and chosen.get("status") == "available" and str(chosen.get("product_id") or "") != pid:
+        warnings.append(f"seriale_{serial}_conflitto_inventario_tracker")
+        actual = await db.products.find_one({"id": chosen.get("product_id")})
+        if _product_is_serial(actual):
+            target_product = actual
+            pid = str(actual.get("id") or pid)
+    elif chosen and str(chosen.get("product_id") or "") != pid:
+        await db.product_serials.update_one({"_id": chosen.get("_id")}, {"$set": {"product_id": pid, "updated_at": now}})
+        chosen["product_id"] = pid
+        moved = True
+
+    if not chosen:
+        status = "shipped" if tracker_pick else "assigned"
+        doc = {
+            "id": str(__import__("uuid").uuid4()),
+            "product_id": pid,
+            "serial": serial,
+            "serial_lower": serial.casefold(),
+            "status": status,
+            "last_warehouse_id": WAREHOUSE_ELIOS,
+            "import_source": "notion_reconciled",
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db.product_serials.insert_one(doc)
+        chosen = await db.product_serials.find_one({"id": doc["id"]}) or doc
+        docs = [chosen]
+        created = True
+
+    link = _order_link(
+        order_id=str(order.get("id") or ""),
+        notion_page_id=str(order.get("notion_page_id") or ""),
+        order_number=str(order.get("numero") or ""),
+        order_date=str(order.get("data_firma") or order.get("data") or ""),
+        client_id=str(order.get("cliente_id") or ""),
+        company=str(order.get("_client_name") or ""),
+    )
+    set_fields: Dict[str, Any] = {"updated_at": now, "reconciled_from_notion": True}
+    previous_date = str(chosen.get("notion_order_date") or "")
+    if not previous_date or link["order_date"] >= previous_date:
+        set_fields.update({
+            "notion_order_page_id": link["notion_page_id"],
+            "notion_order_id": link["order_id"],
+            "notion_order_number": link["order_number"],
+            "notion_order_date": link["order_date"],
+            "notion_client_id": link["client_id"],
+            "notion_client_name": link["client_name"],
+        })
+
+    if tracker_pick:
+        # Il movimento reale prevale sul semplice dato Ordine.
+        if chosen.get("status") != "available":
+            set_fields["status"] = "shipped"
+        set_fields.update({
+            "last_pick_id": str(tracker_pick.get("id") or ""),
+            "last_pick_at": tracker_pick.get("created_at") or tracker_pick.get("data_uscita") or "",
+            "last_pick_date": tracker_pick.get("data_uscita") or "",
+            "last_pick_cliente": tracker_pick.get("cliente") or "",
+            "last_pick_taken_by": tracker_pick.get("taken_by") or "",
+            "last_warehouse_id": tracker_pick.get("warehouse_id") or WAREHOUSE_ELIOS,
+            "tracker_source_id": str(tracker_pick.get("id") or ""),
+        })
+
+    await db.product_serials.update_one(
+        {"_id": chosen.get("_id")},
+        {"$set": set_fields, "$addToSet": {"notion_order_links": link}},
+    )
+
+    # Elimina soltanto duplicati creati dalle migrazioni; non tocchiamo record manuali.
+    for duplicate in docs:
+        if duplicate.get("_id") == chosen.get("_id"):
+            continue
+        migrated = (
+            duplicate.get("source") == "notion_initial_import"
+            or duplicate.get("import_source") in {"notion_ordini", "notion_reconciled", "notion"}
+        )
+        if migrated:
+            await db.product_serials.delete_one({"_id": duplicate.get("_id")})
+            removed += 1
+        else:
+            warnings.append(f"seriale_{serial}_duplicato_locale_non_rimosso")
+    return created, moved, removed
+
+
+async def _cleanup_r66_artifacts(db) -> int:
+    """Rimuove i placeholder creati da R66 solo quando non sono più referenziati."""
+    removed = 0
+    # I movimenti `notion_ordini` erano sintetici: la fonte corretta è Inventory Tracker.
+    await db.local_picks.delete_many({"import_source": "notion_ordini"})
+    placeholders = await db.products.find({"import_source": "notion_ordini", "historical_only": True}).to_list(length=10000)
+    for product in placeholders:
+        pid = str(product.get("id") or "")
+        if not pid:
+            continue
+        serial_refs = await db.product_serials.count_documents({"product_id": pid})
+        pick_refs = await db.local_picks.count_documents({"product_id": pid})
+        if serial_refs or pick_refs:
+            continue
+        await db.warehouse_stock.delete_many({"product_id": pid})
+        await db.products.delete_one({"id": pid})
+        removed += 1
+    return removed
+
+
+async def reconcile_order_wallbox_serials(db, *, actor: str = "notion-import") -> Dict[str, Any]:
+    """Riconcilia le tre fonti Notion in ordine di autorità.
+
+    1. Inventario: anagrafica prodotto + seriali attualmente disponibili.
+    2. Inventory Tracker: storico reale delle uscite e relazione seriale/prodotto.
+    3. Eliostech Ordini: cliente/ordine e integrazione solo dei seriali non risolvibili sopra.
+
+    Non viene più assegnato un seriale "al primo codice". Se il modello resta ambiguo,
+    il seriale rimane nell'ordine ma non viene inventata una voce di magazzino.
+    """
+    tracker, warnings = await _load_authoritative_tracker(db)
+    clients = {str(c.get("id")): str(c.get("ragione_sociale") or c.get("nome_struttura") or "")
+               for c in await db.crm_clienti.find({}).to_list(length=50000)}
+    orders = await db.crm_ordini_clienti.find({"import_source": {"$in": ["notion", "notion_storico"]}}).to_list(length=100000)
 
     stats: Dict[str, Any] = {
-        "products_created": products_created,
-        "products_linked": len(products),
+        "products_created": 0,
+        "products_linked": 0,
         "serials_created": 0,
         "serials_linked": 0,
+        "serials_moved_to_authoritative_product": 0,
+        "duplicate_serial_records_removed": 0,
         "movements_created": 0,
+        "tracker_serials_used": 0,
+        "order_only_serials_resolved": 0,
+        "unresolved_serials": [],
+        "quantity_serial_mismatches": [],
+        "duplicate_order_serials": [],
+        "placeholder_products_removed": 0,
         "warnings": warnings,
     }
-    if not products or not normalized_serials:
-        return stats
 
-    now = _now()
-    pick_at = _pick_timestamp(order_date)
-    for idx, serial in enumerate(normalized_serials):
-        if len(products) == len(normalized_serials):
-            target_product = products[idx]
-        else:
-            target_product = products[0]
-        pid = str(target_product.get("id") or "")
-        existing_serial = await db.product_serials.find_one({"serial_lower": serial.casefold()})
+    serial_usage: Dict[str, List[str]] = {}
+    for order in orders:
+        for serial in normalize_serials(order.get("sn_wb")):
+            serial_usage.setdefault(serial.casefold(), []).append(str(order.get("numero") or order.get("id") or ""))
+    for key, refs in serial_usage.items():
+        unique_refs = list(dict.fromkeys(refs))
+        if len(unique_refs) > 1:
+            stats["duplicate_order_serials"].append({"serial": key, "orders": unique_refs})
 
-        pick_id = None
-        if existing_serial:
-            serial_pid = str(existing_serial.get("product_id") or pid)
-            if serial_pid != pid:
-                # Un seriale già noto localmente ha priorità: mai spostarlo automaticamente.
-                pid = serial_pid
-                target_product = await db.products.find_one({"id": pid}) or target_product
-                stats["warnings"].append(f"seriale_{serial}_gia_associato_altro_prodotto")
-            pick_id = str(existing_serial.get("notion_order_pick_id") or existing_serial.get("last_pick_id") or uuid.uuid4())
-            history_set = {
-                "notion_order_page_id": notion_page_id,
-                "notion_order_id": order_id,
-                "notion_order_number": order_number,
-                "notion_client_id": client_id,
-                "notion_client_name": company,
-                "notion_order_pick_id": pick_id,
-                "import_source_order": "notion_ordini",
-                "updated_at": now,
-            }
-            # Non sovrascrivere uno stato locale più recente (es. seriale rientrato in magazzino).
-            if not existing_serial.get("last_pick_at"):
-                history_set.update({
-                    "last_pick_id": pick_id,
-                    "last_pick_at": pick_at,
-                    "last_pick_date": order_date,
-                    "last_pick_cliente": company,
-                    "last_pick_taken_by": "Import Notion",
-                    "last_warehouse_id": existing_serial.get("warehouse_id") or existing_serial.get("last_warehouse_id") or WAREHOUSE_ELIOS,
+    for order in orders:
+        order["_client_name"] = clients.get(str(order.get("cliente_id") or ""), "")
+        serials = normalize_serials(order.get("sn_wb"))
+        codes = normalize_codes(order.get("prodotti_notion"))
+        candidates = await _serial_products_for_codes(db, codes)
+        qty_raw = order.get("qty_wb")
+        try:
+            qty = int(float(qty_raw)) if qty_raw not in (None, "") else 0
+        except Exception:
+            qty = 0
+        if qty and len(serials) != qty:
+            stats["quantity_serial_mismatches"].append({
+                "order": str(order.get("numero") or order.get("id") or ""),
+                "qty_wb": qty,
+                "serial_count": len(serials),
+            })
+
+        for idx, serial in enumerate(serials):
+            key = serial.casefold()
+            tracker_pick = tracker.get(key)
+            target: Optional[Dict[str, Any]] = None
+            source = ""
+            if tracker_pick and tracker_pick.get("product_id"):
+                target = await db.products.find_one({"id": tracker_pick.get("product_id")})
+                if _product_is_serial(target):
+                    source = "tracker"
+                    stats["tracker_serials_used"] += 1
+                else:
+                    target = None
+
+            if target is None:
+                existing_docs = await db.product_serials.find({"serial_lower": key}).to_list(length=100)
+                available = next((d for d in existing_docs if d.get("status") == "available"), None)
+                if available:
+                    product = await db.products.find_one({"id": available.get("product_id")})
+                    if _product_is_serial(product):
+                        target = product
+                        source = "inventory"
+
+            if target is None and len(candidates) == 1:
+                target = candidates[0]
+                source = "order_exact_product"
+            elif target is None and len(candidates) == len(serials) and len(candidates) > 1:
+                target = candidates[idx]
+                source = "order_position"
+                stats["warnings"].append(f"ordine_{order.get('numero')}_abbinamento_per_posizione")
+
+            if target is None:
+                # Se il solo record esistente è un artefatto R66, lo rimuoviamo: meglio
+                # un seriale visibile nell'Ordine ma non associato che un modello sbagliato.
+                stale = await db.product_serials.find({"serial_lower": key, "import_source": "notion_ordini"}).to_list(length=100)
+                for doc in stale:
+                    await db.product_serials.delete_one({"_id": doc.get("_id")})
+                stats["unresolved_serials"].append({
+                    "serial": serial,
+                    "order": str(order.get("numero") or order.get("id") or ""),
+                    "codes": codes,
                 })
-            await db.product_serials.update_one({"_id": existing_serial.get("_id")}, {"$set": history_set})
-            stats["serials_linked"] += 1
-        else:
-            pick_id = str(uuid.uuid4())
-            await db.product_serials.insert_one({
-                "id": str(uuid.uuid4()),
-                "product_id": pid,
-                "serial": serial,
-                "serial_lower": serial.casefold(),
-                "status": "shipped",
-                "last_warehouse_id": WAREHOUSE_ELIOS,
-                "last_pick_id": pick_id,
-                "last_pick_at": pick_at,
-                "last_pick_date": order_date,
-                "last_pick_cliente": company,
-                "last_pick_taken_by": "Import Notion",
-                "notion_order_pick_id": pick_id,
-                "notion_order_page_id": notion_page_id,
-                "notion_order_id": order_id,
-                "notion_order_number": order_number,
-                "notion_client_id": client_id,
-                "notion_client_name": company,
-                "import_source": "notion_ordini",
-                "created_at": now,
-                "updated_at": now,
-            })
-            stats["serials_created"] += 1
+                continue
 
-        existing_pick = await db.local_picks.find_one({
-            "import_source": "notion_ordini",
-            "notion_order_page_id": notion_page_id,
-            "sn": serial,
-        })
-        if not existing_pick:
-            await db.local_picks.insert_one({
-                "id": pick_id or str(uuid.uuid4()),
-                "batch_id": f"notion-order:{notion_page_id}",
-                "product_id": pid,
-                "product_name": target_product.get("name") or target_product.get("code") or "Wallbox",
-                "sn": serial,
-                "quantity": 1,
-                "cliente": company,
-                "client_id": client_id,
-                "order_id": order_id,
-                "order_number": order_number,
-                "taken_by": "Import Notion",
-                "data_uscita": order_date,
-                "unit": target_product.get("unit") or "pz",
-                "warehouse_id": WAREHOUSE_ELIOS,
-                "historical": True,
-                "import_source": "notion_ordini",
-                "notion_order_page_id": notion_page_id,
-                "created_at": pick_at,
-            })
-            stats["movements_created"] += 1
-
-    # Il conteggio del magazzino A Seriale deriva solo da status=available: nessun seriale storico
-    # aumenta la giacenza corrente. Manteniamo esplicitamente a zero i placeholder storici.
-    for product in products:
-        if product.get("historical_only"):
-            await db.warehouse_stock.update_one(
-                {"product_id": product.get("id"), "warehouse_id": WAREHOUSE_ELIOS},
-                {"$set": {"quantity": 0, "updated_at": now}},
-                upsert=True,
+            created, moved, removed = await _upsert_reconciled_serial(
+                db,
+                serial=serial,
+                target_product=target,
+                tracker_pick=tracker_pick,
+                order=order,
+                warnings=stats["warnings"],
             )
+            stats["serials_created"] += int(created)
+            stats["serials_moved_to_authoritative_product"] += int(moved)
+            stats["duplicate_serial_records_removed"] += int(removed)
+            stats["serials_linked"] += 1
+            stats["products_linked"] += 1
+            if source != "tracker":
+                stats["order_only_serials_resolved"] += 1
+
+    stats["placeholder_products_removed"] = await _cleanup_r66_artifacts(db)
+    # Mantieni la risposta leggibile anche con archivi molto grandi.
+    stats["warnings"] = list(dict.fromkeys(stats["warnings"]))[:100]
+    stats["unresolved_serials"] = stats["unresolved_serials"][:200]
+    stats["quantity_serial_mismatches"] = stats["quantity_serial_mismatches"][:200]
+    stats["duplicate_order_serials"] = stats["duplicate_order_serials"][:200]
     return stats
