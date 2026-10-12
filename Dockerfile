@@ -8,7 +8,21 @@ COPY frontend/ ./
 ENV REACT_APP_BACKEND_URL="" \
     GENERATE_SOURCEMAP=false \
     DISABLE_ESLINT_PLUGIN=true
-RUN npm run build
+RUN node scripts/apply-r54-copy.js \
+    && node scripts/apply-r55-unified-header.js \
+    && node scripts/apply-r56.js \
+    && node scripts/apply-r58-calendar-roles-v2.js \
+    && node scripts/apply-r59.js \
+    && node scripts/audit-r59-flows.js \
+    && node scripts/apply-r61-v2.js \
+    && node scripts/audit-r61.js \
+    && node scripts/apply-r62.js \
+    && node scripts/audit-r62.js \
+    && node scripts/apply-r63.js \
+    && node scripts/audit-r63.js \
+    && node scripts/apply-r64.js \
+    && node scripts/audit-r64.js \
+    && npx craco build
 
 # ===== Backend/runtime =====
 FROM python:3.12-slim
