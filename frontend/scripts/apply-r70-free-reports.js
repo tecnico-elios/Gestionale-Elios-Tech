@@ -21,10 +21,14 @@ if (!layout.includes('key: "report_liberi"')) {
   const navAnchor = '  { key: "installazioni", to: "/installazioni", label: "Installazioni", icon: Wrench, testid: "nav-installazioni", module: "installazioni", section: "tecnico", order: 30 },\n';
   if (!layout.includes(navAnchor)) throw new Error('R70 frontend: nav anchor non trovato');
   layout = layout.replace(navAnchor, navAnchor + '  { key: "report_liberi", to: "/report-liberi", label: "Report liberi", icon: FileText, testid: "nav-report-liberi", module: "installazioni", section: "tecnico", order: 35 },\n');
+}
 
-  const metaAnchor = '  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Programmazione degli interventi, tecnici assegnati, attività e avanzamento installazioni." },\n';
-  if (!layout.includes(metaAnchor)) throw new Error('R70 frontend: page meta anchor non trovato');
-  layout = layout.replace(metaAnchor, metaAnchor + '  "/report-liberi": { section: "tecnico", eyebrow: "Tecnico", icon: FileText, description: "Report tecnici liberi e indipendenti, compilabili con campi personalizzati senza collegamenti obbligatori." },\n');
+if (!layout.includes('"/report-liberi"')) {
+  const lines = layout.split('\n');
+  const idx = lines.findIndex((line) => line.includes('"/installazioni"') && line.includes('PAGE_META') === false && line.includes('description:'));
+  if (idx < 0) throw new Error('R70 frontend: riga PAGE_META installazioni non trovata');
+  lines.splice(idx + 1, 0, '  "/report-liberi": { section: "tecnico", eyebrow: "Tecnico", icon: FileText, description: "Report tecnici liberi e indipendenti, compilabili con campi personalizzati senza collegamenti obbligatori." },');
+  layout = lines.join('\n');
 }
 
 fs.writeFileSync(appPath, app);
