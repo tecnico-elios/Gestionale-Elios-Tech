@@ -25,8 +25,6 @@ RUN node scripts/apply-r54-copy.js \
     && node scripts/audit-r64.js \
     && node scripts/apply-r70-free-reports.js \
     && node scripts/audit-r70-free-reports.js \
-    && node scripts/apply-r71-free-report-pdf.js \
-    && node scripts/audit-r71-free-report-pdf.js \
     && node scripts/apply-r72-report-signatures-pages.js \
     && node scripts/audit-r72-report-signatures-pages.js \
     && npx craco build
