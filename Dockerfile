@@ -77,6 +77,9 @@ RUN python /app/backend/scripts/apply_r73_pdf_layout.py \
 RUN python /app/backend/scripts/apply_r74_pdf_finish.py \
     && python /app/backend/scripts/audit_r74_pdf_finish.py \
     && python -m compileall -q /app/backend
+RUN python /app/backend/scripts/apply_r75_signature_contrast.py \
+    && python /app/backend/scripts/audit_r75_signature_contrast.py \
+    && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
 WORKDIR /app/backend
