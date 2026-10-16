@@ -23,6 +23,8 @@ RUN node scripts/apply-r54-copy.js \
     && node scripts/prepare-r64.js \
     && node scripts/apply-r64.js \
     && node scripts/audit-r64.js \
+    && node scripts/apply-r70-free-reports.js \
+    && node scripts/audit-r70-free-reports.js \
     && npx craco build
 
 # ===== Backend/runtime =====
@@ -60,7 +62,9 @@ RUN python /app/backend/scripts/apply_r67_backend.py \
 RUN python /app/backend/scripts/apply_r68_backend.py \
     && python /app/backend/scripts/audit_r68_flows.py
 RUN python /app/backend/scripts/apply_r69_backend.py \
-    && python /app/backend/scripts/audit_r69_flows.py \
+    && python /app/backend/scripts/audit_r69_flows.py
+RUN python /app/backend/scripts/apply_r70_backend.py \
+    && python /app/backend/scripts/audit_r70_flows.py \
     && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
