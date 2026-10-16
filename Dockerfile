@@ -71,6 +71,9 @@ RUN python /app/backend/scripts/apply_r70_backend.py \
 RUN python /app/backend/scripts/apply_r72_backend.py \
     && python /app/backend/scripts/audit_r72_flows.py \
     && python -m compileall -q /app/backend
+RUN python /app/backend/scripts/apply_r73_pdf_layout.py \
+    && python /app/backend/scripts/audit_r73_pdf_layout.py \
+    && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
 WORKDIR /app/backend
