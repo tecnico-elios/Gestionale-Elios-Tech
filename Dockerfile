@@ -25,6 +25,8 @@ RUN node scripts/apply-r54-copy.js \
     && node scripts/audit-r64.js \
     && node scripts/apply-r70-free-reports.js \
     && node scripts/audit-r70-free-reports.js \
+    && node scripts/apply-r71-free-report-pdf.js \
+    && node scripts/audit-r71-free-report-pdf.js \
     && npx craco build
 
 # ===== Backend/runtime =====
