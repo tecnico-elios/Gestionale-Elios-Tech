@@ -31,7 +31,28 @@ if (text.includes(oldSave)) text = text.replace(oldSave, newSave);
 const genStart = text.indexOf('  const generate=async()=>{');
 const genEnd = text.indexOf('\n  const openTemplate=', genStart);
 if (genStart < 0 || genEnd < 0) throw new Error('R72 frontend: funzione generate non trovata');
-const newGenerate = `  const generate=async()=>{\n    const preview=window.open("","_blank");\n    setBusy(true);\n    try{\n      const id=await ensureId();\n      await axios.put(\`${API}/free-reports/\${id}\`,{data:form,pdf_pages:pdfPages});\n      const {data}=await axios.post(\`${API}/free-reports/\${id}/generate\`,{data:form,pdf_pages:pdfPages});\n      setDocId(data.document_id);\n      const pdf=await axios.get(\`${API}/free-reports/\${id}/pdf\`,{responseType:"blob"});\n      const u=URL.createObjectURL(pdf.data);\n      if(preview){preview.location.href=u;}else{window.open(u,"_blank","noopener,noreferrer");}\n      setTimeout(()=>URL.revokeObjectURL(u),60000);\n      toast.success(form.firma_cliente?"Report salvato, PDF generato e aperto":"PDF generato senza firma cliente: pronto da inviare per la firma");\n      onSaved?.();\n      onOpenChange(false);\n    }catch(e){\n      if(preview&&!preview.closed)preview.close();\n      toast.error("Generazione non riuscita",{description:e?.response?.data?.detail||e.message});\n    }finally{setBusy(false)}\n  };`;
+const newGenerate = [
+  '  const generate=async()=>{',
+  '    const preview=window.open("","_blank");',
+  '    setBusy(true);',
+  '    try{',
+  '      const id=await ensureId();',
+  '      await axios.put(`${API}/free-reports/${id}`,{data:form,pdf_pages:pdfPages});',
+  '      const {data}=await axios.post(`${API}/free-reports/${id}/generate`,{data:form,pdf_pages:pdfPages});',
+  '      setDocId(data.document_id);',
+  '      const pdf=await axios.get(`${API}/free-reports/${id}/pdf`,{responseType:"blob"});',
+  '      const u=URL.createObjectURL(pdf.data);',
+  '      if(preview){preview.location.href=u;}else{window.open(u,"_blank","noopener,noreferrer");}',
+  '      setTimeout(()=>URL.revokeObjectURL(u),60000);',
+  '      toast.success(form.firma_cliente?"Report salvato, PDF generato e aperto":"PDF generato senza firma cliente: pronto da inviare per la firma");',
+  '      onSaved?.();',
+  '      onOpenChange(false);',
+  '    }catch(e){',
+  '      if(preview&&!preview.closed)preview.close();',
+  '      toast.error("Generazione non riuscita",{description:e?.response?.data?.detail||e.message});',
+  '    }finally{setBusy(false)}',
+  '  };'
+].join('\n');
 text = text.slice(0, genStart) + newGenerate + text.slice(genEnd);
 
 // Firma tecnico caricabile da immagine.
