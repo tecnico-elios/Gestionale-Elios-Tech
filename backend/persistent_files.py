@@ -60,11 +60,12 @@ async def replace_bytes(db, old_file_id: Any, data: bytes, filename: str, conten
 
 
 async def ensure_local(db, file_id: Any, target: Any) -> Path:
-    path = Path(target or "")
-    if path and path.exists():
+    raw_target = str(target or "").strip()
+    if not raw_target:
+        raise FileNotFoundError("Percorso cache locale non disponibile")
+    path = Path(raw_target)
+    if path.exists():
         return path
-    if not file_id or not str(path):
-        raise FileNotFoundError("File non disponibile")
     data = await read_bytes(db, file_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
