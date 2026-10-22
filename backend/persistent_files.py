@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
-import tempfile
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
@@ -47,7 +48,7 @@ async def delete_bytes(db, file_id: Any) -> None:
     try:
         await _bucket(db).delete(oid)
     except Exception:
-        # La cancellazione del record applicativo non deve fallire se il blob era gia assente.
+        # La cancellazione applicativa non deve fallire se il blob era gia assente.
         pass
 
 
@@ -58,10 +59,21 @@ async def replace_bytes(db, old_file_id: Any, data: bytes, filename: str, conten
     return new_id
 
 
+async def ensure_local(db, file_id: Any, target: Any) -> Path:
+    path = Path(target or "")
+    if path and path.exists():
+        return path
+    if not file_id or not str(path):
+        raise FileNotFoundError("File non disponibile")
+    data = await read_bytes(db, file_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
 async def materialize_temp(db, file_id: Any, suffix: str = "") -> Path:
     data = await read_bytes(db, file_id)
     fd, name = tempfile.mkstemp(prefix="elios-file-", suffix=suffix)
-    path = Path(name)
-    with open(fd, "wb", closefd=True) as out:
+    with os.fdopen(fd, "wb") as out:
         out.write(data)
-    return path
+    return Path(name)
