@@ -67,4 +67,14 @@ text = text.replace('"note": "Report pre e post installazione firmato"', '"note"
 text = text.replace('raise HTTPException(400, "Genera prima il report firmato")', 'raise HTTPException(400, "Genera prima il report")')
 
 path.write_text(text, encoding="utf-8")
-print("[R77 backend] report Installazioni allineato al report Tecnico: pagine selezionabili e firme facoltative.")
+
+# Anche il report Tecnico standalone e generabile senza firme da R72: la nota documento non deve dichiararlo firmato.
+free_path = ROOT / "routes" / "free_reports_routes.py"
+free_text = free_path.read_text(encoding="utf-8")
+free_text = free_text.replace(
+    '"note": "Report pre e post installazione firmato, non collegato a installazione"',
+    '"note": "Report pre e post installazione, non collegato a installazione"',
+)
+free_path.write_text(free_text, encoding="utf-8")
+
+print("[R77 backend] report Installazioni allineato al report Tecnico: pagine selezionabili, firme facoltative e note coerenti.")
