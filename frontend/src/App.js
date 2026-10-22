@@ -1,13 +1,14 @@
 import "@/App.css";
-import "@/r50.css";
-import "@/r51.css";
-import "@/r52.css";
-import "@/r52-pages.css";
-import "@/r52-extra.css";
-import "@/r52-polish.css";
-import "@/r55.css";
-import "@/r56.css";
-import "@/r61.css";
+import "@/r1.css";
+
+
+
+
+
+
+
+
+
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { InventoryProvider } from "@/lib/InventoryContext";
@@ -27,6 +28,7 @@ import AIAssistantPage from "@/pages/AIAssistantPage";
 import CommessePage from "@/pages/CommessePage";
 import CommesseInsightsPage from "@/pages/CommesseInsightsPage";
 import ReportsPage from "@/pages/ReportsPage";
+import FreeReportsPage from "@/pages/FreeReportsPage";
 import AdminPage from "@/pages/AdminPage";
 import NotionMigrationPage from "@/pages/NotionMigrationPage";
 import { FeaturesProvider } from "@/lib/FeaturesContext";
@@ -36,6 +38,7 @@ import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import ForceChangePasswordPage from "@/pages/ForceChangePasswordPage";
 import { Navigate as Nav } from "react-router-dom";
 import { SopralluoghiPage, InstallazioniPage, AssistenzaPage } from "@/pages/BusinessPages";
+import InterventiTecniciPage from "@/pages/InterventiTecniciPage";
 import PreventiviPage from "@/pages/PreventiviPage";
 import AppConfirmProvider from "@/components/AppConfirmProvider";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
@@ -101,6 +104,8 @@ function App() {
                       <Route path="/preventivi" element={<ProtectedRoute permission="preventivi"><PreventiviPage /></ProtectedRoute>} />
                       <Route path="/ordini-clienti" element={<Navigate to="/clienti-ordini" replace />} />
                       <Route path="/installazioni" element={<ProtectedRoute permission="installazioni"><InstallazioniPage /></ProtectedRoute>} />
+                      <Route path="/report-liberi" element={<ProtectedRoute permission="installazioni"><FreeReportsPage /></ProtectedRoute>} />
+                      <Route path="/interventi-tecnici" element={<ProtectedRoute permission="installazioni"><InterventiTecniciPage /></ProtectedRoute>} />
                       <Route path="/assistenza" element={<ProtectedRoute permission="assistenza"><AssistenzaPage /></ProtectedRoute>} />
                       <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminPage /></ProtectedRoute>} />
                       <Route path="/admin/utenti" element={<ProtectedRoute requireAdmin><AdminUsersPage /></ProtectedRoute>} />

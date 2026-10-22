@@ -156,7 +156,7 @@ export default function DashboardPage() {
   }, [data.assistenza, data.installazioni, data.sopralluoghi, data.preventivi, data.anomalie, clientName, siteName]);
 
   const quickFlow = [
-    [ShoppingCart, "Clienti / Ordini", "/clienti-ordini"],
+    [ShoppingCart, "Clienti e ordini", "/clienti-ordini"],
     [Wrench, "Commesse", "/commesse"],
     [ClipboardText, "Sopralluoghi", "/sopralluoghi"],
     [FileText, "Preventivi", "/preventivi"],

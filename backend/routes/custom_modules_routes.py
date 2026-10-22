@@ -97,6 +97,7 @@ RETIRED_IMPORT_TITLES = {
     "inventory receipts",
     "inventory tracker",
     "people",
+    "preventivi",
 }
 RETIRED_IMPORT_PREFIXES = ("fonte 278a9b09", "fonte 471a9b09")
 RETIRED_IMPORT_SLUGS = {
@@ -106,6 +107,8 @@ RETIRED_IMPORT_SLUGS = {
     "import-inventory-receipts",
     "import-inventory-tracker",
     "import-people",
+    "import-preventivi",
+    "preventivi",
 }
 
 

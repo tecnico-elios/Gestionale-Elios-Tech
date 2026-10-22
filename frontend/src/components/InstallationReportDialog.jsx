@@ -39,6 +39,7 @@ function SignaturePad({ label, value, onChange }) {
 }
 
 const EMPTY = {
+  data:"", cliente:"", indirizzo:"", tecnico:"", seriali:[],
   societa_installatrice:"", telefono:"", email:"",
   quadro_idoneo:false, quadro_non_conforme:false, surriscaldamento:false, protezioni_assenti:false,
   sezione_cavi_non_idonea:false, messa_terra_non_conforme:false, altro_verifica:"", criticita:"", nessuna_criticita:false,
@@ -55,9 +56,21 @@ export default function InstallationReportDialog({ open, onOpenChange, installat
   const [loading,setLoading] = useState(false);
   const [busy,setBusy] = useState(false);
   const [docId,setDocId] = useState(null);
+  const [pdfPages,setPdfPages] = useState("all");
   const set = (k,v)=>setForm(f=>({...f,[k]:v}));
   const toggleProduct = (p)=>setForm(f=>({...f, prodotti:(f.prodotti||[]).includes(p)?f.prodotti.filter(x=>x!==p):[...(f.prodotti||[]),p]}));
   const diametri = ["20 mm","25 mm","30 mm","32 mm","40 mm","50 mm","63 mm"];
+  const loadTechnicianSignature=(e)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    if(!file.type.startsWith("image/")){toast.error("Seleziona un file immagine");return;}
+    if(file.size>5*1024*1024){toast.error("Immagine firma troppo grande",{description:"Dimensione massima 5 MB"});return;}
+    const reader=new FileReader();
+    reader.onload=()=>set("firma_tecnico",String(reader.result||""));
+    reader.onerror=()=>toast.error("Impossibile leggere l'immagine della firma");
+    reader.readAsDataURL(file);
+  };
+  const serialText = (form.seriali||[]).join(", ");
 
   useEffect(()=>{
     if(!open || !installation?.id) return;
@@ -65,11 +78,30 @@ export default function InstallationReportDialog({ open, onOpenChange, installat
     axios.get(`${API}/installation-reports/${installation.id}`).then(({data})=>{
       setForm({...EMPTY,...(data?.data||{})});
       setDocId(data?.generated_document_id||null);
+      setPdfPages(data?.pdf_pages||"all");
     }).catch(e=>toast.error("Impossibile caricare il report",{description:e?.response?.data?.detail||e.message})).finally(()=>setLoading(false));
   },[open,installation?.id]);
 
-  const save = async()=>{ setBusy(true); try{ await axios.put(`${API}/installation-reports/${installation.id}`,{data:form}); toast.success("Report salvato"); }catch(e){toast.error("Salvataggio non riuscito",{description:e?.response?.data?.detail||e.message});}finally{setBusy(false);} };
-  const generate = async()=>{ setBusy(true); try{ const {data}=await axios.post(`${API}/installation-reports/${installation.id}/generate`,{data:form}); setDocId(data.document_id); toast.success(data.updated_existing ? "Report aggiornato e PDF sostituito" : "Report salvato e PDF generato"); onGenerated?.(data); onOpenChange(false); }catch(e){toast.error("Generazione non riuscita",{description:e?.response?.data?.detail||e.message});}finally{setBusy(false);} };
+  const save = async()=>{ setBusy(true); try{ await axios.put(`${API}/installation-reports/${installation.id}`,{data:form,pdf_pages:pdfPages}); toast.success("Report salvato"); }catch(e){toast.error("Salvataggio non riuscito",{description:e?.response?.data?.detail||e.message});}finally{setBusy(false);} };
+  const generate = async()=>{
+    const preview=window.open("","_blank");
+    setBusy(true);
+    try{
+      await axios.put(`${API}/installation-reports/${installation.id}`,{data:form,pdf_pages:pdfPages});
+      const {data}=await axios.post(`${API}/installation-reports/${installation.id}/generate`,{data:form,pdf_pages:pdfPages});
+      setDocId(data.document_id);
+      const pdf=await axios.get(`${API}/installation-reports/${installation.id}/pdf`,{responseType:"blob"});
+      const u=URL.createObjectURL(pdf.data);
+      if(preview){preview.location.href=u;}else{window.open(u,"_blank","noopener,noreferrer");}
+      setTimeout(()=>URL.revokeObjectURL(u),60000);
+      toast.success(form.firma_cliente?"Report salvato, PDF generato e aperto":"PDF generato senza firma cliente: pronto da inviare per la firma");
+      onGenerated?.(data);
+      onOpenChange(false);
+    }catch(e){
+      if(preview&&!preview.closed)preview.close();
+      toast.error("Generazione non riuscita",{description:e?.response?.data?.detail||e.message});
+    }finally{setBusy(false);}
+  };
   const openTemplate = async()=>{ try{ const {data}=await axios.get(`${API}/installation-reports/template`,{responseType:"blob"}); const u=URL.createObjectURL(data); window.open(u,"_blank","noopener,noreferrer"); setTimeout(()=>URL.revokeObjectURL(u),60000);}catch(e){toast.error("Modello non disponibile",{description:e?.response?.data?.detail||e.message});} };
   const download = async()=>{ try{ const {data}=await axios.get(`${API}/installation-reports/${installation.id}/pdf`,{responseType:"blob"}); const u=URL.createObjectURL(data); window.open(u,"_blank","noopener,noreferrer"); setTimeout(()=>URL.revokeObjectURL(u),60000);}catch(e){toast.error("Report non disponibile",{description:e?.response?.data?.detail||e.message});} };
 
@@ -77,13 +109,19 @@ export default function InstallationReportDialog({ open, onOpenChange, installat
     <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><PenNib/> Report pre e post installazione</DialogTitle></DialogHeader>
     {loading?<div className="py-16 text-center text-slate-500">Caricamento…</div>:<div className="space-y-5">
       <div className="flex justify-end"><Button type="button" variant="outline" onClick={openTemplate}>Apri modello ufficiale</Button></div>
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div><div className="text-[11px] uppercase font-bold text-slate-400">Data</div><div className="font-bold">{form.data||"—"}</div></div>
-        <div><div className="text-[11px] uppercase font-bold text-slate-400">Cliente</div><div className="font-bold">{form.cliente||"—"}</div></div>
-        <div><div className="text-[11px] uppercase font-bold text-slate-400">Tecnico</div><div className="font-bold">{form.tecnico||"—"}</div></div>
-        <div><div className="text-[11px] uppercase font-bold text-slate-400">Seriali</div><div className="font-bold">{(form.seriali||[]).join(", ")||"—"}</div></div>
-        <div className="sm:col-span-2 lg:col-span-4"><div className="text-[11px] uppercase font-bold text-slate-400">Indirizzo installazione</div><div className="font-bold">{form.indirizzo||"—"}</div></div>
-      </div>
+      <section className="et-card p-4 space-y-3">
+        <div>
+          <h3 className="font-black text-lg">Dati report</h3>
+          <p className="text-sm text-slate-600">I dati vengono precompilati dall'installazione solo come base: puoi modificarli liberamente e il PDF userà esattamente i valori inseriti qui.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div><Label>Data</Label><Input className="mt-1" value={form.data||""} onChange={e=>set("data",e.target.value)} placeholder="GG/MM/AAAA"/></div>
+          <div><Label>Cliente / riferimento</Label><Input className="mt-1" value={form.cliente||""} onChange={e=>set("cliente",e.target.value)}/></div>
+          <div><Label>Tecnico</Label><Input className="mt-1" value={form.tecnico||""} onChange={e=>set("tecnico",e.target.value)}/></div>
+          <div><Label>Seriali</Label><Input className="mt-1" value={serialText} onChange={e=>set("seriali",e.target.value.split(",").map(x=>x.trim()).filter(Boolean))} placeholder="SN1, SN2, SN3"/></div>
+          <div className="sm:col-span-2 lg:col-span-4"><Label>Indirizzo installazione</Label><Input className="mt-1" value={form.indirizzo||""} onChange={e=>set("indirizzo",e.target.value)}/></div>
+        </div>
+      </section>
 
       <section className="et-card p-4 space-y-3"><h3 className="font-black text-lg">Pre-installazione · verifica impianto esistente</h3>
         <div className="grid sm:grid-cols-3 gap-3"><div><Label>Società installatrice</Label><Input className="mt-1" value={form.societa_installatrice||""} onChange={e=>set("societa_installatrice",e.target.value)}/></div><div><Label>Telefono cliente</Label><Input className="mt-1" value={form.telefono||""} onChange={e=>set("telefono",e.target.value)}/></div><div><Label>Email cliente</Label><Input className="mt-1" value={form.email||""} onChange={e=>set("email",e.target.value)}/></div></div>
@@ -127,9 +165,10 @@ export default function InstallationReportDialog({ open, onOpenChange, installat
         <div className="grid sm:grid-cols-[1fr_220px] gap-3"><Textarea rows={3} value={form.lavori_extra||""} onChange={e=>set("lavori_extra",e.target.value)} placeholder="Lavori Extra"/><div><Label>Costo lavori extra</Label><Input className="mt-1 h-12" value={form.costo_lavori_extra||""} onChange={e=>set("costo_lavori_extra",e.target.value)} placeholder="€"/></div></div>
       </section>
 
-      <section className="et-card p-4 space-y-4"><h3 className="font-black text-lg">Firme</h3><p className="text-sm text-slate-600">Le firme vengono riportate sul modello ufficiale del report.</p><SignaturePad label="Firma Cliente" value={form.firma_cliente} onChange={v=>set("firma_cliente",v)}/><SignaturePad label="Firma Tecnico" value={form.firma_tecnico} onChange={v=>set("firma_tecnico",v)}/></section>
+      <section className="et-card p-4 space-y-3"><h3 className="font-black text-lg">Pagine da salvare nel PDF</h3><p className="text-sm text-slate-600">Scegli quali pagine del modello ufficiale includere.</p><div className="grid sm:grid-cols-2 gap-3"><label className={`rounded-xl border p-4 cursor-pointer ${pdfPages==="all"?"border-slate-900 bg-slate-50":"border-slate-200"}`}><input type="radio" name="install-pdf-pages" value="all" checked={pdfPages==="all"} onChange={()=>setPdfPages("all")} className="mr-2"/><span className="font-semibold">Tutte e 3 le pagine</span></label><label className={`rounded-xl border p-4 cursor-pointer ${pdfPages==="2-3"?"border-slate-900 bg-slate-50":"border-slate-200"}`}><input type="radio" name="install-pdf-pages" value="2-3" checked={pdfPages==="2-3"} onChange={()=>setPdfPages("2-3")} className="mr-2"/><span className="font-semibold">Solo pagine 2 e 3</span></label></div></section>
+      <section className="et-card p-4 space-y-4"><h3 className="font-black text-lg">Firme</h3><p className="text-sm text-slate-600">La firma cliente è facoltativa: puoi generare il PDF senza firma e inviarlo al cliente. Le firme presenti vengono riportate sul modello ufficiale.</p><SignaturePad label="Firma Cliente" value={form.firma_cliente} onChange={v=>set("firma_cliente",v)}/><div className="space-y-3"><SignaturePad label="Firma Tecnico" value={form.firma_tecnico} onChange={v=>set("firma_tecnico",v)}/><div><Label>Oppure carica la firma tecnico da immagine</Label><Input type="file" accept="image/png,image/jpeg,image/webp" className="mt-1" onChange={loadTechnicianSignature}/><p className="mt-1 text-xs text-slate-500">PNG, JPG/JPEG o WEBP. L'immagine caricata sostituisce la firma disegnata.</p></div></div></section>
 
-      <div className="sticky bottom-0 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 flex flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2"><Button className="h-12 w-full sm:w-auto" variant="outline" onClick={()=>onOpenChange(false)} disabled={busy}>Chiudi</Button><Button className="h-12 w-full sm:w-auto" variant="outline" onClick={save} disabled={busy}><FloppyDisk/> Salva bozza</Button>{docId&&<Button className="h-12 w-full sm:w-auto" variant="outline" onClick={download}><DownloadSimple/> Apri PDF</Button>}<Button className="h-12 w-full sm:w-auto" onClick={generate} disabled={busy||!form.firma_cliente||!form.firma_tecnico}><CheckCircle/> Salva e genera PDF</Button></div>
+      <div className="sticky bottom-0 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-slate-200 flex flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2"><Button className="h-12 w-full sm:w-auto" variant="outline" onClick={()=>onOpenChange(false)} disabled={busy}>Chiudi</Button><Button className="h-12 w-full sm:w-auto" variant="outline" onClick={save} disabled={busy}><FloppyDisk/> Salva bozza</Button>{docId&&<Button className="h-12 w-full sm:w-auto" variant="outline" onClick={download}><DownloadSimple/> Apri PDF</Button>}<Button className="h-12 w-full sm:w-auto" onClick={generate} disabled={busy}><CheckCircle/> Salva e genera PDF</Button></div>
 
     </div>}
   </DialogContent></Dialog>;

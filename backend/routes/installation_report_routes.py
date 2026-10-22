@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import io
+import math
+import re
 import os
 import uuid
 from datetime import datetime, timezone
@@ -14,10 +16,12 @@ from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+from PIL import Image
 
 import auth as auth_mod
 import email_service
 import inventory_local
+import persistent_files
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets" / "report_installazione"
 UPLOAD_ROOT = Path(os.environ.get("UPLOAD_ROOT") or (Path(__file__).resolve().parent.parent / "uploads" / "installazioni"))
@@ -31,6 +35,7 @@ A4_W, A4_H = A4
 class ReportBody(BaseModel):
     model_config = {"extra": "allow"}
     data: Dict[str, Any] = Field(default_factory=dict)
+    pdf_pages: str = "all"
 
 
 class SendBody(BaseModel):
@@ -105,6 +110,175 @@ def _text(c, x, y, value, size=9.2, max_chars=70):
         c.drawString(xp, yp - idx * (size + 2), ln)
 
 
+def _text_box(c, x, y, value, width_px, height_px, size=10.0, min_size=7.2, leading_factor=1.18):
+    value = str(value or "").strip()
+    if not value:
+        return
+    width_pt = width_px / PAGE_W_PX * A4_W
+    height_pt = height_px / PAGE_H_PX * A4_H
+    xp, yp = _px(x, y)
+
+    def wrap(font_size):
+        words = value.split()
+        lines, line = [], ""
+        for word in words:
+            candidate = (line + " " + word).strip()
+            if line and c.stringWidth(candidate, "Helvetica", font_size) > width_pt:
+                lines.append(line)
+                line = word
+            else:
+                line = candidate
+        if line:
+            lines.append(line)
+        return lines
+
+    font_size = float(size)
+    lines = wrap(font_size)
+    while font_size > min_size:
+        leading = font_size * leading_factor
+        if len(lines) * leading <= height_pt:
+            break
+        font_size = round(font_size - 0.2, 2)
+        lines = wrap(font_size)
+    leading = font_size * leading_factor
+    max_lines = max(1, int(height_pt // leading))
+    c.setFont("Helvetica", font_size)
+    for idx, line in enumerate(lines[:max_lines]):
+        if idx == max_lines - 1 and len(lines) > max_lines:
+            while line and c.stringWidth(line + "…", "Helvetica", font_size) > width_pt:
+                line = line[:-1]
+            line = line.rstrip() + "…"
+        c.drawString(xp, yp - idx * leading, line)
+
+
+def _serial_values(value):
+    """Estrae seriali puliti anche da stringhe tipo 'SN 123-SN 456-789'."""
+    raw_values = value if isinstance(value, (list, tuple, set)) else [value]
+    result = []
+    seen = set()
+    for raw in raw_values:
+        s = str(raw or "").strip()
+        if not s:
+            continue
+        # Il campo contiene esclusivamente seriali: estrai token alfanumerici plausibili,
+        # ignorando il prefisso SN e i separatori usati dagli operatori.
+        tokens = re.findall(r"(?i)(?:\bSN\s*)?([A-Z0-9]{5,})", s)
+        if not tokens:
+            tokens = [p for p in re.split(r"[\s,;|/\\-]+", s) if len(p) >= 5]
+        for token in tokens:
+            serial = re.sub(r"(?i)^SN\s*", "", str(token)).strip(" -_/;,.")
+            if serial and serial.upper() not in seen:
+                seen.add(serial.upper())
+                result.append(serial)
+    return result
+
+
+def _product_flags(value):
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    normalized = []
+    for item in values:
+        s = str(item or "").lower().replace("_", " ").replace("-", " ")
+        normalized.append(" ".join(s.split()))
+    flags = set()
+    for s in normalized:
+        if not s:
+            continue
+        if "pro socket" in s:
+            flags.add("Pro Socket")
+        elif "pro" in s:
+            flags.add("Pro")
+        if "max" in s:
+            flags.add("Max")
+        if "copper" in s:
+            flags.add("Copper")
+    return flags
+
+
+def _prepare_signature(data_url):
+    """Rende la firma nitida, scura e trasparente, rimuovendo il fondo della foto."""
+    if not data_url or "," not in str(data_url):
+        return None
+    raw = base64.b64decode(str(data_url).split(",", 1)[1])
+    img = Image.open(io.BytesIO(raw)).convert("RGBA")
+    img.thumbnail((1800, 800), Image.Resampling.LANCZOS)
+    if img.width < 2 or img.height < 2:
+        return None
+
+    original_alpha = img.getchannel("A")
+    alpha_extrema = original_alpha.getextrema()
+    has_transparency = alpha_extrema[0] < 250
+    px = img.load()
+
+    if has_transparency:
+        visible = 0
+        for yy in range(img.height):
+            for xx in range(img.width):
+                r, g, b, a = px[xx, yy]
+                if a <= 8:
+                    px[xx, yy] = (0, 0, 0, 0)
+                    continue
+                # Firma disegnata: conserva l'antialias ma rende il tratto nero e piu' leggibile.
+                boosted = min(255, int(a * 1.45) + 25)
+                if boosted >= 28:
+                    visible += 1
+                px[xx, yy] = (0, 0, 0, boosted)
+        if visible < max(12, int(img.width * img.height * 0.00008)):
+            return None
+    else:
+        # Foto/scansione: stima la luminosita' del fondo dai bordi.
+        border_lums = []
+        step_x = max(1, img.width // 80)
+        step_y = max(1, img.height // 40)
+        for xx in range(0, img.width, step_x):
+            for yy in (0, min(2, img.height - 1), max(0, img.height - 3), img.height - 1):
+                r, g, b, _ = px[xx, yy]
+                border_lums.append((r * 299 + g * 587 + b * 114) / 1000.0)
+        for yy in range(0, img.height, step_y):
+            for xx in (0, min(2, img.width - 1), max(0, img.width - 3), img.width - 1):
+                r, g, b, _ = px[xx, yy]
+                border_lums.append((r * 299 + g * 587 + b * 114) / 1000.0)
+        border_lums.sort()
+        bg_lum = border_lums[len(border_lums) // 2] if border_lums else 245.0
+
+        visible = 0
+        for yy in range(img.height):
+            for xx in range(img.width):
+                r, g, b, _ = px[xx, yy]
+                lum = (r * 299 + g * 587 + b * 114) / 1000.0
+                delta = bg_lum - lum
+                # Soglia piu' netta della R74: elimina il fondo e rende nero il tratto.
+                if delta <= 11:
+                    alpha = 0
+                elif delta < 32:
+                    alpha = int((delta - 11) / 21.0 * 210)
+                elif delta < 60:
+                    alpha = 210 + int((delta - 32) / 28.0 * 45)
+                else:
+                    alpha = 255
+                alpha = max(0, min(255, alpha))
+                if alpha >= 24:
+                    visible += 1
+                px[xx, yy] = (0, 0, 0, alpha)
+        if visible < max(18, int(img.width * img.height * 0.00012)):
+            return None
+
+    alpha = img.getchannel("A")
+    bbox = alpha.getbbox()
+    if not bbox:
+        return None
+    img = img.crop(bbox)
+    if img.width < 2 or img.height < 2:
+        return None
+
+    # Margine minimo: la firma deve sfruttare quasi tutto il box disponibile.
+    padded = Image.new("RGBA", (img.width + 4, img.height + 4), (255, 255, 255, 0))
+    padded.paste(img, (2, 2), img)
+    out = io.BytesIO()
+    padded.save(out, format="PNG")
+    out.seek(0)
+    return out, padded.width, padded.height
+
+
 def _check(c, x, y, checked, box_size=20):
     """Disegna una X realmente dentro la casella del modello.
 
@@ -147,22 +321,31 @@ def _date_fields(c, value, day_x, month_x, year_x, y, size=9.2):
 
 
 def _signature(c, data_url, x, y, w, h):
-    if not data_url or "," not in str(data_url):
-        return
     try:
-        raw = base64.b64decode(str(data_url).split(",", 1)[1])
+        prepared = _prepare_signature(data_url)
+        if not prepared:
+            return
+        stream, iw, ih = prepared
         xp, top = _px(x, y)
-        wp = w / PAGE_W_PX * A4_W
-        hp = h / PAGE_H_PX * A4_H
-        c.drawImage(ImageReader(io.BytesIO(raw)), xp, top - hp, width=wp, height=hp, preserveAspectRatio=True, mask="auto")
+        box_w = w / PAGE_W_PX * A4_W
+        box_h = h / PAGE_H_PX * A4_H
+        ratio = min(box_w / max(iw, 1), box_h / max(ih, 1))
+        draw_w = iw * ratio
+        draw_h = ih * ratio
+        draw_x = xp + (box_w - draw_w) / 2
+        draw_y = top - box_h + (box_h - draw_h) / 2
+        c.drawImage(ImageReader(stream), draw_x, draw_y, width=draw_w, height=draw_h, mask="auto")
     except Exception:
         return
 
 
-def _render_pdf(data: Dict[str, Any], out_path: Path):
+def _render_pdf(data: Dict[str, Any], out_path: Path, page_numbers=None):
     c = canvas.Canvas(str(out_path), pagesize=A4)
-    pages = [ASSET_DIR / f"page-{i}.png" for i in (1, 2, 3)]
-    for idx, bg in enumerate(pages, start=1):
+    selected = [i for i in (page_numbers or (1, 2, 3)) if i in (1, 2, 3)]
+    if not selected:
+        selected = [1, 2, 3]
+    pages = [(i, ASSET_DIR / f"page-{i}.png") for i in selected]
+    for idx, bg in pages:
         c.drawImage(str(bg), 0, 0, width=A4_W, height=A4_H)
         if idx == 1:
             _fit_text(c, 310, 340, data.get("societa_installatrice"), 12.2, 420, 10.8)
@@ -181,19 +364,26 @@ def _render_pdf(data: Dict[str, Any], out_path: Path):
             _check(c, 60, 1528, scelta == "autorizza", 16)
             _check(c, 60, 1559, scelta == "adeguamento", 16)
             _check(c, 60, 1589, scelta == "rinvia", 16)
-            _signature(c, data.get("firma_cliente"), 180, 1690, 370, 80)
-            _signature(c, data.get("firma_tecnico"), 735, 1690, 370, 80)
+            _signature(c, data.get("firma_cliente"), 180, 1698, 370, 62)
+            _signature(c, data.get("firma_tecnico"), 690, 1690, 460, 72)
             _date_fields(c, data.get("data"), 322, 386, 455, 1794, 11.8)
         elif idx == 2:
             _fit_text(c, 135, 515, data.get("tecnico"), 12.6, 255, 11.0)
             _fit_text(c, 135, 625, data.get("cliente"), 12.6, 255, 11.0)
             _fit_text(c, 135, 735, _format_address(data.get("indirizzo")), 12.0, 430, 10.4)
-            products = set(data.get("prodotti") or [])
+            products = _product_flags(data.get("prodotti") or [])
             for label, y in [("Pro",810),("Pro Socket",845),("Max",880),("Copper",914)]:
                 _check(c, 134, y, label in products, 20)
-            serials = list(data.get("seriali") or [])[:6]
-            for i, serial in enumerate(serials):
-                _fit_text(c, 185, 1050 + i*51, serial, 12.0, 270, 10.5)
+            serials = _serial_values(data.get("seriali"))
+            if serials:
+                per_row = max(1, min(3, int(math.ceil(len(serials) / 4.0))))
+                rows = [serials[i:i + per_row] for i in range(0, len(serials), per_row)][:4]
+                shown = sum(len(r) for r in rows)
+                for i, row in enumerate(rows):
+                    label = " / ".join(row)
+                    if i == 3 and shown < len(serials):
+                        label += f" / +{len(serials) - shown}"
+                    _fit_text(c, 185, 1050 + i*51, label, 11.7, 390, 7.8)
             tipo = data.get("tipo_installazione")
             _check(c, 136, 1445, tipo == "Su Muro", 20)
             _check(c, 136, 1480, tipo == "Su Stand", 20)
@@ -224,14 +414,18 @@ def _render_pdf(data: Dict[str, Any], out_path: Path):
             _check(c, 784, 1605, bool(data.get("plinto_qta")), 20); _fit_text(c, 860, 1660, data.get("plinto_qta"), 11.8, 145, 10.4)
             _check(c, 784, 1709, bool(data.get("fori_qta")), 20); _fit_text(c, 860, 1762, data.get("fori_qta"), 11.8, 145, 10.4)
         else:
-            _text(c, 110, 1305, data.get("accessori_note"), 10.0, 92)
-            _text(c, 110, 1532, data.get("lavori_extra"), 10.0, 78)
+            _text_box(c, 110, 1298, data.get("accessori_note"), 1090, 138, 9.5, 6.4, 1.10)
+            _text_box(c, 110, 1525, data.get("lavori_extra"), 660, 98, 9.5, 6.8, 1.10)
             _fit_text(c, 1055, 1588, data.get("costo_lavori_extra"), 10.0, 130)
-            _signature(c, data.get("firma_cliente"), 180, 1690, 370, 80)
-            _signature(c, data.get("firma_tecnico"), 735, 1690, 370, 80)
+            _signature(c, data.get("firma_cliente"), 180, 1698, 370, 62)
+            _signature(c, data.get("firma_tecnico"), 690, 1690, 460, 72)
             _date_fields(c, data.get("data"), 322, 386, 455, 1794, 11.8)
         c.showPage()
     c.save()
+
+
+def _normalize_install_pdf_pages(value: Any) -> str:
+    return "2-3" if str(value or "").strip() == "2-3" else "all"
 
 
 def _num(value: Any) -> float:
@@ -419,19 +613,17 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         prefill = await _prefill(inst)
         saved = inst.get("report_installazione_data") or {}
         cliente = await db.crm_clienti.find_one({"id": str(inst.get("cliente_id") or "")}) or {}
-        return {"data": {**prefill, **saved}, "customer_email": cliente.get("email") or "", "generated_document_id": inst.get("report_installazione_document_id")}
+        return {"data": {**prefill, **saved}, "customer_email": cliente.get("email") or "", "generated_document_id": inst.get("report_installazione_document_id"), "pdf_pages": inst.get("report_installazione_pdf_pages") or "all"}
 
     @router.put("/{installation_id}")
     async def save_report(installation_id: str, body: ReportBody, current=Depends(dep)):
         inst = await _get_installation(installation_id, current)
         if not auth_mod.has_permission(current, "installazioni", "edit"):
             raise HTTPException(403, "Non hai il permesso di compilare il report")
-        prefill = await _prefill(inst)
+        # Il collegamento all'installazione serve solo per proporre i valori iniziali.
+        # Dopo la compilazione il report conserva esattamente i valori inseriti dall'utente.
         data = {**body.data}
-        # I dati anagrafici certi sono sempre derivati dal gestionale.
-        for k in ("data", "cliente", "indirizzo", "tecnico", "seriali"):
-            data[k] = prefill.get(k)
-        await db.crm_installazioni.update_one({"id": installation_id}, {"$set": {"report_installazione_data": data, "report_updated_at": datetime.now(timezone.utc), "report_updated_by": current.get("username")}})
+        await db.crm_installazioni.update_one({"id": installation_id}, {"$set": {"report_installazione_data": data, "report_installazione_pdf_pages": _normalize_install_pdf_pages(body.pdf_pages), "report_updated_at": datetime.now(timezone.utc), "report_updated_by": current.get("username")}})
         return {"ok": True, "data": data}
 
     @router.post("/{installation_id}/generate")
@@ -439,18 +631,15 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         inst = await _get_installation(installation_id, current)
         if not auth_mod.has_permission(current, "installazioni", "edit"):
             raise HTTPException(403, "Non hai il permesso di generare il report")
-        prefill = await _prefill(inst)
+        # I dati salvati/modificati nel report prevalgono sempre sui dati dell'installazione.
         data = {**(inst.get("report_installazione_data") or {}), **body.data}
-        for k in ("data", "cliente", "indirizzo", "tecnico", "seriali"):
-            data[k] = prefill.get(k)
-        if not data.get("firma_cliente") or not data.get("firma_tecnico"):
-            raise HTTPException(400, "Sono necessarie la firma del cliente e del tecnico")
+        pdf_pages = _normalize_install_pdf_pages(body.pdf_pages)
         # Il tecnico compila solo il report. Le associazioni con il Magazzino Verona
         # vengono risolte automaticamente dal gestionale, senza tendine di magazzino.
         desired_consumption, unresolved_materials = await _auto_verona_consumption(db, data)
         try:
             stock_changes = await inventory_local.reconcile_report_consumption(
-                installation_id, desired_consumption, cliente=str(prefill.get("cliente") or ""),
+                installation_id, desired_consumption, cliente=str(data.get("cliente") or ""),
                 operator=str(current.get("username") or ""),
                 report_date=datetime.now(timezone.utc).date().isoformat(),
             )
@@ -465,7 +654,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             now_unresolved = datetime.now(timezone.utc)
             await db.report_material_unresolved.insert_many([
                 {**row, "id": str(uuid.uuid4()), "installation_id": installation_id,
-                 "cliente": str(prefill.get("cliente") or ""), "status": "open",
+                 "cliente": str(data.get("cliente") or ""), "status": "open",
                  "created_at": now_unresolved, "updated_at": now_unresolved}
                 for row in unresolved_materials
             ])
@@ -475,7 +664,11 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         # invece di creare Report_1, Report_2, Report_3 uguali.
         filename = "Report_pre_post_installazione.pdf"
         out = folder / filename
-        _render_pdf(data, out)
+        _render_pdf(data, out, page_numbers=(2, 3) if pdf_pages == "2-3" else (1, 2, 3))
+        gridfs_id = await persistent_files.replace_bytes(
+            db, inst.get("report_installazione_gridfs_id"), out.read_bytes(), filename, "application/pdf",
+            metadata={"resource": "installazioni", "record_id": installation_id, "category": "Report installazione"},
+        )
         now = datetime.now(timezone.utc)
         existing_id = inst.get("report_installazione_document_id")
         existing_doc = await db.documents.find_one({"id": existing_id}) if existing_id else None
@@ -489,8 +682,8 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     pass
             await db.documents.update_one({"id": doc_id}, {"$set": {
                 "filename": filename, "stored_path": str(out), "content_type": "application/pdf",
-                "size": out.stat().st_size, "category": "Report installazione",
-                "note": "Report pre e post installazione firmato",
+                "size": out.stat().st_size, "gridfs_id": gridfs_id, "storage": "gridfs", "category": "Report installazione",
+                "note": "Report pre e post installazione",
                 "updated_at": now, "updated_by": current.get("username"),
             }})
         else:
@@ -498,8 +691,8 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             await db.documents.insert_one({
                 "id": doc_id, "resource": "installazioni", "record_id": installation_id,
                 "filename": filename, "stored_path": str(out), "content_type": "application/pdf",
-                "size": out.stat().st_size, "category": "Report installazione",
-                "note": "Report pre e post installazione firmato",
+                "size": out.stat().st_size, "gridfs_id": gridfs_id, "storage": "gridfs", "category": "Report installazione",
+                "note": "Report pre e post installazione",
                 "created_at": now, "created_by": current.get("username"),
             })
 
@@ -515,15 +708,18 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     old.unlink()
                 except OSError:
                     pass
+            await persistent_files.delete_bytes(db, dup.get("gridfs_id"))
             await db.documents.delete_one({"id": dup.get("id")})
 
         await db.crm_installazioni.update_one({"id": installation_id}, {"$set": {
             "report_installazione_data": data,
             "report_installazione_document_id": doc_id,
+            "report_installazione_gridfs_id": gridfs_id,
+            "report_installazione_pdf_pages": pdf_pages,
             "report_generated_at": now,
             "report_generated_by": current.get("username"),
         }})
-        return {"ok": True, "document_id": doc_id, "filename": filename, "updated_existing": bool(existing_doc), "warehouse_changes": stock_changes, "unresolved_materials": unresolved_materials}
+        return {"ok": True, "document_id": doc_id, "filename": filename, "updated_existing": bool(existing_doc), "warehouse_changes": stock_changes, "unresolved_materials": unresolved_materials, "pdf_pages": pdf_pages}
 
     @router.get("/{installation_id}/pdf")
     async def download_latest(installation_id: str, current=Depends(dep)):
@@ -532,7 +728,15 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         if not doc_id:
             raise HTTPException(404, "Report non ancora generato")
         doc = await db.documents.find_one({"id": doc_id})
-        if not doc or not Path(doc.get("stored_path") or "").exists():
+        if not doc:
+            raise HTTPException(404, "File report non disponibile")
+        report_path = Path(doc.get("stored_path") or "")
+        if not report_path.exists() and doc.get("gridfs_id"):
+            try:
+                report_path = await persistent_files.ensure_local(db, doc.get("gridfs_id"), report_path)
+            except FileNotFoundError:
+                pass
+        if not report_path.exists():
             raise HTTPException(404, "File report non disponibile")
         return FileResponse(doc["stored_path"], media_type="application/pdf", filename=doc.get("filename") or "report_installazione.pdf")
 
@@ -543,9 +747,17 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             raise HTTPException(403, "L'invio al cliente è disponibile all'ufficio, non al tecnico")
         doc_id = inst.get("report_installazione_document_id")
         if not doc_id:
-            raise HTTPException(400, "Genera prima il report firmato")
+            raise HTTPException(400, "Genera prima il report")
         doc = await db.documents.find_one({"id": doc_id})
-        if not doc or not Path(doc.get("stored_path") or "").exists():
+        if not doc:
+            raise HTTPException(404, "File report non disponibile")
+        report_path = Path(doc.get("stored_path") or "")
+        if not report_path.exists() and doc.get("gridfs_id"):
+            try:
+                report_path = await persistent_files.ensure_local(db, doc.get("gridfs_id"), report_path)
+            except FileNotFoundError:
+                pass
+        if not report_path.exists():
             raise HTTPException(404, "File report non disponibile")
         cliente = await db.crm_clienti.find_one({"id": str(inst.get("cliente_id") or "")}) or {}
         recipient = (body.recipient or cliente.get("email") or "").strip()

@@ -158,10 +158,10 @@ export default function AIAssistantPage() {
       <div className="max-w-3xl mx-auto p-6 sm:p-8" data-testid="ai-disabled">
         <div className="et-card p-8 text-center">
           <Robot size={56} weight="duotone" className="mx-auto text-slate-400" />
-          <h1 className="mt-4 text-2xl font-display font-black text-slate-800">Assistente AI disabilitato</h1>
+          <h1 className="mt-4 text-2xl font-display font-black text-slate-800">Assistente disabilitato</h1>
           <p className="mt-2 text-sm text-slate-600 max-w-md mx-auto">
-            L'Assistente AI è al momento disattivato. Un Admin può abilitarlo da
-            <b> Impostazioni → Assistente AI</b> configurando il provider gratuito (Groq).
+            L'Assistente è al momento disattivato. Un Admin può abilitarlo da
+            <b> Impostazioni → Assistente</b> configurando il provider gratuito (Groq).
           </p>
         </div>
       </div>
@@ -178,7 +178,7 @@ export default function AIAssistantPage() {
           <Robot size={18} weight="bold" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-display text-sm sm:text-base lg:text-lg font-black text-slate-900 truncate leading-tight">Assistente AI Gestionale</h1>
+          <h1 className="font-display text-sm sm:text-base lg:text-lg font-black text-slate-900 truncate leading-tight">Assistente Gestionale</h1>
           <div className="flex items-center gap-1.5 mt-0 flex-wrap">
             <Badge className="bg-slate-100 text-[#1A456B] border-slate-200 text-[9px] sm:text-[10px] px-1.5 py-0">{modeLabel}</Badge>
             {contextSection && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[9px] sm:text-[10px] px-1.5 py-0">Contesto: {contextSection}</Badge>}

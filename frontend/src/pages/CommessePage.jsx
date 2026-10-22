@@ -90,36 +90,15 @@ function CommesseList({ onOpen, onCreate, initialStato = "" }) {
   }, [filterStato]);
   return (
     <div className="space-y-4">
-      <div className="commesse-hero et-card-elevated p-4 sm:p-5">
-        <div className="flex items-start gap-3 flex-wrap">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="commesse-hero-icon">
-              <Package weight="duotone" size={28} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="font-display text-xl sm:text-2xl font-black text-slate-900">Commesse</h1>
-              
-            </div>
-          </div>
-          <Button onClick={onCreate} className="et-btn-primary h-11 px-4" data-testid="commessa-new-btn"><Plus size={16} /> Nuova</Button>
-        </div>
+      <section className="r56-commesse-toolbar" data-r56-commesse-toolbar>
+        <div><div className="r56-overline">Gestione commesse</div><div className="r56-commesse-title">Preparazione e avanzamento</div><p>Stato, priorità, materiale e spedizione in una sola vista.</p></div>
+        {onCreate && <Button onClick={onCreate} className="h-10 px-4" data-testid="commessa-new-btn"><Plus size={16}/> Nuova commessa</Button>}
+      </section>
+      <div className="r56-commesse-statusbar" data-testid="commesse-overview">
+        <button className={!filterStato?"is-active":""} onClick={()=>setFilterStato("")}><span>Tutte</span><strong>{Object.values(kpi||{}).reduce((sum,v)=>sum+(Number(v)||0),0)}</strong></button>
+        {["da_preparare","in_preparazione","parziale","pronta"].map(s=><button key={s} onClick={()=>setFilterStato(filterStato===s?"":s)} className={filterStato===s?"is-active":""} data-testid={`kpi-${s}`}><span>{STATO_LABEL[s].txt}</span><strong>{kpi[s]??0}</strong></button>)}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3" data-testid="commesse-overview">
-        {["da_preparare", "in_preparazione", "parziale", "pronta"].map((s) => (
-          <button key={s} onClick={() => setFilterStato(filterStato === s ? "" : s)}
-            className={`commesse-kpi-card et-card p-3 sm:p-4 text-left flex flex-col justify-between min-h-[96px] sm:min-h-[108px] ${filterStato === s ? "is-active" : ""}`}
-            data-testid={`kpi-${s}`}>
-            <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 leading-tight">
-              <span className="text-base sm:text-lg shrink-0" aria-hidden>{STATO_LABEL[s].icon}</span>
-              <span className="font-semibold truncate">{STATO_LABEL[s].txt}</span>
-            </div>
-            <div className="flex items-end justify-between gap-2 mt-2">
-              <div className="text-2xl sm:text-3xl font-black text-slate-900 font-mono-tight leading-none">{kpi[s] ?? 0}</div>
-              <span className="text-[10px] sm:text-xs text-slate-400">commesse</span>
-            </div>
-          </button>
-        ))}
-      </div>
+      <div className="r56-list-heading"><div><strong>Commesse</strong><span>{filterStato ? STATO_LABEL[filterStato]?.txt : "Tutti gli stati"}</span></div><span>{items.length} visibili</span></div>
       {loading ? (
         <div className="text-slate-500 text-center py-8">Caricamento…</div>
       ) : items.length === 0 ? (
@@ -329,7 +308,7 @@ function CommessaCreate({ onDone }) {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <Button variant="outline" onClick={() => onDone(null)} data-testid="commessa-back"><ArrowLeft size={16} /> Indietro</Button>
-        <h1 className="font-display text-lg sm:text-xl font-black flex-1">Nuova commessa</h1>
+        <h1 className="font-display text-lg sm:text-xl font-black flex-1">Crea commessa</h1>
       </div>
       <div className="et-card p-3 sm:p-4 space-y-4">
         <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">

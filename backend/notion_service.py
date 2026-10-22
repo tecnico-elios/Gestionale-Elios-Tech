@@ -162,8 +162,40 @@ def parse_item(page: Dict[str, Any]) -> Dict[str, Any]:
 
     # F13 — Availability SSOT: leggi la colonna 16 "SN /codice" dell'Inventario.
     # Questa è ora l'UNICA fonte per determinare la disponibilità di un seriale.
-    sn_prop = _get_prop(props, "SN /codice", "SN / CODICI", "SN /CODICI", "SN/codice")
-    serials_list = _parse_serials(_plain_text(sn_prop)) if sn_prop else []
+    sn_prop = _get_prop(props, "SN /codice", "SN / CODICI", "SN /CODICI", "SN/codice", "SN")
+
+    def _serial_prop_text(prop: Optional[Dict[str, Any]]) -> str:
+        if not prop:
+            return ""
+        t = prop.get("type")
+        if t in ("title", "rich_text"):
+            return _plain_text(prop)
+        if t == "formula":
+            f = prop.get("formula") or {}
+            value = f.get(f.get("type")) if f.get("type") else None
+            return str(value or "")
+        if t == "rollup":
+            r = prop.get("rollup") or {}
+            if r.get("type") == "array":
+                values = []
+                for item in r.get("array") or []:
+                    if isinstance(item, dict):
+                        val = _prop_value(item)
+                        if isinstance(val, list):
+                            values.extend(str(x) for x in val if x)
+                        elif val not in (None, ""):
+                            values.append(str(val))
+                return "\n".join(values)
+            value = r.get(r.get("type")) if r.get("type") else None
+            return str(value or "")
+        if t == "multi_select":
+            return "\n".join(x.get("name") for x in (prop.get("multi_select") or []) if x.get("name"))
+        value = _prop_value(prop)
+        if isinstance(value, list):
+            return "\n".join(str(x) for x in value if x)
+        return str(value or "")
+
+    serials_list = _parse_serials(_serial_prop_text(sn_prop)) if sn_prop else []
 
     qty_prop = _get_prop(props, "QTA in magazzino", "Quantità", "Quantita", "Quantity")
     quantity: Optional[float] = None
@@ -175,6 +207,10 @@ def parse_item(page: Dict[str, Any]) -> Dict[str, Any]:
             f = qty_prop.get("formula", {}) or {}
             if f.get("type") == "number":
                 quantity = f.get("number")
+        elif t == "rollup":
+            r = qty_prop.get("rollup", {}) or {}
+            if r.get("type") == "number":
+                quantity = r.get("number")
 
     unit_prop = _get_prop(props, "Unità", "Unita", "Unit")
     unit: Optional[str] = None

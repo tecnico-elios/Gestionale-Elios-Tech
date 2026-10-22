@@ -470,10 +470,10 @@ async def reconcile_order_wallbox_serials(db, *, actor: str = "notion-import") -
             if target is None and len(candidates) == 1:
                 target = candidates[0]
                 source = "order_exact_product"
-            elif target is None and len(candidates) == len(serials) and len(candidates) > 1:
-                target = candidates[idx]
-                source = "order_position"
-                stats["warnings"].append(f"ordine_{order.get('numero')}_abbinamento_per_posizione")
+            elif target is None and len(candidates) > 1:
+                stats["warnings"].append(
+                    f"ordine_{order.get('numero')}_seriale_{serial}_ambiguo_multi_prodotto"
+                )
 
             if target is None:
                 # Se il solo record esistente è un artefatto R66, lo rimuoviamo: meglio

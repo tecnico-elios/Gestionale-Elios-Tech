@@ -15,9 +15,9 @@ from pymongo import ReturnDocument
 
 import auth as auth_mod
 import notion_service
+from calendar_installation_sync import sync_all_calendar_installations
 
 RESOURCES = {
-    "lead": "crm_lead",
     "clienti": "crm_clienti",
     "contatti": "crm_contatti",
     "sedi": "crm_sedi",
@@ -25,6 +25,7 @@ RESOURCES = {
     "preventivi": "crm_preventivi",
     "ordini-clienti": "crm_ordini_clienti",
     "installazioni": "crm_installazioni",
+    "interventi-tecnici": "crm_interventi_tecnici",
     "assistenza": "crm_assistenza",
 }
 
@@ -607,57 +608,6 @@ def build_router(db, auth_deps):
                 })
         return {"items": items, "count": len(items)}
 
-    @router.post("/lead/{lead_id}/convert")
-    async def convert_lead(lead_id: str, current=Depends(dep)):
-        if not auth_mod.has_permission(current, "ordini_clienti", "create"):
-            raise HTTPException(403, "Non hai il permesso per creare clienti in Elios Tech Ordini")
-        lead = await coll("lead").find_one({"id": lead_id})
-        if not lead:
-            raise HTTPException(404, "Lead non trovato")
-
-        # Se già convertito, restituisce il cliente esistente senza duplicarlo.
-        linked_id = str(lead.get("cliente_id") or "").strip()
-        if linked_id:
-            linked = await coll("clienti").find_one({"id": linked_id})
-            if linked:
-                return {"ok": True, "created": False, "cliente": _clean(linked)}
-
-        ors = []
-        for field in ("email", "telefono"):
-            value = str(lead.get(field) or "").strip()
-            if value:
-                ors.append({field: {"$regex": f"^{__import__('re').escape(value)}$", "$options": "i"}})
-        existing = await coll("clienti").find_one({"$or": ors}) if ors else None
-
-        now = datetime.now(timezone.utc)
-        created = False
-        if existing:
-            cliente = existing
-        else:
-            cliente = {
-                "id": str(uuid.uuid4()),
-                "tipo": "Azienda",
-                "ragione_sociale": str(lead.get("nome") or "").strip(),
-                "referente": str(lead.get("referente") or "").strip(),
-                "telefono": str(lead.get("telefono") or "").strip(),
-                "email": str(lead.get("email") or "").strip(),
-                "agente": str(lead.get("agente") or "").strip(),
-                "provenienza_cliente": "Lead",
-                "note": str(lead.get("note") or "").strip(),
-                "created_at": now,
-                "updated_at": now,
-                "created_by": current.get("username"),
-            }
-            await coll("clienti").insert_one(cliente)
-            await sync_primary_client_links(cliente)
-            created = True
-
-        await coll("lead").update_one(
-            {"id": lead_id},
-            {"$set": {"cliente_id": cliente.get("id"), "stato": "Venduto", "converted_at": now, "updated_at": now}},
-        )
-        return {"ok": True, "created": created, "cliente": _clean(cliente)}
-
     @router.get("/clienti/{client_id}/dossier")
     async def client_dossier(client_id: str, current=Depends(dep)):
         cliente = await coll("clienti").find_one({"id": client_id})
@@ -753,6 +703,7 @@ def build_router(db, auth_deps):
             {"_id": 0, "id": 1, "ragione_sociale": 1, "nome_struttura": 1, "nome": 1, "cognome": 1,
              "partita_iva": 1, "codice_fiscale": 1, "telefono": 1, "email": 1, "comune": 1, "provincia": 1,
              "agente": 1, "data_firma": 1, "pagamento": 1, "capitale": 1, "qty_wb": 1, "stato_cliente": 1,
+             "pec": 1, "codice_sdi": 1, "sdi": 1,
              "da_ricontattare": 1, "data_ricontatto": 1, "priorita_ricontatto": 1, "referente": 1}
         ).to_list(length=10000)
         orders_task = db.crm_ordini_clienti.find(
@@ -815,6 +766,8 @@ def build_router(db, auth_deps):
     @router.get("/{resource}")
     async def list_records(resource: str, q: Optional[str] = Query(default=None), include_archived: bool = Query(default=False), current=Depends(dep)):
         c = coll(resource)
+        if resource == "installazioni":
+            await sync_all_calendar_installations(db, actor=current.get("username") or "installazioni", force=False)
         query = {}
         if resource == "clienti" and not include_archived:
             query = {"archived": {"$ne": True}}
@@ -827,12 +780,9 @@ def build_router(db, auth_deps):
             # senza esporre il tecnico al picking o ai codici di magazzino.
             for item in items:
                 cid = str(item.get("commessa_id") or "")
-                if not cid:
-                    continue
-                comm = await db.commesse.find_one({"id": cid})
-                if not comm:
-                    continue
-                item["prodotti_da_installare"] = [
+                comm = await db.commesse.find_one({"id": cid}) if cid else None
+                if comm:
+                    item["prodotti_da_installare"] = [
                     {
                         "nome": r.get("product_name") or r.get("descrizione") or "Prodotto",
                         "codice": r.get("product_code"),
@@ -841,19 +791,22 @@ def build_router(db, auth_deps):
                     }
                     for r in (comm.get("righe") or [])
                 ]
-                item["attivita_da_eseguire"] = [
-                    {"descrizione": x.get("descrizione") or x.get("product_name") or str(x.get("tipo_riga") or "Servizio"), "quantita": x.get("quantity") or x.get("quantita") or 1}
-                    for x in (comm.get("servizi") or [])
-                ]
-                item["istruzioni_intervento"] = item.get("istruzioni_intervento") or comm.get("note") or ""
-                # R15 — dati leggibili per la scheda del tecnico.
-                cliente_id = str(item.get("cliente_id") or comm.get("cliente_id") or "")
-                sede_id = str(item.get("sede_id") or comm.get("sede_id") or "")
+                    item["attivita_da_eseguire"] = [
+                        {"descrizione": x.get("descrizione") or x.get("product_name") or str(x.get("tipo_riga") or "Servizio"), "quantita": x.get("quantity") or x.get("quantita") or 1}
+                        for x in (comm.get("servizi") or [])
+                    ]
+                    item["istruzioni_intervento"] = item.get("istruzioni_intervento") or comm.get("note") or ""
+                else:
+                    item.setdefault("prodotti_da_installare", [])
+                    item.setdefault("attivita_da_eseguire", [])
+                # R60 — cliente e sede vengono mostrati anche per installazioni nate dal Calendario, senza commessa.
+                cliente_id = str(item.get("cliente_id") or (comm or {}).get("cliente_id") or "")
+                sede_id = str(item.get("sede_id") or (comm or {}).get("sede_id") or "")
                 if cliente_id:
                     cliente = await coll("clienti").find_one({"id": cliente_id})
                     if cliente:
                         item["cliente_nome"] = cliente.get("ragione_sociale") or cliente.get("nome") or cliente.get("name") or comm.get("cliente") or "Cliente"
-                item["cliente_nome"] = item.get("cliente_nome") or comm.get("cliente") or "Cliente"
+                item["cliente_nome"] = item.get("cliente_nome") or (comm or {}).get("cliente") or item.get("nominativo") or item.get("calendar_title") or "Cliente da collegare"
                 if sede_id:
                     sede = await coll("sedi").find_one({"id": sede_id})
                     if sede:
@@ -1446,6 +1399,11 @@ def build_router(db, auth_deps):
         res = await c.delete_one({"id": record_id})
         if not res.deleted_count:
             raise HTTPException(404, "Record non trovato")
+        if resource == "interventi-tecnici" and existing.get("calendar_event_id"):
+            await db.calendar_events.update_one(
+                {"id": str(existing.get("calendar_event_id"))},
+                {"$set": {"technical_sync_excluded": True, "technical_sync_excluded_at": datetime.now(timezone.utc), "technical_sync_excluded_by": current.get("username") or current.get("email") or "utente"}},
+            )
         if resource == "preventivi" and previous_revision_id:
             await coll("preventivi").update_one(
                 {"id": previous_revision_id, "superseded_by_revision_id": record_id},

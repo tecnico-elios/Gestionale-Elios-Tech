@@ -285,7 +285,7 @@ function ForgotPasswordDialog({ open, onClose }) {
           <DialogDescription>
             Solo gli Amministratori possono recuperare le proprie credenziali.
             Inserisci il tuo username: un altro Admin potrà reimpostarla dalla
-            sezione Gestione utenti.
+            sezione Utenti.
           </DialogDescription>
         </DialogHeader>
         {msg ? (

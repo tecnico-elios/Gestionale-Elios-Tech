@@ -233,7 +233,7 @@ export default function ModuleBuilderPage() {
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold tracking-[.16em] uppercase text-blue-600">Configuratore</div>
-          <h1 className="font-display text-3xl font-bold">Costruttore gestionale</h1>
+          <h1 className="font-display text-3xl font-bold">Struttura gestionale</h1>
           <p className="text-slate-500 mt-1 max-w-3xl">Gestisci pagine, menu, liste operative, moduli e campi. Le modifiche salvate vengono applicate al menu e alle funzioni che leggono queste configurazioni.</p>
         </div>
         <div className="flex flex-wrap gap-2">

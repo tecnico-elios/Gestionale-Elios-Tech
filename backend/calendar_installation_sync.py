@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, List
 from zoneinfo import ZoneInfo
 import re
 import uuid
+from calendar_installation_parser import INSTALLATION_NORMALIZATION_VERSION, parse_calendar_installation
 
 ROME = ZoneInfo("Europe/Rome")
 STOPWORDS = {
@@ -218,7 +219,15 @@ async def sync_calendar_event_to_installation(
     except Exception:
         end = start + timedelta(hours=1)
     duration = max(15, int((end - start).total_seconds() // 60))
-    client_id, site_id = await _match_client_and_site(db, event, clients_cache, sites_cache)
+    parsed = parse_calendar_installation(event.get("title"), event.get("description"), event.get("location"))
+    match_event = dict(event)
+    if parsed.get("structure"):
+        match_event["title"] = f"{event.get('title') or ''} {parsed.get('structure')}".strip()
+    if parsed.get("clean_description"):
+        match_event["description"] = parsed.get("clean_description")
+    if parsed.get("address"):
+        match_event["location"] = parsed.get("address")
+    client_id, site_id = await _match_client_and_site(db, match_event, clients_cache, sites_cache)
     tech_user_id, tech_name = await _resource_assignment(db, event, resources_cache)
 
     existing = await db.crm_installazioni.find_one({"calendar_event_id": event_id})
@@ -241,8 +250,9 @@ async def sync_calendar_event_to_installation(
     source_stamp = _source_stamp(event)
     base_payload: Dict[str, Any] = {
         "calendar_event_id": event_id,
-        "calendar_title": str(event.get("title") or "Installazione"),
+        "calendar_title": parsed.get("title") or str(event.get("title") or "Installazione"),
         "calendar_source": "calendar_events",
+        "installation_normalization_version": INSTALLATION_NORMALIZATION_VERSION,
         "calendar_source_updated_at": source_stamp,
         "cliente_collegamento_stato": "collegato" if client_id else "da_collegare",
         "updated_at": _now(),
@@ -258,17 +268,27 @@ async def sync_calendar_event_to_installation(
         "ora": start.strftime("%H:%M"),
         "durata_prevista": f"{duration} min",
         "stato": _status(event.get("status"), True),
-        "indirizzo_libero": str(event.get("location") or ""),
-        "istruzioni_intervento": str(event.get("description") or ""),
-        "note": str(event.get("description") or ""),
-        "nominativo": str(event.get("title") or "Installazione"),
+        "indirizzo_libero": parsed.get("address") or "",
+        "comune_libero": parsed.get("comune") or "",
+        "provincia_libera": parsed.get("provincia") or "",
+        "cap_libero": parsed.get("cap") or "",
+        "istruzioni_intervento": parsed.get("instructions") or "",
+        "note": parsed.get("technical_notes") or parsed.get("instructions") or "",
+        "descrizione_importata": parsed.get("clean_description") or "",
+        "nominativo": parsed.get("structure") or parsed.get("title") or "Installazione",
+        "referente": parsed.get("referente") or "",
+        "telefono": parsed.get("telefono") or "",
+        "agente": parsed.get("agent") or "",
+        "prodotti_da_installare": parsed.get("products") or [],
+        "prodotti_testo_importato": parsed.get("products_text") or "",
     }
 
     if existing:
         update = dict(base_payload)
         old_stamp = existing.get("calendar_source_updated_at")
         source_changed = old_stamp is None or str(source_stamp) != str(old_stamp)
-        if existing.get("import_source") == "calendar" and source_changed:
+        needs_normalization = int(existing.get("installation_normalization_version") or 0) < INSTALLATION_NORMALIZATION_VERSION
+        if existing.get("import_source") == "calendar" and (source_changed or needs_normalization):
             update.update(source_fields)
         else:
             for key, value in source_fields.items():
@@ -316,6 +336,9 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
     sites = await db.crm_sedi.find({}).to_list(length=20000)
     resources = await db.calendar_resources.find({"active": {"$ne": False}}).to_list(length=2000)
     state = await db.settings.find_one({"_id": "calendar_installations_sync"}) or {}
+    normalization_changed = int(state.get("normalization_version") or 0) < INSTALLATION_NORMALIZATION_VERSION
+    if normalization_changed:
+        force = True
     stamps = [str(c.get("updated_at") or c.get("created_at") or "") for c in clients]
     latest_client_stamp = max(stamps, default="")
     client_revision = f"{len(clients)}:{latest_client_stamp}"
@@ -344,6 +367,7 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
         "clients_linked": 0, "clients_to_link": 0,
         "clients_available": len(clients), "sites_available": len(sites),
         "client_revision": client_revision, "client_revision_changed": revision_changed,
+        "normalization_version": INSTALLATION_NORMALIZATION_VERSION, "normalization_changed": normalization_changed,
         "errors": [],
     }
     for event in rows:
@@ -360,7 +384,7 @@ async def sync_all_calendar_installations(db, actor: str = "calendar-sync", forc
             stats["errors"].append({"event_id": str(event.get("id") or ""), "title": str(event.get("title") or ""), "error": str(exc)})
     await db.settings.update_one(
         {"_id": "calendar_installations_sync"},
-        {"$set": {"last_run_at": _now(), "last_result": stats, "client_revision": client_revision}},
+        {"$set": {"last_run_at": _now(), "last_result": stats, "client_revision": client_revision, "normalization_version": INSTALLATION_NORMALIZATION_VERSION}},
         upsert=True,
     )
     return stats

@@ -34,6 +34,8 @@ const fmtDate = (d) => d.toLocaleDateString("it-IT", { day: "2-digit", month: "s
 const fmtDayLong = (d) => d.toLocaleDateString("it-IT", { weekday: "long" });
 const fmtMonth = (d) => d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 const normalizeCategory = (value) => String(value || "Attività").toLowerCase() === "commerciale" ? "Attività" : (value || "Attività");
+const DEFAULT_PERSON_ROLES = ["Amministrazione", "Tecnico", "Commerciale", "Assistenza"];
+
 const CATEGORY_COLORS = {
   Installazione: "#2563eb",
   Sopralluogo: "#7c3aed",
@@ -147,7 +149,7 @@ function DayView({ day, events, onOpen, onNew, canCreate, canEdit, onDragStart, 
   return <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5" onDragOver={(e) => canEdit && e.preventDefault()} onDrop={(e) => { e.preventDefault(); onDrop(day); }}>
     <div className="flex items-center justify-between gap-3 mb-4">
       <div><div className="r51-kicker">Agenda del giorno</div><h2 className="r51-section-title text-xl mt-1 capitalize">{day.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}</h2></div>
-      {canCreate && <Button onClick={() => onNew(day)}><Plus size={16} /> Nuovo evento</Button>}
+      {canCreate && <Button onClick={() => onNew(day)}><Plus size={16} /> Aggiungi attività</Button>}
     </div>
     <div className="r51-calendar-day-agenda">{events.map((event) => <EventCard key={event.key || `${event.id}-${event.start}`} event={event} onOpen={onOpen} onDragStart={onDragStart} canDrag={canEdit} />)}{!events.length && <div className="r51-empty">Nessuna attività prevista per questo giorno.</div>}</div>
   </section>;
@@ -164,6 +166,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(false);
   const [selectedResources, setSelectedResources] = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedRoles, setSelectedRoles] = useState([]);
   const [detail, setDetail] = useState(null);
   const [editor, setEditor] = useState(null);
   const [resourceDlg, setResourceDlg] = useState(false);
@@ -177,10 +180,14 @@ export default function CalendarPage() {
   const [search, setSearch] = useState("");
   const [migration, setMigration] = useState({ imports_enabled: true, completed: false, ready_to_finalize: false, finalized: false });
   const [importing, setImporting] = useState(false);
-  const [newResource, setNewResource] = useState({ name: "", color: "#2d6ea3" });
+  const [newResource, setNewResource] = useState({ name: "", color: "#2d6ea3", role: "Tecnico" });
 
   const canCreate = hasPermission("calendar", "create") || isAdmin;
   const canEdit = hasPermission("calendar", "edit") || isAdmin;
+  const canManagePeopleRoles = isAdmin || hasPermission("calendar", "manage_people_roles");
+  const [roleOptions, setRoleOptions] = useState(DEFAULT_PERSON_ROLES);
+  const [newRole, setNewRole] = useState("");
+  const personRoles = roleOptions;
 
   const range = useMemo(() => {
     if (view === "day") { const start = startOfDay(cursor); return [start, addDays(start, 1)]; }
@@ -193,8 +200,12 @@ export default function CalendarPage() {
     if (!silent) setLoading(true);
     try {
       const { data } = await axios.get(`${API}/calendar/events`, { params: { start: localIso(range[0]), end: localIso(range[1]) } });
-      setEvents((data.items || []).map((event) => ({ ...event, category: normalizeCategory(event.category) })));
-      setResources(data.resources || []);
+      const loadedResources = data.resources || [];
+      setResources(loadedResources);
+      setEvents((data.items || []).map((event) => {
+        const assigned = loadedResources.find((r) => (event.resource_ids || []).includes(r.id));
+        return { ...event, category: normalizeCategory(event.category), resource_role: event.resource_role || assigned?.role || "" };
+      }));
     } catch (error) {
       toast.error("Calendario non disponibile", { description: error?.response?.data?.detail || error?.message });
     } finally { if (!silent) setLoading(false); }
@@ -219,7 +230,19 @@ export default function CalendarPage() {
     if (m.status === "fulfilled") setMigration((prev) => ({ ...prev, ...(m.value.data || {}) }));
   }, []);
 
+  const loadRoles = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/calendar/roles`);
+      const items = (data.items || []).filter(Boolean);
+      setRoleOptions(items);
+      setNewResource((p) => ({ ...p, role: items.some((x) => x === p.role) ? p.role : (items[0] || "Tecnico") }));
+    } catch (error) {
+      toast.error("Ruoli calendario non disponibili", { description: error?.response?.data?.detail || error?.message });
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => {
     loadLookups();
     const onConfig = () => loadLookups();
@@ -232,10 +255,14 @@ export default function CalendarPage() {
     return events.filter((event) => {
       if (selectedResources.length && !(event.resource_ids || []).some((id) => selectedResources.includes(id))) return false;
       if (selectedCategories.length && !selectedCategories.includes(normalizeCategory(event.category))) return false;
-      if (query && !`${event.title || ""} ${event.description || ""} ${event.location || ""} ${event.resource_name || ""}`.toLowerCase().includes(query)) return false;
+      if (selectedRoles.length) {
+        const eventRoles = (event.resource_ids || []).map((id) => resources.find((r) => r.id === id)?.role).filter(Boolean);
+        if (!eventRoles.some((role) => selectedRoles.includes(role))) return false;
+      }
+      if (query && !`${event.title || ""} ${event.description || ""} ${event.location || ""} ${event.resource_name || ""} ${event.resource_role || ""}`.toLowerCase().includes(query)) return false;
       return true;
     });
-  }, [events, selectedResources, selectedCategories, search]);
+  }, [events, resources, selectedResources, selectedCategories, selectedRoles, search]);
 
   const byDay = useMemo(() => {
     const map = {};
@@ -341,7 +368,8 @@ export default function CalendarPage() {
 
   const toggleResource = (id) => setSelectedResources((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   const toggleCategory = (category) => setSelectedCategories((prev) => prev.includes(category) ? prev.filter((x) => x !== category) : [...prev, category]);
-  const clearFilters = () => { setSelectedResources([]); setSelectedCategories([]); setSearch(""); };
+  const toggleRole = (role) => setSelectedRoles((prev) => prev.includes(role) ? prev.filter((x) => x !== role) : [...prev, role]);
+  const clearFilters = () => { setSelectedResources([]); setSelectedCategories([]); setSelectedRoles([]); setSearch(""); };
 
   const importIcs = async (file) => {
     if (!file) return;
@@ -382,11 +410,32 @@ export default function CalendarPage() {
     } catch (error) { toast.error("Chiusura migrazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
   };
 
+  const addRole = async () => {
+    const name = newRole.trim();
+    if (!name) return toast.error("Inserisci il nome del ruolo");
+    try {
+      const { data } = await axios.post(`${API}/calendar/roles`, { name });
+      setRoleOptions(data.items || []);
+      setNewRole("");
+      toast.success(data.created === false ? "Ruolo già presente" : "Ruolo creato");
+    } catch (error) { toast.error("Creazione ruolo non riuscita", { description: error?.response?.data?.detail || error?.message }); }
+  };
+
+  const removeRole = async (role) => {
+    const ok = await appConfirm({ title: "Elimina ruolo", message: `Eliminare il ruolo “${role}”? È possibile solo se non è assegnato a nessuna persona.`, confirmLabel: "Elimina", danger: true });
+    if (!ok) return;
+    try {
+      const { data } = await axios.delete(`${API}/calendar/roles/${encodeURIComponent(role)}`);
+      setRoleOptions(data.items || []);
+      toast.success("Ruolo eliminato");
+    } catch (error) { toast.error("Ruolo non eliminato", { description: error?.response?.data?.detail || error?.message }); }
+  };
+
   const addResource = async () => {
     if (!newResource.name.trim()) return toast.error("Inserisci il nome");
     try {
       await axios.post(`${API}/calendar/resources`, newResource);
-      setNewResource({ name: "", color: "#2d6ea3" });
+      setNewResource({ name: "", color: "#2d6ea3", role: "Tecnico" });
       await load(true);
       toast.success("Calendario aggiunto");
     } catch (error) { toast.error("Creazione non riuscita", { description: error?.response?.data?.detail || error?.message }); }
@@ -395,7 +444,7 @@ export default function CalendarPage() {
   const updateResource = async (resource, patch) => {
     const next = { ...resource, ...patch };
     setResources((prev) => prev.map((item) => item.id === resource.id ? next : item));
-    try { await axios.put(`${API}/calendar/resources/${resource.id}`, { name: next.name, color: next.color, linked_user_id: next.linked_user_id, sort_order: next.sort_order }); }
+    try { await axios.put(`${API}/calendar/resources/${resource.id}`, { name: next.name, color: next.color, role: next.role, linked_user_id: next.linked_user_id, sort_order: next.sort_order }); }
     catch (error) { toast.error("Modifica calendario non riuscita", { description: error?.response?.data?.detail || error?.message }); await load(true); }
   };
 
@@ -419,10 +468,10 @@ export default function CalendarPage() {
         <div className="r51-calendar-period mt-2 capitalize">{heading}</div>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
-        {isAdmin && <Button variant="outline" onClick={() => setResourceDlg(true)}><Gear size={16} /> Persone</Button>}
-        {isAdmin && <Button variant="outline" onClick={() => setMigrationOpen((v) => !v)}>{migration.finalized ? <CheckCircle size={16} className="text-emerald-600" /> : <UploadSimple size={16} />} {migration.finalized ? "Calendario autonomo" : "Importazione"}</Button>}
+        {canManagePeopleRoles && <Button variant="outline" onClick={() => setResourceDlg(true)}><Gear size={16} /> Persone e ruoli</Button>}
+        {isAdmin && !migration.finalized && <Button variant="outline" onClick={() => setMigrationOpen((v) => !v)}><UploadSimple size={16} /> Importazione</Button>}
         <Button variant={filtersOpen ? "default" : "outline"} onClick={() => setFiltersOpen((v) => !v)}><SlidersHorizontal size={16} /> Filtri</Button>
-        {canCreate && <Button onClick={() => newEvent(new Date())}><Plus size={16} /> Nuovo evento</Button>}
+        {canCreate && <Button onClick={() => newEvent(new Date())}><Plus size={16} /> Aggiungi attività</Button>}
       </div>
     </div>
 
@@ -451,18 +500,19 @@ export default function CalendarPage() {
 
     {filtersOpen && <div className="r51-calendar-filter-panel">
       <div className="flex items-start justify-between gap-3 mb-3"><div><div className="r51-section-title">Filtra la pianificazione</div><div className="text-xs text-slate-500 mt-0.5">Seleziona persone o tipologie per concentrarti sulle attività utili.</div></div><Button variant="ghost" size="sm" onClick={clearFilters}>Azzera</Button></div>
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Persone / calendari</div><div className="flex flex-wrap gap-2">{resources.map((resource) => { const active = selectedResources.includes(resource.id); return <button type="button" key={resource.id} onClick={() => toggleResource(resource.id)} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}><span className="r51-resource-dot" style={{ background: resource.color || "#64748b" }} />{resource.name}</button>; })}</div></div>
+      <div className="grid xl:grid-cols-3 gap-4">
+        <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Persone / calendari</div><div className="flex flex-wrap gap-2">{resources.map((resource) => { const active = selectedResources.includes(resource.id); return <button type="button" key={resource.id} onClick={() => toggleResource(resource.id)} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}><span className="r51-resource-dot" style={{ background: resource.color || "#64748b" }} /><span>{resource.name}</span>{resource.role && <span className="text-[10px] text-slate-400">· {resource.role}</span>}</button>; })}</div></div>
+        <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Ruolo operativo</div><div className="flex flex-wrap gap-2">{personRoles.map((role) => { const active = selectedRoles.includes(role); return <button type="button" key={role} onClick={() => toggleRole(role)} className={`px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}>{role}</button>; })}</div></div>
         <div><div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Tipologia</div><div className="flex flex-wrap gap-2">{(configLists.calendar_categories || []).map((category) => { const active = selectedCategories.includes(category); return <button type="button" key={category} onClick={() => toggleCategory(category)} className={`px-3 py-2 rounded-lg border text-xs font-semibold ${active ? "border-slate-500 bg-slate-100 text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}>{category}</button>; })}</div></div>
       </div>
     </div>}
 
-    {isAdmin && migrationOpen && <div className="r51-calendar-filter-panel">
+    {isAdmin && !migration.finalized && migrationOpen && <div className="r51-calendar-filter-panel">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2"><div className="r51-section-title">Migrazione calendario una tantum</div>{migration.finalized && <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-1"><CheckCircle size={13} /> Autonomo</span>}</div>
           <div className="text-sm text-slate-500 mt-1">Gli eventi importati vengono salvati nel database del gestionale. Dopo la verifica puoi chiudere la migrazione e rimuovere tutti i riferimenti alla sorgente esterna.</div>
-          {migration.last_result?.parsed != null && <div className="text-xs text-slate-500 mt-2">Ultimo import: {migration.last_result.parsed} letti · {migration.last_result.imported || 0} nuovi · {migration.last_result.updated || 0} aggiornati</div>}
+          {migration.last_result?.parsed != null && <div className="text-xs text-slate-500 mt-2">Ultimo import: {migration.last_result.parsed} letti · {migration.last_result.imported || 0} nuovi · {migration.last_result.updated || 0} aggiornati{migration.last_result.skipped_leads ? ` · ${migration.last_result.skipped_leads} Lead esclusi` : ""}</div>}
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           {!migration.finalized && <><input ref={fileInputRef} type="file" accept=".ics,.zip" className="hidden" onChange={(e) => importIcs(e.target.files?.[0])} /><Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}><UploadSimple size={16} /> {importing ? "Importazione…" : "Importa .ics / ZIP"}</Button><Button variant="outline" onClick={relinkImported}>Collega ai clienti</Button></>}
@@ -503,13 +553,13 @@ export default function CalendarPage() {
     <Dialog open={!!editor} onOpenChange={(open) => !open && setEditor(null)}>
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
         {editor && <>
-          <DialogHeader><DialogTitle>{editor.key ? "Modifica attività" : "Nuovo evento"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editor.key ? "Modifica attività" : "Aggiungi attività"}</DialogTitle></DialogHeader>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2"><Label>Titolo *</Label><Input className="mt-1" value={editor.title || ""} onChange={(e) => setEditor((p) => ({ ...p, title: e.target.value }))} /></div>
             <div><Label>Inizio *</Label><Input type="datetime-local" className="mt-1" value={editor.start || ""} onChange={(e) => setEditor((p) => ({ ...p, start: e.target.value }))} /></div>
             <div><Label>Fine</Label><Input type="datetime-local" className="mt-1" value={editor.end || ""} onChange={(e) => setEditor((p) => ({ ...p, end: e.target.value }))} /></div>
             <div><Label>Tipologia</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={normalizeCategory(editor.category)} onChange={(e) => setEditor((p) => ({ ...p, category: e.target.value }))}>{(configLists.calendar_categories || []).map((x) => <option key={x}>{x}</option>)}</select></div>
-            <div><Label>Persona / calendario</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={(editor.resource_ids || [])[0] || ""} onChange={(e) => setEditor((p) => ({ ...p, resource_ids: e.target.value ? [e.target.value] : [] }))}><option value="">Non assegnato</option>{resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+            <div><Label>Persona / calendario</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={(editor.resource_ids || [])[0] || ""} onChange={(e) => setEditor((p) => ({ ...p, resource_ids: e.target.value ? [e.target.value] : [] }))}><option value="">Non assegnato</option>{resources.map((r) => <option key={r.id} value={r.id}>{r.name}{r.role ? ` · ${r.role}` : ""}</option>)}</select></div>
             <div><Label>Stato</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.status || ""} onChange={(e) => setEditor((p) => ({ ...p, status: e.target.value }))}>{(configLists.calendar_statuses || []).map((x) => <option key={x}>{x}</option>)}</select></div>
             <div><Label>Priorità</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.priority || "Normale"} onChange={(e) => setEditor((p) => ({ ...p, priority: e.target.value }))}>{(configLists.calendar_priorities || []).map((x) => <option key={x}>{x}</option>)}</select></div>
             <div><Label>Cliente</Label><select className="mt-1 h-10 w-full border bg-white px-3" value={editor.cliente_id || ""} onChange={(e) => setEditor((p) => ({ ...p, cliente_id: e.target.value, sede_id: "", commessa_id: "" }))}><option value="">Nessun cliente</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" ") || "Cliente"}</option>)}</select></div>
@@ -529,16 +579,23 @@ export default function CalendarPage() {
 
     <Dialog open={resourceDlg} onOpenChange={setResourceDlg}>
       <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Persone e calendari</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Persone e ruoli del calendario</DialogTitle></DialogHeader>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+          <div><div className="text-sm font-black text-slate-900">Ruoli disponibili</div><div className="text-xs text-slate-500 mt-0.5">I ruoli si creano qui una volta sola. Poi possono essere soltanto assegnati alle persone da un Admin o da chi ha ricevuto il permesso dedicato.</div></div>
+          <div className="flex flex-wrap gap-2">{personRoles.map((role) => <span key={role} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">{role}<button type="button" className="text-slate-400 hover:text-red-600" onClick={() => removeRole(role)} aria-label={`Elimina ruolo ${role}`}><Trash size={13}/></button></span>)}</div>
+          <div className="flex gap-2"><Input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="Nuovo ruolo, es. Tecnico interno" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRole(); } }} /><Button type="button" onClick={addRole}><Plus size={15}/> Aggiungi ruolo</Button></div>
+        </div>
         <div className="space-y-3">
-          {resources.map((resource) => <div key={resource.id} className="grid grid-cols-[46px_minmax(0,1fr)_42px] gap-2 items-center rounded-xl border border-slate-200 p-2.5">
+          {resources.map((resource) => <div key={resource.id} className="grid sm:grid-cols-[46px_minmax(0,1fr)_180px_42px] gap-2 items-center rounded-xl border border-slate-200 p-2.5">
             <input type="color" className="h-9 w-10 rounded border-0 p-0 bg-transparent" value={resource.color || "#64748b"} onChange={(e) => updateResource(resource, { color: e.target.value })} aria-label="Colore" />
             <Input value={resource.name || ""} onChange={(e) => setResources((prev) => prev.map((x) => x.id === resource.id ? { ...x, name: e.target.value } : x))} onBlur={() => updateResource(resource, { name: resources.find((x) => x.id === resource.id)?.name || resource.name })} />
+            <select className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value={resource.role || personRoles[0] || "Tecnico"} onChange={(e) => updateResource(resource, { role: e.target.value })} aria-label={`Ruolo di ${resource.name}`}>{personRoles.map((role) => <option key={role} value={role}>{role}</option>)}</select>
             <button type="button" className="h-9 w-9 rounded-lg border border-slate-200 inline-flex items-center justify-center text-slate-500 hover:text-red-600" onClick={() => removeResource(resource)} aria-label="Nascondi"><Trash size={15} /></button>
           </div>)}
-          <div className="grid sm:grid-cols-[46px_minmax(0,1fr)_auto] gap-2 items-center pt-3 border-t border-slate-100">
+          <div className="grid sm:grid-cols-[46px_minmax(0,1fr)_180px_auto] gap-2 items-center pt-3 border-t border-slate-100">
             <input type="color" className="h-9 w-10 rounded border-0 p-0 bg-transparent" value={newResource.color} onChange={(e) => setNewResource((p) => ({ ...p, color: e.target.value }))} aria-label="Colore nuovo calendario" />
             <Input value={newResource.name} onChange={(e) => setNewResource((p) => ({ ...p, name: e.target.value }))} placeholder="Nome persona / calendario" />
+            <select className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value={newResource.role || personRoles[0] || "Tecnico"} onChange={(e) => setNewResource((p) => ({ ...p, role: e.target.value }))}>{personRoles.map((role) => <option key={role} value={role}>{role}</option>)}</select>
             <Button onClick={addResource}><Plus size={15} /> Aggiungi</Button>
           </div>
         </div>

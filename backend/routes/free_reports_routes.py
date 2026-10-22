@@ -10,11 +10,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from routes.installation_report_routes import ASSET_DIR, UPLOAD_ROOT, _render_pdf
+import persistent_files
 
 
 class FreeReportBody(BaseModel):
     model_config = {"extra": "allow"}
     data: Dict[str, Any] = Field(default_factory=dict)
+    pdf_pages: str = "all"
 
 
 def _display_title(data: Dict[str, Any]) -> str:
@@ -27,6 +29,10 @@ def _display_title(data: Dict[str, Any]) -> str:
     if data_report:
         return f"Report pre e post installazione · {data_report}"
     return "Report pre e post installazione"
+
+
+def _normalize_pdf_pages(value: Any) -> str:
+    return "2-3" if str(value or "").strip() == "2-3" else "all"
 
 
 def build_router(db, deps) -> APIRouter:
@@ -54,6 +60,7 @@ def build_router(db, deps) -> APIRouter:
             "id": doc.get("id"),
             "data": doc.get("data") or {},
             "generated_document_id": doc.get("generated_document_id"),
+            "pdf_pages": doc.get("pdf_pages") or "all",
             "title": doc.get("title") or _display_title(doc.get("data") or {}),
         }
 
@@ -66,6 +73,7 @@ def build_router(db, deps) -> APIRouter:
             "id": rid,
             "title": _display_title(data),
             "data": data,
+            "pdf_pages": _normalize_pdf_pages(body.pdf_pages),
             "created_by": str(current.get("username") or ""),
             "created_at": now,
             "updated_at": now,
@@ -88,6 +96,7 @@ def build_router(db, deps) -> APIRouter:
             {"$set": {
                 "data": data,
                 "title": _display_title(data),
+                "pdf_pages": _normalize_pdf_pages(body.pdf_pages),
                 "updated_at": datetime.now(timezone.utc),
                 "updated_by": str(current.get("username") or ""),
             }},
@@ -100,14 +109,16 @@ def build_router(db, deps) -> APIRouter:
         if not existing:
             raise HTTPException(404, "Report non trovato")
         data = {**(existing.get("data") or {}), **(body.data or {})}
-        if not data.get("firma_cliente") or not data.get("firma_tecnico"):
-            raise HTTPException(400, "Sono necessarie la firma del cliente e del tecnico")
-
+        pdf_pages = _normalize_pdf_pages(body.pdf_pages)
         folder = UPLOAD_ROOT / "standalone" / report_id
         folder.mkdir(parents=True, exist_ok=True)
         filename = "Report_pre_post_installazione.pdf"
         out = folder / filename
-        _render_pdf(data, out)
+        _render_pdf(data, out, page_numbers=(2, 3) if pdf_pages == "2-3" else (1, 2, 3))
+        gridfs_id = await persistent_files.replace_bytes(
+            db, existing.get("gridfs_id"), out.read_bytes(), filename, "application/pdf",
+            metadata={"resource": "report_liberi", "record_id": report_id, "category": "Report installazione libero"},
+        )
 
         now = datetime.now(timezone.utc)
         existing_id = existing.get("generated_document_id")
@@ -125,8 +136,10 @@ def build_router(db, deps) -> APIRouter:
                 "stored_path": str(out),
                 "content_type": "application/pdf",
                 "size": out.stat().st_size,
+                "gridfs_id": gridfs_id,
+                "storage": "gridfs",
                 "category": "Report installazione libero",
-                "note": "Report pre e post installazione firmato, non collegato a installazione",
+                "note": "Report pre e post installazione, non collegato a installazione",
                 "updated_at": now,
                 "updated_by": current.get("username"),
             }})
@@ -141,8 +154,10 @@ def build_router(db, deps) -> APIRouter:
                 "stored_path": str(out),
                 "content_type": "application/pdf",
                 "size": out.stat().st_size,
+                "gridfs_id": gridfs_id,
+                "storage": "gridfs",
                 "category": "Report installazione libero",
-                "note": "Report pre e post installazione firmato, non collegato a installazione",
+                "note": "Report pre e post installazione, non collegato a installazione",
                 "created_at": now,
                 "created_by": current.get("username"),
             })
@@ -153,10 +168,11 @@ def build_router(db, deps) -> APIRouter:
             "title": _display_title(data),
             "generated_document_id": doc_id,
             "pdf_path": str(out),
+            "pdf_pages": pdf_pages,
             "updated_at": now,
             "updated_by": str(current.get("username") or ""),
         }})
-        return {"ok": True, "id": report_id, "document_id": doc_id, "updated_existing": updated_existing}
+        return {"ok": True, "id": report_id, "document_id": doc_id, "updated_existing": updated_existing, "pdf_pages": pdf_pages}
 
     @router.get("/{report_id}/pdf")
     async def get_pdf(report_id: str, current=Depends(dep)):
@@ -164,6 +180,11 @@ def build_router(db, deps) -> APIRouter:
         if not doc:
             raise HTTPException(404, "Report non trovato")
         path = Path(doc.get("pdf_path") or "")
+        if not path.exists() and doc.get("gridfs_id"):
+            try:
+                path = await persistent_files.ensure_local(db, doc.get("gridfs_id"), path)
+            except FileNotFoundError:
+                pass
         if not path.exists():
             raise HTTPException(404, "PDF non ancora generato")
         return FileResponse(path, media_type="application/pdf", filename="Report_pre_post_installazione.pdf")
@@ -179,6 +200,7 @@ def build_router(db, deps) -> APIRouter:
                 pdf_path.unlink()
             except OSError:
                 pass
+        await persistent_files.delete_bytes(db, doc.get("gridfs_id"))
         document_id = doc.get("generated_document_id")
         if document_id:
             await db.documents.delete_one({"id": document_id})

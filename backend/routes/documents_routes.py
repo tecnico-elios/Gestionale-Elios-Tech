@@ -17,13 +17,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 import auth as auth_mod
+import persistent_files
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 UPLOAD_ROOT = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESOURCE_MAP = {
-    "lead": ("crm_lead", "lead"),
     "clienti": ("crm_clienti", "ordini_clienti"),
     "contatti": ("crm_contatti", "ordini_clienti"),
     "sedi": ("crm_sedi", "ordini_clienti"),
@@ -111,6 +111,11 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         if not doc:
             raise HTTPException(404, "Documento non trovato")
         path = Path(doc.get("stored_path") or "")
+        if not path.exists() and doc.get("gridfs_id"):
+            try:
+                path = await persistent_files.ensure_local(db, doc.get("gridfs_id"), path)
+            except FileNotFoundError:
+                pass
         if not path.exists():
             raise HTTPException(404, "File non disponibile sul server")
         # Il ticket resta valido per 2 minuti: permette al browser di effettuare richieste
@@ -132,6 +137,11 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             raise HTTPException(404, "Documento non trovato")
         await _check(doc.get("resource"), doc.get("record_id"), current, "view")
         path = Path(doc.get("stored_path") or "")
+        if not path.exists() and doc.get("gridfs_id"):
+            try:
+                path = await persistent_files.ensure_local(db, doc.get("gridfs_id"), path)
+            except FileNotFoundError:
+                pass
         if not path.exists():
             raise HTTPException(404, "File non disponibile sul server")
         return FileResponse(
@@ -147,6 +157,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             raise HTTPException(404, "Documento non trovato")
         await _check(doc.get("resource"), doc.get("record_id"), current, "delete")
         path = Path(doc.get("stored_path") or "")
+        await persistent_files.delete_bytes(db, doc.get("gridfs_id"))
         await db.documents.delete_one({"id": document_id})
         if path.exists():
             try:
@@ -196,6 +207,14 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             if stored.exists():
                 stored.unlink(missing_ok=True)
             raise
+        try:
+            gridfs_id = await persistent_files.store_bytes(
+                db, stored.read_bytes(), filename, file.content_type or "application/octet-stream",
+                metadata={"resource": resource, "record_id": record_id, "document_id": doc_id},
+            )
+        except Exception as exc:
+            stored.unlink(missing_ok=True)
+            raise HTTPException(500, f"Impossibile salvare il file in modo persistente: {exc}")
         now = datetime.now(timezone.utc)
         doc = {
             "id": doc_id,
@@ -203,6 +222,8 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             "record_id": record_id,
             "filename": filename,
             "stored_path": str(stored),
+            "gridfs_id": gridfs_id,
+            "storage": "gridfs",
             "content_type": file.content_type or "application/octet-stream",
             "size": total,
             "category": (category or "Documento")[:80],
