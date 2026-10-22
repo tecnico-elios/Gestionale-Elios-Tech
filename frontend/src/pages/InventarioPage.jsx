@@ -61,7 +61,7 @@ export function ProductDialog({ open, onClose, product, onSaved, warehouseId, wa
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{edit ? "Modifica prodotto" : "Nuovo prodotto"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{edit ? "Modifica prodotto" : "Aggiungi prodotto"}</DialogTitle></DialogHeader>
         <form onSubmit={save} className="space-y-4">
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2"><Label>Nome prodotto *</Label><Input className="mt-1 h-12" required value={form.name} onChange={(e) => set("name", e.target.value)} /></div>
@@ -161,7 +161,7 @@ export default function InventarioPage({ warehouseId = "elios-tech", warehouseNa
         </div>
         <div className="r52-commandbar-actions">
           <Button variant="outline" onClick={refresh} disabled={loading} className="r52-outline-button"><ArrowsClockwise size={16} className={loading ? "animate-spin" : ""} /> Aggiorna</Button>
-          {canCreate && <Button onClick={() => setDialog({ open: true, product: null })}><Plus size={18} /> Nuovo prodotto</Button>}
+          {canCreate && <Button onClick={() => setDialog({ open: true, product: null })}><Plus size={18} /> Aggiungi prodotto</Button>}
         </div>
       </div>
 

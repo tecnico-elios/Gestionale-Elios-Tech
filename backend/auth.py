@@ -32,7 +32,7 @@ PERMISSION_MODULES = [
 ]
 
 LEGACY_PERMISSIONS = {"gestione_commesse", "modifica_retroattiva"}
-SPECIAL_PERMISSIONS = {"installazioni:view_all"}
+SPECIAL_PERMISSIONS = {"installazioni:view_all", "calendar:manage_people_roles"}
 
 ROLE_ADMIN = "admin"
 ROLE_RESPONSABILE = "responsabile"
@@ -139,6 +139,11 @@ def _request_module_action(request: Request):
     elif path.startswith("/api/dashboard"):
         module = "dashboard"
     elif path.startswith("/api/calendar"):
+        # Le mutazioni di persone/calendari hanno un permesso dedicato e vengono
+        # autorizzate dalla dependency specifica della rotta. Il GET resta invece
+        # protetto dal normale permesso calendar:view.
+        if path.startswith("/api/calendar/resources") and method in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None, None
         module = "calendar"
     elif path.startswith("/api/ai"):
         module = "ai"

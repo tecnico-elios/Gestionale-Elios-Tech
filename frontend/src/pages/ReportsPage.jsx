@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { Plus, PencilSimple, Trash, FileText, Clock, CalendarBlank, SlidersHorizontal } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, FileText, Clock, CalendarBlank, SlidersHorizontal, ChartBar } from "@phosphor-icons/react";
 import { API } from "../lib/apiBase";
 import { useAuth } from "../lib/AuthContext";
 import { Button } from "../components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { appConfirm } from "../lib/appConfirm";
 
 const STANDARD_FIELDS=[
@@ -36,6 +37,24 @@ export default function ReportsPage(){
   const perPage=25,totalPages=Math.max(1,Math.ceil(filtered.length/perPage)),paged=filtered.slice((page-1)*perPage,page*perPage);
   useEffect(()=>{if(page>totalPages)setPage(totalPages)},[page,totalPages]);
   const hoursTotal=useMemo(()=>filtered.reduce((s,x)=>s+Number(x.data?.ore??x.data?.h??0),0),[filtered]);
+  // R56 — grafico generico: individua automaticamente il campo ore e la voce descrittiva.
+  const hourField=useMemo(()=>fields.find(f=>["ore","h","hours","ore_lavorate"].includes(String(f.key||"").toLowerCase()))||fields.find(f=>/(^|_|\s)(ore|hours)(_|\s|$)/i.test(`${f.key||""} ${f.label||""}`)),[fields]);
+  const groupField=useMemo(()=>{
+    const preferred=["mansione","attivita","attività","nome","categoria","categorie","tags","tipo"];
+    return fields.find(f=>f.key!==hourField?.key&&preferred.includes(String(f.key||"").toLowerCase()))||fields.find(f=>f.key!==hourField?.key&&f.showInList!==false&&["select","text"].includes(f.type));
+  },[fields,hourField]);
+  const chartData=useMemo(()=>{
+    if(!hourField)return [];
+    const totals=new Map();
+    filtered.forEach(row=>{
+      const rawHours=Number(row.data?.[hourField.key]??0);
+      if(!Number.isFinite(rawHours)||rawHours<=0)return;
+      const rawLabel=groupField?row.data?.[groupField.key]:"Totale";
+      const label=Array.isArray(rawLabel)?rawLabel.map(x=>typeof x==="object"?(x?.name||x?.label||x?.id||""):String(x)).filter(Boolean).join(", "):(typeof rawLabel==="object"?(rawLabel?.name||rawLabel?.label||rawLabel?.id||"Altro"):String(rawLabel||"Altro"));
+      totals.set(label,(totals.get(label)||0)+rawHours);
+    });
+    return Array.from(totals,([voce,ore])=>({voce,ore:Number(ore.toFixed(2))})).sort((a,b)=>b.ore-a.ore);
+  },[filtered,hourField,groupField]);
   const startNew=()=>{setEditing(null);setForm(emptyFor(fields));setOpen(true)};
   const startEdit=x=>{setEditing(x.id);setForm({...emptyFor(fields),...(x.data||{})});setOpen(true)};
   const save=async e=>{e.preventDefault();try{editing?await axios.put(`${API}/custom/${activeSlug}/${editing}`,form):await axios.post(`${API}/custom/${activeSlug}`,form);toast.success(editing?"Report aggiornato":"Report creato");setOpen(false);await loadActive(activeSlug)}catch(err){toast.error("Salvataggio non riuscito",{description:err?.response?.data?.detail||err.message})}};
@@ -46,6 +65,13 @@ export default function ReportsPage(){
     <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3"><div><div className="text-xs font-semibold tracking-[.16em] uppercase text-[#1A456B]">Amministrazione</div><h1 className="et-page-heading text-3xl sm:text-4xl">Report</h1><p className="text-sm text-slate-500 mt-1">Report giornalieri come in Notion: data, persona, mansione, ore lavorate e attività svolte. Puoi creare anche altri tipi di report.</p></div><div className="flex flex-wrap gap-2">{isAdmin&&<Button variant="outline" onClick={()=>navigate("/admin/moduli")}><SlidersHorizontal/> Personalizza report</Button>}{isAdmin&&<Button variant="outline" onClick={()=>setTypeOpen(true)}><Plus/> Nuovo tipo report</Button>}{module?.allow_create!==false&&<Button onClick={startNew}><Plus/> Nuovo report</Button>}</div></div>
 
     <div className="grid sm:grid-cols-3 gap-3"><div className="rounded-2xl border bg-white p-4 shadow-sm"><div className="text-xs uppercase font-bold text-slate-500">Tipo report</div><div className="mt-2"><select className="h-11 w-full rounded-md border px-3 font-semibold" value={activeSlug} onChange={e=>setActiveSlug(e.target.value)}>{modules.map(m=><option key={m.slug} value={m.slug}>{m.name}</option>)}</select></div></div><div className="rounded-2xl border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-xs uppercase font-bold text-slate-500"><FileText/> Report visibili</div><div className="mt-1 text-3xl font-black">{filtered.length}</div></div><div className="rounded-2xl border bg-white p-4 shadow-sm"><div className="flex items-center gap-2 text-xs uppercase font-bold text-slate-500"><Clock/> Ore totali</div><div className="mt-1 text-3xl font-black">{hoursTotal.toLocaleString("it-IT",{maximumFractionDigits:2})}</div></div></div>
+
+    {hourField && chartData.length>0 && <section className="r56-report-chart" data-r56-hours-chart>
+      <div className="r56-report-chart-head"><div><div className="r56-report-chart-kicker"><ChartBar size={15}/> Ore per voce</div><h2>Distribuzione ore</h2><p>{groupField ? `Somma delle ore per ${groupField.label || "voce"}.` : "Somma delle ore registrate."}</p></div><div className="r56-report-chart-total"><strong>{hoursTotal.toLocaleString("it-IT",{maximumFractionDigits:2})}</strong><span>ore totali</span></div></div>
+      <div style={{height:Math.max(260,chartData.length*38)}}>
+        <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} layout="vertical" margin={{top:8,right:24,bottom:8,left:8}}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number" tick={{fontSize:11}}/><YAxis type="category" dataKey="voce" width={150} tick={{fontSize:11}}/><Tooltip formatter={(v)=>[`${Number(v).toLocaleString("it-IT",{maximumFractionDigits:2})} h`,"Ore"]}/><Bar dataKey="ore" fill="#2d6ea3" radius={[0,6,6,0]}/></BarChart></ResponsiveContainer>
+      </div>
+    </section>}
 
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm"><div className="p-3 border-b flex flex-col sm:flex-row gap-2 sm:items-center"><Input value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="Cerca persona, mansione, attività, note…" className="h-11 sm:max-w-xl"/><div className="sm:ml-auto text-sm text-slate-500">Pagina {page} di {totalPages}</div></div>{loading?<div className="p-12 text-center text-slate-500">Caricamento…</div>:!module?<div className="p-12 text-center"><FileText size={36} className="mx-auto text-slate-300"/><div className="font-bold mt-3">Nessun tipo di report disponibile</div>{isAdmin&&<Button className="mt-3" onClick={()=>setTypeOpen(true)}>Crea il primo report</Button>}</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50"><tr>{cols.map(f=><th key={f.key} className="text-left p-3 whitespace-nowrap">{f.label}</th>)}<th className="p-3 text-right">Azioni</th></tr></thead><tbody>{paged.map(x=><tr key={x.id} className="border-t hover:bg-slate-50">{cols.map(f=><td key={f.key} className="p-3 align-top">{labelValue(x.data?.[f.key],f)}</td>)}<td className="p-2"><div className="flex justify-end">{module.allow_edit!==false&&<Button variant="ghost" size="icon" onClick={()=>startEdit(x)}><PencilSimple/></Button>}{module.allow_delete!==false&&<Button variant="ghost" size="icon" className="text-red-600" onClick={()=>remove(x)}><Trash/></Button>}</div></td></tr>)}{!paged.length&&<tr><td colSpan={cols.length+1} className="p-10 text-center text-slate-500">Nessun report.</td></tr>}</tbody></table></div>}<div className="border-t p-3 flex justify-between items-center"><Button variant="outline" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Precedente</Button><span className="text-sm text-slate-500">{filtered.length} record</span><Button variant="outline" disabled={page>=totalPages} onClick={()=>setPage(p=>p+1)}>Successiva</Button></div></div>
 

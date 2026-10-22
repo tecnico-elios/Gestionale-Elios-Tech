@@ -25,7 +25,7 @@ const SECTION_META = [
 const NATIVE_ITEMS = [
   { key: "dashboard", to: "/dashboard", label: "Dashboard", icon: House, testid: "nav-dashboard", module: "dashboard", section: "principale", order: 10 },
   { key: "calendar", to: "/calendario", label: "Calendario", icon: CalendarBlank, testid: "nav-calendar", module: "calendar", section: "principale", order: 20 },
-  { key: "ordini_clienti", to: "/clienti-ordini", label: "Clienti / Ordini", icon: ShoppingCart, testid: "nav-elios-tech-ordini", module: "ordini_clienti", section: "amministrazione", order: 10 },
+  { key: "ordini_clienti", to: "/clienti-ordini", label: "Clienti e ordini", icon: ShoppingCart, testid: "nav-elios-tech-ordini", module: "ordini_clienti", section: "amministrazione", order: 10 },
   { key: "commesse", to: "/commesse", label: "Commesse", icon: Wrench, testid: "nav-commesse", module: "commesse", section: "amministrazione", order: 20 },
   { key: "fatturato", to: "/fatturato", label: "Fatturato", icon: ChartBar, testid: "nav-fatturato", module: "commesse", section: "amministrazione", order: 30 },
   { key: "wallbox", to: "/wallbox", label: "Wallbox", icon: Lightning, testid: "nav-wallbox", module: "commesse", section: "amministrazione", order: 40 },
@@ -33,6 +33,8 @@ const NATIVE_ITEMS = [
   { key: "sopralluoghi", to: "/sopralluoghi", label: "Sopralluoghi", icon: ClipboardText, testid: "nav-sopralluoghi", module: "sopralluoghi", section: "tecnico", order: 10 },
   { key: "preventivi", to: "/preventivi", label: "Preventivi", icon: FileText, testid: "nav-preventivi", module: "preventivi", section: "tecnico", order: 20 },
   { key: "installazioni", to: "/installazioni", label: "Installazioni", icon: Wrench, testid: "nav-installazioni", module: "installazioni", section: "tecnico", order: 30 },
+  { key: "report_liberi", to: "/report-liberi", label: "Report", icon: FileText, testid: "nav-report-liberi", module: "installazioni", section: "tecnico", order: 35 },
+  { key: "interventi_tecnici", to: "/interventi-tecnici", label: "Interventi tecnici", icon: Wrench, testid: "nav-interventi-tecnici", module: "installazioni", section: "tecnico", order: 35 },
   { key: "assistenza", to: "/assistenza", label: "Assistenza", icon: Headset, testid: "nav-assistenza", module: "assistenza", section: "tecnico", order: 40 },
   { key: "inventario", to: "/inventario", label: "Magazzino Elios Tech", icon: Package, testid: "nav-inventario", module: "inventario", section: "gestione", order: 10 },
   { key: "magazzino_verona", to: "/magazzino-verona", label: "Magazzino Verona", icon: Package, testid: "nav-magazzino-verona", module: "inventario", section: "gestione", order: 20 },
@@ -41,33 +43,34 @@ const NATIVE_ITEMS = [
   { key: "spedizioni", to: "/spedizioni", label: "Spedizioni", icon: Package, testid: "nav-spedizioni", module: "spedizioni", section: "gestione", order: 50 },
   { key: "movimenti", to: "/movimenti", label: "Movimenti", icon: ArrowsClockwise, testid: "nav-movimenti", module: "movimenti", section: "gestione", order: 60 },
   { key: "anomalie", to: "/anomalie", label: "Anomalie", icon: Warning, testid: "nav-anomalie", module: "anomalie", section: "gestione", order: 70 },
-  { key: "ai", to: "/assistente-ai", label: "Assistente AI", icon: Robot, testid: "nav-ai", module: "ai", section: "sistema", order: 10 },
+  { key: "ai", to: "/assistente-ai", label: "Assistente", icon: Robot, testid: "nav-ai", module: "ai", section: "sistema", order: 10 },
 ];
 
 const PAGE_META = {
-  "/dashboard": { section: "principale", eyebrow: "Operativo", icon: House, description: "Situazione generale del gestionale, attività da gestire e indicatori principali." },
-  "/calendario": { section: "principale", eyebrow: "Operativo", icon: CalendarBlank, description: "Agenda condivisa di installazioni, sopralluoghi, assistenze e attività interne." },
-  "/clienti-ordini": { section: "amministrazione", eyebrow: "Amministrazione", icon: ShoppingCart, description: "Anagrafica clienti, ordini, dati commerciali e storico in un'unica vista ordinata." },
-  "/commesse": { section: "amministrazione", eyebrow: "Amministrazione", icon: Wrench, description: "Gestione completa delle commesse, materiali, servizi, avanzamento e collegamenti operativi." },
-  "/fatturato": { section: "amministrazione", eyebrow: "Amministrazione", icon: ChartBar, description: "Lettura sintetica del fatturato e dell'andamento economico delle commesse." },
-  "/wallbox": { section: "amministrazione", eyebrow: "Amministrazione", icon: Lightning, description: "Analisi delle wallbox gestite, quantità e distribuzione per attività e commessa." },
-  "/report": { section: "amministrazione", eyebrow: "Amministrazione", icon: FileText, description: "Report operativi e riepiloghi esportabili del lavoro svolto." },
-  "/sopralluoghi": { section: "tecnico", eyebrow: "Tecnico", icon: ClipboardText, description: "Pianificazione e gestione dei sopralluoghi con cliente, sede, note e stato." },
-  "/preventivi": { section: "tecnico", eyebrow: "Tecnico", icon: FileText, description: "Creazione, revisione e gestione dei preventivi collegati a clienti e commesse." },
-  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Programmazione degli interventi, tecnici assegnati, attività e avanzamento installazioni." },
-  "/assistenza": { section: "tecnico", eyebrow: "Tecnico", icon: Headset, description: "Richieste di assistenza, interventi, assegnazioni e storico tecnico." },
-  "/inventario": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Disponibilità, articoli, seriali e giacenze del Magazzino Elios Tech." },
-  "/magazzino-verona": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Disponibilità, articoli, seriali e giacenze del Magazzino Verona." },
-  "/trasferimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsLeftRight, description: "Trasferimenti di materiale tra le sedi con quantità, seriali e tracciabilità." },
-  "/arrivi": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Registrazione degli arrivi a magazzino e aggiornamento delle disponibilità." },
-  "/spedizioni": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Preparazione e controllo delle spedizioni collegate a clienti e commesse." },
-  "/movimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Storico dei movimenti di magazzino e tracciamento delle variazioni." },
-  "/anomalie": { section: "gestione", eyebrow: "Gestione", icon: Warning, description: "Anomalie da verificare e situazioni che richiedono attenzione operativa." },
-  "/assistente-ai": { section: "sistema", eyebrow: "Sistema", icon: Robot, description: "Assistente interno per consultare e interpretare i dati del gestionale." },
-  "/admin": { section: "sistema", eyebrow: "Sistema", icon: Gear, description: "Configurazione generale del gestionale e delle preferenze aziendali." },
-  "/admin/utenti": { section: "sistema", eyebrow: "Sistema", icon: UsersThree, description: "Gestione utenti, ruoli, autorizzazioni e accessi al gestionale." },
-  "/admin/moduli": { section: "sistema", eyebrow: "Sistema", icon: SlidersHorizontal, description: "Creazione e configurazione dei moduli personalizzati del gestionale." },
-  "/admin/migrazione-notion": { section: "sistema", eyebrow: "Sistema", icon: Database, description: "Migrazione una tantum dei dati legacy verso il database autonomo del gestionale." },
+  "/dashboard": { section: "principale", eyebrow: "Operativo", icon: House, description: "Attività, scadenze e dati principali." },
+  "/calendario": { section: "principale", eyebrow: "Operativo", icon: CalendarBlank, description: "Settimana operativa: interventi, sopralluoghi e assistenze." },
+  "/clienti-ordini": { section: "amministrazione", eyebrow: "Amministrazione", icon: ShoppingCart, description: "Clienti e ordini, dal più recente." },
+  "/commesse": { section: "amministrazione", eyebrow: "Amministrazione", icon: Wrench, description: "Commesse attive, materiali e avanzamento." },
+  "/fatturato": { section: "amministrazione", eyebrow: "Amministrazione", icon: ChartBar, description: "Valore delle commesse per periodo." },
+  "/wallbox": { section: "amministrazione", eyebrow: "Amministrazione", icon: Lightning, description: "Wallbox gestite e installate." },
+  "/report": { section: "amministrazione", eyebrow: "Amministrazione", icon: FileText, description: "Riepiloghi ed esportazioni delle attività." },
+  "/sopralluoghi": { section: "tecnico", eyebrow: "Tecnico", icon: ClipboardText, description: "Sopralluoghi programmati e completati." },
+  "/preventivi": { section: "tecnico", eyebrow: "Tecnico", icon: FileText, description: "Preventivi, revisioni e stato." },
+  "/installazioni": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Installazioni ENRICO e RICCARDO, programmate e completate." },
+  "/interventi-tecnici": { section: "tecnico", eyebrow: "Tecnico", icon: Wrench, description: "Interventi tecnici di RICCARDO, storici e futuri, separati dalle installazioni." },
+  "/assistenza": { section: "tecnico", eyebrow: "Tecnico", icon: Headset, description: "Richieste e interventi di assistenza." },
+  "/inventario": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Giacenze e seriali · sede Elios Tech." },
+  "/magazzino-verona": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Giacenze e seriali · sede Verona." },
+  "/trasferimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsLeftRight, description: "Spostamenti tra Elios Tech e Verona." },
+  "/arrivi": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Materiale ricevuto e caricato a magazzino." },
+  "/spedizioni": { section: "gestione", eyebrow: "Gestione", icon: Package, description: "Materiale in uscita verso clienti e commesse." },
+  "/movimenti": { section: "gestione", eyebrow: "Gestione", icon: ArrowsClockwise, description: "Storico di carichi, scarichi e rettifiche." },
+  "/anomalie": { section: "gestione", eyebrow: "Gestione", icon: Warning, description: "Segnalazioni da controllare." },
+  "/assistente-ai": { section: "sistema", eyebrow: "Sistema", icon: Robot, description: "Consulta i dati del gestionale." },
+  "/admin": { section: "sistema", eyebrow: "Sistema", icon: Gear, description: "Preferenze generali e comportamento del sistema." },
+  "/admin/utenti": { section: "sistema", eyebrow: "Sistema", icon: UsersThree, description: "Utenti, ruoli e accessi." },
+  "/admin/moduli": { section: "sistema", eyebrow: "Sistema", icon: SlidersHorizontal, description: "Pagine, campi e moduli personalizzati." },
+  "/admin/migrazione-notion": { section: "sistema", eyebrow: "Sistema", icon: Database, description: "Importazione una tantum dei dati storici." },
 };
 
 function SidebarLink({ item, onNavigate }) {
@@ -116,6 +119,7 @@ export default function AppLayout() {
   const [navigationConfig, setNavigationConfig] = useState([]);
   const [generalSettings, setGeneralSettings] = useState({ app_name: "Gestionale Elios Tech", company_name: "Elios Tech S.r.l." });
   const [sectionResetKey, setSectionResetKey] = useState(0);
+  const [notionFinalized, setNotionFinalized] = useState(false);
 
   const loadGeneralSettings = async () => {
     try {
@@ -153,6 +157,21 @@ export default function AppLayout() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!isAdmin) { setNotionFinalized(false); return undefined; }
+    let active = true;
+    const loadNotionState = async () => {
+      try {
+        const { data } = await axios.get(`${API}/admin/notion/config`);
+        if (active) setNotionFinalized(!!data?.completed);
+      } catch (_) {}
+    };
+    loadNotionState();
+    const onFinalized = () => loadNotionState();
+    window.addEventListener("elios:notion-finalized", onFinalized);
+    return () => { active = false; window.removeEventListener("elios:notion-finalized", onFinalized); };
+  }, [isAdmin]);
+
   const navSettings = useMemo(() => Object.fromEntries((navigationConfig || []).map((x) => [x.key, x])), [navigationConfig]);
   const configuredNativeItems = useMemo(() => NATIVE_ITEMS.map((item) => {
     const cfg = navSettings[item.key] || {};
@@ -170,9 +189,9 @@ export default function AppLayout() {
 
   const systemExtra = isAdmin ? [
     { to: "/admin", label: "Impostazioni", icon: Gear, testid: "nav-admin", order: 900 },
-    { to: "/admin/utenti", label: "Utenti e permessi", icon: UsersThree, testid: "nav-admin-users", order: 910 },
-    { to: "/admin/moduli", label: "Costruttore gestionale", icon: SlidersHorizontal, testid: "nav-module-builder", order: 920 },
-    { to: "/admin/migrazione-notion", label: "Importazione da Notion", icon: Database, testid: "nav-notion-migration", order: 930 },
+    { to: "/admin/utenti", label: "Utenti e accessi", icon: UsersThree, testid: "nav-admin-users", order: 910 },
+    { to: "/admin/moduli", label: "Struttura gestionale", icon: SlidersHorizontal, testid: "nav-module-builder", order: 920 },
+    ...(!notionFinalized ? [{ to: "/admin/migrazione-notion", label: "Importazione da Notion", icon: Database, testid: "nav-notion-migration", order: 930 }] : []),
   ] : [];
 
   const sectionItems = (sectionKey) => {
@@ -227,7 +246,7 @@ export default function AppLayout() {
   const appName = generalSettings.app_name || "Gestionale Elios Tech";
   const currentNative = configuredNativeItems.find((i) => location.pathname === i.to || location.pathname.startsWith(`${i.to}/`));
   const currentCustom = customModules.find((m) => location.pathname.startsWith(`/moduli/${m.slug}`));
-  const currentTitle = location.pathname.startsWith("/admin/migrazione-notion") ? "Importazione da Notion" : location.pathname.startsWith("/admin/moduli") ? "Costruttore gestionale" : location.pathname.startsWith("/admin/utenti") ? "Utenti e permessi" : location.pathname === "/admin" ? "Impostazioni" : currentCustom?.name || currentNative?.label || "Gestionale";
+  const currentTitle = location.pathname.startsWith("/admin/migrazione-notion") ? "Importazione da Notion" : location.pathname.startsWith("/admin/moduli") ? "Struttura gestionale" : location.pathname.startsWith("/admin/utenti") ? "Utenti e accessi" : location.pathname === "/admin" ? "Impostazioni" : currentCustom?.name || currentNative?.label || "Gestionale";
   const pageMeta = PAGE_META[location.pathname] || {
     section: currentCustom?.section === "commerciale" ? "amministrazione" : (currentCustom?.section || currentNative?.section || "amministrazione"),
     eyebrow: currentCustom ? "Modulo gestionale" : "Gestionale",
@@ -242,7 +261,7 @@ export default function AppLayout() {
 
   return (
     <div className="et-app-shell" data-testid="app-layout">
-      <header className="et-topbar">
+      <header className={`et-topbar r55-topbar r55-section-${currentSection}`}>
         <div className="h-full px-3 sm:px-5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <button type="button" onClick={() => setSidebarOpen((v) => !v)} className="et-icon-btn-dark" aria-label={sidebarOpen ? "Chiudi menu" : "Apri menu"}>
@@ -255,9 +274,15 @@ export default function AppLayout() {
                 <span className="block text-sm font-extrabold text-white truncate max-w-[245px]">{appName}</span>
               </span>
             </button>
-            <div className="hidden xl:flex items-center gap-2 ml-3 pl-4 border-l border-white/10 min-w-0">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,.12)]" />
-              <span className="text-xs text-slate-300 truncate">{currentTitle}</span>
+            <div className="r55-topbar-page" data-r55-page-header>
+              <div className="r55-topbar-page-icon"><CurrentPageIcon size={20} weight="duotone" /></div>
+              <div className="r55-topbar-page-copy">
+                <div className="r55-topbar-page-meta"><span className="r55-local-dot" />{pageMeta.eyebrow}</div>
+                <div className="r55-topbar-page-row">
+                  <span className="r55-topbar-page-title">{currentTitle}</span>
+                  <span className="r55-topbar-page-description">{pageMeta.description}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -299,25 +324,12 @@ export default function AppLayout() {
             })}
           </div>
           <div className="et-sidebar-footer">
-            <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Database gestionale locale</div>
+            <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Dati locali</div>
             {refreshedAt && <div className="mt-1 text-[10px] text-slate-500">Aggiornato alle <span className="text-slate-300">{fmtTime(refreshedAt)}</span></div>}
           </div>
         </aside>
 
         <main className={`et-main-content r52-main-shell r52-section-${currentSection} ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}>
-          <section className="r52-page-banner" aria-label={`Sezione ${currentTitle}`}>
-            <div className="r52-page-banner-inner">
-              <div className="r52-page-identity">
-                <div className="r52-page-icon"><CurrentPageIcon size={27} weight="duotone" /></div>
-                <div className="min-w-0">
-                  <div className="r52-page-kicker">{pageMeta.eyebrow}</div>
-                  <h1 className="r52-page-title">{currentTitle}</h1>
-                  <p className="r52-page-subtitle">{pageMeta.description}</p>
-                </div>
-              </div>
-              <div className="r52-page-state"><span className="r52-page-state-dot" /> Database gestionale locale</div>
-            </div>
-          </section>
           <div className={`et-page-host r52-page-host r52-route-${routeToken}`} data-r52-route={routeToken}>
             <Outlet key={`${location.pathname}:${sectionResetKey}`} />
           </div>

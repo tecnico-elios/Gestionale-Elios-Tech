@@ -22,12 +22,12 @@ const EMPTY_FORM = {
 
 const SOURCE_FIELDS = [
   ["inventario_ds_id", "Inventario Elios Tech"],
-  ["ordini_ds_id", "Clienti / Ordini"],
-  ["receipts_ds_id", "Entrate / Arrivi Elios Tech"],
-  ["tracker_ds_id", "Uscite / Spedizioni Elios Tech"],
+  ["ordini_ds_id", "Clienti e ordini"],
+  ["receipts_ds_id", "Entrate / Arrivi / Consegne in entrata Elios Tech"],
+  ["tracker_ds_id", "Uscite / Spedizioni / Consegne in uscita Elios Tech"],
   ["verona_inventario_ds_id", "Inventario Verona"],
-  ["verona_receipts_ds_id", "Entrate Verona"],
-  ["verona_tracker_ds_id", "Uscite Verona"],
+  ["verona_receipts_ds_id", "Entrate / Consegne in entrata Verona"],
+  ["verona_tracker_ds_id", "Uscite / Consegne in uscita Verona"],
 ];
 
 function messageFromError(error) {
@@ -152,19 +152,27 @@ export default function NotionMigrationPage() {
     setBusy("import");
     setResult(null);
     setProgress({ state: "running", phase: "Avvio", percent: 1, processed: 0, message: "Preparazione importazione" });
-    startPolling();
     try {
-      const { data } = await axios.post(`${API}/admin/notion/import-all`, {}, { timeout: 30 * 60 * 1000 });
-      setResult(data);
-      await readProgress();
+      await axios.post(`${API}/admin/notion/import-all/start`, {});
+      let finalStatus = null;
+      for (let attempt = 0; attempt < 2400; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        const status = await readProgress();
+        if (!status) continue;
+        if (status.state === "completed") { finalStatus = status; break; }
+        if (status.state === "error") throw new Error(status.message || "Migrazione Notion interrotta");
+      }
+      if (!finalStatus) throw new Error("La migrazione è ancora in corso sul server. Puoi riaprire questa pagina per verificarne lo stato.");
+      setResult(finalStatus.result || null);
       await load();
       window.dispatchEvent(new Event("elios:custom-modules-changed"));
       window.dispatchEvent(new Event("elios:navigation-changed"));
       window.dispatchEvent(new Event("elios:refresh-dashboard"));
       toast.success("Importazione completa terminata");
     } catch (e) {
-      setProgress((p) => ({ ...(p || {}), state: "error", message: messageFromError(e) }));
-      toast.error("Importazione completa fallita", { description: messageFromError(e) });
+      const current = await readProgress();
+      if (current?.state !== "running" && current?.state !== "queued") setProgress((p) => ({ ...(p || {}), state: "error", message: messageFromError(e) }));
+      toast.error(current?.state === "running" || current?.state === "queued" ? "La migrazione continua sul server" : "Importazione completa fallita", { description: messageFromError(e) });
     } finally {
       stopPolling();
       setBusy("");
@@ -183,6 +191,7 @@ export default function NotionMigrationPage() {
       setPreview(null);
       setResult(null);
       await load();
+      window.dispatchEvent(new Event("elios:notion-finalized"));
     } catch (e) {
       toast.error("Conferma finale non riuscita", { description: messageFromError(e) });
     } finally { setBusy(""); }
@@ -228,7 +237,7 @@ export default function NotionMigrationPage() {
   if (cfg.completed) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        <div><div className="text-xs font-semibold tracking-[.16em] uppercase text-emerald-700">Migrazione completata</div><h1 className="text-3xl font-black text-slate-900 mt-1">Importazione Notion</h1></div>
+        <div><div className="text-xs font-semibold tracking-[.16em] uppercase text-emerald-700">Migrazione completata</div><h1 className="text-3xl font-black text-slate-900 mt-1">Importa da Notion</h1></div>
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
           <div className="flex gap-3"><CheckCircle size={28} weight="fill" className="text-emerald-600 shrink-0" /><div><h2 className="font-black text-emerald-950 text-lg">Gestionale autonomo</h2><p className="text-sm text-emerald-900 mt-1">La migrazione è stata confermata e le credenziali Notion sono state rimosse. Da questo momento i dati operativi vengono gestiti nel database interno.</p></div></div>
         </section>
@@ -268,7 +277,7 @@ export default function NotionMigrationPage() {
         {result && <div className="space-y-3"><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{summary.map(([label, value]) => <Stat key={label} label={label} value={value} />)}</div>{importErrors.length > 0 ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="font-bold text-amber-900">Elementi da verificare: {importErrors.length}</div><div className="text-xs text-amber-800 mt-2 space-y-1 max-h-44 overflow-y-auto">{importErrors.slice(0, 50).map((e, i) => <div key={i}>• {e?.source ? `${e.source}: ` : ""}{e?.error || JSON.stringify(e)}</div>)}</div></div> : <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><b>Nessun errore segnalato dall'archivio universale.</b></div>}</div>}
       </section>
 
-      {cfg.import_ready && <section className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle size={26} weight="fill" className="text-emerald-600 shrink-0" /><div className="flex-1"><h2 className="font-black text-emerald-950">4. Verifica finale e autonomia</h2><p className="text-sm text-emerald-900 mt-1">L'importazione è terminata. Controlla Clienti / Ordini, Commesse, Fatturato, Wallbox, Report, magazzini e documenti. Solo dopo questa verifica conferma la chiusura definitiva della migrazione.</p><Button className="mt-3" onClick={() => setFinalizeOpen(true)}>Conferma migrazione e scollega Notion</Button></div></div></section>}
+      {cfg.import_ready && <section className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle size={26} weight="fill" className="text-emerald-600 shrink-0" /><div className="flex-1"><h2 className="font-black text-emerald-950">4. Verifica finale e autonomia</h2><p className="text-sm text-emerald-900 mt-1">L'importazione è terminata. Controlla Clienti e ordini, Commesse, Fatturato, Wallbox, Report, magazzini e documenti. Solo dopo questa verifica conferma la chiusura definitiva della migrazione.</p><Button className="mt-3" onClick={() => setFinalizeOpen(true)}>Conferma migrazione e scollega Notion</Button></div></div></section>}
 
       <Dialog open={finalizeOpen} onOpenChange={(v) => { setFinalizeOpen(v); if (!v) { setFinalizeText(""); setFinalizePassword(""); } }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Conferma chiusura migrazione</DialogTitle></DialogHeader><div className="space-y-4"><div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Questa azione rimuove le credenziali Notion dal gestionale. I dati già importati restano nel database interno e Notion non viene modificato.</div><div><Label>Digita CONFERMA MIGRAZIONE</Label><Input className="mt-1" value={finalizeText} onChange={(e) => setFinalizeText(e.target.value)} /></div><div><Label>Password amministratore</Label><Input type="password" className="mt-1" value={finalizePassword} onChange={(e) => setFinalizePassword(e.target.value)} autoComplete="current-password" /></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setFinalizeOpen(false)} disabled={busy === "finalize"}>Annulla</Button><Button onClick={finalize} disabled={busy === "finalize" || !finalizePassword || finalizeText.trim().toUpperCase() !== "CONFERMA MIGRAZIONE"}>{busy === "finalize" ? "Conferma in corso…" : "Conferma e scollega"}</Button></div></div></DialogContent></Dialog>
     </div>

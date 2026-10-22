@@ -47,8 +47,8 @@ const CATEGORIES = [
   { key: "warehouse", label: "Magazzino e scanner", icon: Package, desc: "Scorte, ricerca, scanner e movimenti" },
   { key: "operations", label: "Flusso operativo", icon: Wrench, desc: "Arrivi, spedizioni e automazioni" },
   { key: "notifications", label: "Notifiche", icon: Bell, desc: "Email, eventi e destinatari" },
-  { key: "ai", label: "Assistente AI", icon: Brain, desc: "Attivazione, provider e comportamento" },
-  { key: "data", label: "Dati e backup", icon: Database, desc: "Importazione, export e copie di sicurezza" },
+  { key: "ai", label: "Assistente", icon: Brain, desc: "Attivazione, provider e comportamento" },
+  { key: "data", label: "Dati e backup", icon: Database, desc: "Export, copie di sicurezza e pulizia dati" },
   { key: "system", label: "Sistema, log e audit", icon: Pulse, desc: "Diagnostica, log, audit e manutenzione" },
 ];
 
@@ -114,7 +114,7 @@ function GeneralPane() {
       };
       setS((await axios.put(`${API}/admin/settings`, payload)).data);
       window.dispatchEvent(new Event("elios:settings-changed"));
-      toast.success("Impostazioni generali salvate");
+      toast.success("Generale salvate");
     } catch (e) { toast.error("Salvataggio fallito", { description: formatError(e) }); }
     finally { setSaving(false); }
   };
@@ -142,7 +142,7 @@ function GeneralPane() {
 function UsersSecurityPane() {
   return (
     <div className="space-y-5">
-      <SectionCard title="Utenti e permessi" right={<Link to="/admin/utenti" className="inline-flex h-10 items-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white">Gestisci utenti</Link>}>
+      <SectionCard title="Utenti e accessi" right={<Link to="/admin/utenti" className="inline-flex h-10 items-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white">Gestisci utenti</Link>}>
         <div className="text-sm text-slate-500">Account attivi e permessi</div>
       </SectionCard>
       <SectionCard title="Sicurezza accessi" description="Durata sessione, inattività, tentativi di accesso e blocco temporaneo."><SettingsTab filter={["sicurezza"]} /></SectionCard>
@@ -190,7 +190,7 @@ function AIPane() {
       } catch (providerError) {
         toast.warning("Impostazioni AI salvate, ma il provider non è stato aggiornato", { description: formatError(providerError) });
       }
-      toast.success(settings.enabled ? "Assistente AI attivato" : "Impostazioni AI salvate");
+      toast.success(settings.enabled ? "Assistente attivato" : "Impostazioni AI salvate");
       await load();
     } catch (e) { toast.error("Salvataggio AI fallito", { description: formatError(e) }); }
     finally { setSaving(false); }
@@ -204,9 +204,9 @@ function AIPane() {
   const upd = (p) => setSettings((s) => ({ ...s, ...p }));
   return (
     <div className="space-y-5">
-      <SectionCard title="Stato Assistente AI" description="Attiva o disattiva l'Assistente AI. Le modifiche diventano effettive quando premi “Salva Assistente AI”." right={<StatusPill ok={config.configured} label={config.configured ? "Provider configurato" : "Da configurare"} />}>
-        <ToggleRow label="Attiva Assistente AI" hint="Quando disattivato nessuna richiesta viene inviata al provider." checked={!!settings.enabled} onChange={(v) => upd({ enabled: v })} />
-        {settings.enabled && !config.configured && <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">L'Assistente AI può essere attivato, ma per usarlo devi configurare una API key valida nella sezione Provider AI.</div>}
+      <SectionCard title="Stato Assistente" description="Attiva o disattiva l'Assistente. Le modifiche diventano effettive quando premi “Salva Assistente”." right={<StatusPill ok={config.configured} label={config.configured ? "Provider configurato" : "Da configurare"} />}>
+        <ToggleRow label="Attiva Assistente" hint="Quando disattivato nessuna richiesta viene inviata al provider." checked={!!settings.enabled} onChange={(v) => upd({ enabled: v })} />
+        {settings.enabled && !config.configured && <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">L'Assistente può essere attivato, ma per usarlo devi configurare una API key valida nella sezione Provider AI.</div>}
         <div className="grid md:grid-cols-2 gap-4 pt-4">
           <div><Label>Modalità</Label><select className="mt-1 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" value={settings.mode || "consultation"} onChange={(e) => upd({ mode: e.target.value, ...(e.target.value !== "full_operational" ? { auto_execute: false } : {}) })}><option value="consultation">Solo consultazione</option><option value="operational">Operativa con conferma</option><option value="full_operational">Operativa completa</option></select></div>
           <div><Label>Limite giornaliero per utente</Label><Input type="number" min="0" max="10000" className="mt-1 h-11" value={settings.daily_limit ?? 20} onChange={(e) => upd({ daily_limit: Number(e.target.value) })} /></div>
@@ -223,7 +223,7 @@ function AIPane() {
           <div className="md:col-span-2"><Label>API key</Label><Input type="password" className="mt-1 h-11" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config.api_key_configured ? `Configurata: ${config.api_key_masked}` : "Inserisci API key"} /><p className="text-xs text-slate-500 mt-1">Lascia vuoto per mantenere la chiave già salvata.</p></div>
         </div>
       </SectionCard>
-      <div className="flex justify-end"><Button onClick={save} disabled={saving} className="h-11 et-btn-primary">{saving ? "Salvataggio…" : "Salva Assistente AI"}</Button></div>
+      <div className="flex justify-end"><Button onClick={save} disabled={saving} className="h-11 et-btn-primary">{saving ? "Salvataggio…" : "Salva Assistente"}</Button></div>
     </div>
   );
 }
@@ -533,7 +533,7 @@ function NotionMigrationPane() {
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500"><span>Record/pagine elaborati: <b className="text-slate-700">{migrationProgress?.processed ?? 0}</b></span>{migrationProgress?.elapsed_seconds != null && <span>Tempo: <b className="text-slate-700">{Math.round(migrationProgress.elapsed_seconds)} s</b></span>}</div>
         </div>}
         {fullImportResult && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><div className="font-bold mb-2">Migrazione completata</div><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2"><span>Clienti nuovi: <b>{fullImportResult.crm?.clients_created ?? 0}</b></span><span>Clienti aggiornati: <b>{fullImportResult.crm?.clients_updated ?? 0}</b></span><span>Sedi create: <b>{fullImportResult.crm?.sites_created ?? 0}</b></span><span>Ordini nuovi: <b>{fullImportResult.crm?.orders_created ?? 0}</b></span><span>Documenti copiati: <b>{fullImportResult.crm?.documents_imported ?? 0}</b></span><span>Fonti complete: <b>{fullImportResult.universal_archive?.sources ?? 0}</b></span><span>Record archivio: <b>{fullImportResult.universal_archive?.records ?? 0}</b></span><span>Pagine autonome: <b>{fullImportResult.universal_archive?.pages ?? 0}</b></span></div></div>}
-        {(fullImportResult||cfg.import_ready)&&<div className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4"><div className="font-black text-emerald-950">Verifica finale prima di scollegare Notion</div><div className="text-sm text-emerald-900 mt-1">Controlla Clienti / Ordini, Fatturato, Wallbox, Report, documenti e magazzino. Solo dopo la verifica conferma la chiusura: a quel punto le credenziali Notion vengono eliminate e questa sezione sparisce.</div><Button onClick={()=>setFinalizeOpen(true)} className="mt-3 h-10">Conferma migrazione e rendi il gestionale autonomo</Button></div>}
+        {(fullImportResult||cfg.import_ready)&&<div className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4"><div className="font-black text-emerald-950">Verifica finale prima di scollegare Notion</div><div className="text-sm text-emerald-900 mt-1">Controlla Clienti e ordini, Fatturato, Wallbox, Report, documenti e magazzino. Solo dopo la verifica conferma la chiusura: a quel punto le credenziali Notion vengono eliminate e questa sezione sparisce.</div><Button onClick={()=>setFinalizeOpen(true)} className="mt-3 h-10">Conferma migrazione e rendi il gestionale autonomo</Button></div>}
       </SectionCard>}
       </>}
       <Dialog open={finalizeOpen} onOpenChange={v=>{setFinalizeOpen(v);if(!v){setFinalizeText("");setFinalizePassword("");}}}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Conferma chiusura migrazione</DialogTitle></DialogHeader><div className="space-y-4"><div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Dopo questa conferma Notion verrà scollegato e il gestionale userà soltanto i dati locali. Notion non verrà modificato.</div><div><Label>Digita CONFERMA MIGRAZIONE</Label><Input className="mt-1" value={finalizeText} onChange={e=>setFinalizeText(e.target.value)} /></div><div><Label>Password amministratore</Label><Input type="password" className="mt-1" value={finalizePassword} onChange={e=>setFinalizePassword(e.target.value)} autoComplete="current-password" /></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>setFinalizeOpen(false)} disabled={busy==="finalize"}>Annulla</Button><Button onClick={finalizeMigration} disabled={busy==="finalize"||!finalizePassword||finalizeText.trim().toUpperCase()!=="CONFERMA MIGRAZIONE"}>{busy==="finalize"?"Conferma in corso…":"Conferma e scollega"}</Button></div></div></DialogContent></Dialog>
@@ -550,6 +550,37 @@ function NotionMigrationPane() {
       </SectionCard>
     </div>
   );
+}
+
+function DataToolsPane() {
+  const [backupBusy, setBackupBusy] = useState(false);
+  const downloadBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const response = await axios.get(`${API}/admin/backup/download`, { responseType: "blob" });
+      const disposition = response.headers?.["content-disposition"] || "";
+      const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+      const filename = match ? decodeURIComponent(match[1].replace(/"/g, "")) : `Gestionale_Elios_Tech_backup_${new Date().toISOString().slice(0,10)}.zip`;
+      const url = URL.createObjectURL(response.data);
+      const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("Backup completo creato");
+    } catch (e) { toast.error("Backup non riuscito", { description: formatError(e) }); }
+    finally { setBackupBusy(false); }
+  };
+  return <div className="space-y-5">
+    <SectionCard title="Importazione iniziale da Notion" description="La migrazione si gestisce da un solo punto del gestionale.">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+        <div><div className="font-bold text-slate-900">Importazione da Notion</div><div className="text-sm text-slate-600 mt-1">Apri la procedura guidata unica per collegamento, anteprima, importazione e verifica finale.</div></div>
+        <Link to="/admin/migrazione-notion" className="inline-flex h-10 items-center justify-center rounded-xl bg-[#1A456B] px-4 text-sm font-bold text-white hover:bg-[#163B5C] shrink-0">Apri importazione</Link>
+      </div>
+    </SectionCard>
+    <SectionCard title="Esportazione movimenti" description="Scarica una copia CSV dello storico operativo locale."><ExportMovimentiTab /></SectionCard>
+    <SectionCard title="Backup completo" description="Scarica un archivio ZIP con database, foto, contratti, report e altri allegati del gestionale.">
+      <Button onClick={downloadBackup} disabled={backupBusy} className="h-11"><DownloadSimple size={18}/>{backupBusy ? "Creazione backup…" : "Scarica backup completo"}</Button>
+    </SectionCard>
+    <SectionCard title="Pulizia e ripristino dati" description="Elimina in modo controllato i dati delle prove senza perdere utenti, impostazioni, configurazioni e log."><DataResetTab /></SectionCard>
+  </div>;
 }
 
 function SystemPane() {
@@ -593,6 +624,35 @@ function SystemPane() {
   );
 }
 
+function DataBackupOnlyPane() {
+  const [busy, setBusy] = useState(false);
+  const downloadBackup = async () => {
+    setBusy(true);
+    try {
+      const response = await axios.get(`${API}/admin/backup/download`, { responseType: "blob" });
+      const href = URL.createObjectURL(response.data);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `gestionale-elios-backup-${new Date().toISOString().slice(0,10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      toast.error("Creazione backup fallita", { description: formatError(e) });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-5" data-testid="data-backup-only-pane">
+      <SectionCard title="Esportazione movimenti" description="Scarica una copia CSV dello storico operativo locale."><ExportMovimentiTab /></SectionCard>
+      <SectionCard title="Backup completo" description="Scarica un archivio ZIP con database, foto, contratti, report e altri allegati del gestionale.">
+        <Button onClick={downloadBackup} disabled={busy} className="h-11"><DownloadSimple size={18} /> {busy ? "Creazione backup…" : "Scarica backup completo"}</Button>
+      </SectionCard>
+      <SectionCard title="Pulizia dati operativi" description="Svuota i dati operativi mantenendo utenti, impostazioni e log."><DataResetTab /></SectionCard>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [category, setCategory] = useState("general");
   const current = useMemo(() => CATEGORIES.find((x) => x.key === category) || CATEGORIES[0], [category]);
@@ -604,7 +664,7 @@ export default function AdminPage() {
     if (category === "warehouse") return <WarehousePane />;
     if (category === "operations") return <OperationsPane />;
     if (category === "notifications") return <NotificationsPane />;
-    if (category === "data") return <NotionMigrationPane />;
+    if (category === "data") return <DataBackupOnlyPane />;
     if (category === "system") return <SystemPane />;
     return <GeneralPane />;
   };

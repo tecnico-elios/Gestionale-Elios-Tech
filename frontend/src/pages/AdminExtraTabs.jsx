@@ -288,7 +288,7 @@ export function SystemLogsTab() {
           <Input placeholder="Seriale" value={serialF} onChange={(e) => setSerialF(e.target.value)} className="h-9 font-mono-tight" data-testid="syslog-serial" />
           <Input placeholder="Cliente" value={customerF} onChange={(e) => setCustomerF(e.target.value)} className="h-9" data-testid="syslog-customer" />
           <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="h-9 border border-slate-300 rounded-md px-2 text-sm bg-white" data-testid="syslog-status">
-            <option value="">Tutti gli stati</option>
+            <option value="">Tutti</option>
             <option>SUCCESS</option>
             <option>FAILURE</option>
             <option>WARNING</option>
@@ -855,7 +855,7 @@ export function SettingsTab({ filter, saveLabel }) {
 
       <div className="sticky bottom-3 z-10 flex justify-end">
         <Button onClick={save} disabled={saving} className="h-11 et-btn-primary border-0 shadow-lg" data-testid="save-settings-btn">
-          {saving ? "Salvo…" : (saveLabel || "Salva impostazioni")}
+          {saving ? "Salvo…" : (saveLabel || "Salva")}
         </Button>
       </div>
     </div>
@@ -1209,7 +1209,7 @@ export function ProductsAdminTab() {
             {importing ? "Importazione…" : "Importa Inventario Elios Tech da Notion"}
           </Button>
           <Button type="button" onClick={openCreate} data-testid="create-product-btn">
-            + Nuovo prodotto
+            + Aggiungi prodotto
           </Button>
         </div>
       </div>
@@ -1228,7 +1228,7 @@ export function ProductsAdminTab() {
       ) : items.length === 0 ? (
         <div className="rounded-md border border-slate-200 bg-slate-50 text-slate-600 text-sm p-4">
           Nessun prodotto locale. Usa <b>Importa Inventario Elios Tech da Notion</b> per copiare l'inventario esistente,
-          oppure <b>Nuovo prodotto</b> per crearli manualmente.
+          oppure <b>Aggiungi prodotto</b> per crearli manualmente.
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-md overflow-x-auto">
@@ -1279,7 +1279,7 @@ export function ProductsAdminTab() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? "Modifica prodotto" : "Nuovo prodotto"}</DialogTitle>
+            <DialogTitle>{editing ? "Modifica prodotto" : "Aggiungi prodotto"}</DialogTitle>
             <DialogDescription>Compila i dati del prodotto locale.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1528,7 +1528,7 @@ export function DataResetTab() {
     <div className="space-y-4" data-testid="data-reset-tab">
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <div className="font-bold">Pulizia dati del gestionale</div>
-        <div className="mt-1">Usa questa funzione per eliminare i dati delle prove e ripartire pulito. <b>Utenti, impostazioni, configurazioni, Log sistema e Audit attività restano invariati.</b> Notion non viene toccato.</div>
+        <div className="mt-1">Usa questa funzione per ripartire realmente da zero. <b>Elimina tutto</b> rimuove tutti i dati operativi: Clienti, Sedi, Ordini, Commesse, Calendario, Installazioni, Interventi tecnici, Assistenze, Magazzino, movimenti, documenti, report, allegati e dati importati. <b>Restano soltanto utenti, permessi, impostazioni/struttura del gestionale e log di sistema.</b> Se una migrazione non è ancora stata finalizzata, anche il suo stato temporaneo viene azzerato per consentire un nuovo import pulito.</div>
       </div>
       {loading ? <div className="text-sm text-slate-500 py-4">Calcolo dati in corso…</div> : (
         <>
@@ -1549,7 +1549,7 @@ export function DataResetTab() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <div className="flex-1">
                 <div className="font-display text-lg font-bold text-red-900">Svuota tutti i dati operativi</div>
-                <div className="text-sm text-red-700 mt-1">Elimina clienti, prospect, sopralluoghi, preventivi, ordini, commesse, magazzino, seriali, movimenti, spedizioni, installazioni, assistenze, documenti, allegati e storico dell’Assistente AI.</div>
+                <div className="text-sm text-red-700 mt-1">Elimina clienti, prospect, sopralluoghi, preventivi, ordini, commesse, magazzino, seriali, movimenti, spedizioni, installazioni, assistenze, documenti, allegati e storico dell’Assistente.</div>
                 <div className="text-xs text-red-600 mt-2">Totale attuale: <b>{preview?.total || 0} record</b>. Utenti, impostazioni e log restano.</div>
               </div>
               <Button onClick={() => openReset("all")} disabled={!preview?.total} className="h-11 bg-red-600 hover:bg-red-700 text-white shrink-0">
@@ -2060,7 +2060,7 @@ export function ExportMovimentiTab() {
   );
 }
 
-// ---------- F20 — Assistente AI Settings ----------
+// ---------- F20 — Assistente Settings ----------
 export function AISettingsTab() {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -2082,12 +2082,12 @@ export function AISettingsTab() {
   return (
     <div className="space-y-4 max-w-3xl" data-testid="ai-settings-tab">
       <div>
-        <h3 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">🤖 Assistente AI</h3>
+        <h3 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">🤖 Assistente</h3>
       </div>
 
       <div className="et-card-elevated p-4 space-y-4">
         <SettingSwitch
-          label="Assistente AI abilitato"
+          label="Assistente abilitato"
           hint="OFF di default. Attivalo per usare l'AI. Quando OFF, nessuna chiamata al provider viene effettuata."
           checked={!!settings.enabled}
           onChange={(v) => upd({ enabled: v })}

@@ -451,7 +451,7 @@ export default function ArriviPage() {
         {canCreateProduct && (
           <div className="flex justify-end">
             <Button type="button" variant="outline" className="h-12 w-full sm:w-auto" onClick={() => setNewProductOpen(true)}>
-              <Plus size={18} /> Nuovo prodotto
+              <Plus size={18} /> Aggiungi prodotto
             </Button>
           </div>
         )}

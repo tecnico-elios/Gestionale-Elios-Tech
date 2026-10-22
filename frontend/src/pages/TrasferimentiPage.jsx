@@ -90,17 +90,17 @@ export default function TrasferimentiPage(){
       </div>
 
       <div className="r52-transfer-fields">
-        {product&&product.tipo_gestione==="a_seriale"?<div><Label>Seriali da trasferire</Label><Textarea className="mt-1" rows={5} value={serials} onChange={(e)=>setSerials(e.target.value)} placeholder="Un seriale per riga, oppure separati da virgola"/><p className="text-xs text-slate-500 mt-1">Ogni seriale deve essere disponibile nel deposito di origine.</p></div>:<div><Label>Quantità da trasferire</Label><Input type="number" min="0.01" step="0.01" className="mt-1 h-12" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/></div>}
+        {product&&product.tipo_gestione==="a_seriale"?<div><Label>Seriali</Label><Textarea className="mt-1" rows={5} value={serials} onChange={(e)=>setSerials(e.target.value)} placeholder="Un seriale per riga, oppure separati da virgola"/><p className="text-xs text-slate-500 mt-1">Ogni seriale deve essere disponibile nel deposito di origine.</p></div>:<div><Label>Quantità</Label><Input type="number" min="0.01" step="0.01" className="mt-1 h-12" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/></div>}
         <div><Label>Nota *</Label><Textarea className="mt-1 min-h-24" required value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Motivo o riferimento del trasferimento"/></div>
       </div>
-      <div className="r52-transfer-submit"><Button type="submit" disabled={busy} className="h-12">{busy?"Trasferimento…":"Conferma trasferimento"}</Button></div>
+      <div className="r52-transfer-submit"><Button type="submit" disabled={busy} className="h-12">{busy?"Trasferimento…":"Registra trasferimento"}</Button></div>
     </form>}
 
     <section className="r52-panel r52-panel-flush">
       <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>Trasferimenti registrati</h2><p>Ultimi spostamenti di materiale tra Elios Tech e Verona.</p></div><span className="r52-count-pill">{history.length}</span></div>
       <div className="r52-transfer-history">
         {history.map((x)=><div key={x.id} className="r52-transfer-history-row"><div className="r52-transfer-history-product"><Package size={17}/><div><b>{x.product_name||"Prodotto"}</b><span>{x.quantity} {x.serials?.length?"seriali":(x.unit||"pz")}</span></div></div><div className="r52-transfer-direction"><span>{x.from_warehouse_name||x.from_warehouse_id}</span><ArrowsLeftRight size={15}/><span>{x.to_warehouse_name||x.to_warehouse_id}</span></div><div className="r52-transfer-operator">{x.operator||"—"}</div>{x.serials?.length>0&&<div className="r52-transfer-detail">SN: {x.serials.join(", ")}</div>}{x.note&&<div className="r52-transfer-detail"><b>Nota:</b> {x.note}</div>}</div>)}
-        {history.length===0&&<div className="r52-empty-state">Nessun trasferimento registrato.</div>}
+        {history.length===0&&<div className="r52-empty-state">Nessun trasferimento.</div>}
       </div>
     </section>
   </div>;

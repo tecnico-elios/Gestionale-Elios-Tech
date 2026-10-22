@@ -156,6 +156,8 @@ async def _upsert_technical(db, event: Dict[str, Any], actor: str, resources: Li
         "updated_by": actor,
     })
     existing = await db.crm_interventi_tecnici.find_one({"calendar_event_id": event_id})
+    if existing and existing.get("manual_override"):
+        return str(existing.get("id"))
     if existing:
         await db.crm_interventi_tecnici.update_one({"id": existing.get("id")}, {"$set": payload})
         return str(existing.get("id"))
@@ -202,7 +204,7 @@ async def sync_calendar_event_operations(db, event: Dict[str, Any], actor: str =
     is_technical = _is_technical(event) and not is_installation
     is_assistance = _is_assistance(event) and not is_installation
     allowed_installation = is_installation and _event_has_person(event, resources, INSTALLATION_PEOPLE)
-    riccardo_technical = is_technical and _event_has_person(event, resources, TECHNICAL_PEOPLE)
+    riccardo_technical = is_technical and _event_has_person(event, resources, TECHNICAL_PEOPLE) and not bool(event.get("technical_sync_excluded"))
     ivan_assistance = is_assistance and _event_has_person(event, resources, ASSISTANCE_PEOPLE)
 
     result: Dict[str, Any] = {"event_id": event_id, "installation": "skipped", "technical": "skipped", "assistance": "skipped"}

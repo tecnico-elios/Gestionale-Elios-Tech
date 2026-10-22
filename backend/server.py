@@ -26,7 +26,7 @@ import event_logger
 import email_service
 import secret_store
 from routes import auth_routes, admin_users_routes, admin_extra_routes, qr_routes, qr_bindings_routes, orders_routes, ai_routes, commesse_routes, crm_routes, documents_routes, products_routes, backup_routes, installation_report_routes
-from routes import custom_modules_routes, calendar_routes
+from routes import custom_modules_routes, calendar_routes, free_reports_routes
 try:
     from zoneinfo import ZoneInfo
     ROME_TZ = ZoneInfo("Europe/Rome")
@@ -1856,6 +1856,7 @@ app.include_router(custom_modules_routes.build_router(db, auth_deps), prefix="/a
 app.include_router(calendar_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(documents_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(installation_report_routes.build_router(db, auth_deps), prefix="/api")
+app.include_router(free_reports_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(products_routes.build_router(db, auth_deps), prefix="/api")
 app.include_router(backup_routes.build_router(db, auth_deps), prefix="/api")
 
@@ -1893,6 +1894,8 @@ async def _phase2_startup_indexes():
     try:
         await db.users.create_index("username", unique=True)
         await db.audit_logs.create_index([("at", -1)])
+        await db.free_technical_reports.create_index([("updated_at", -1)])
+        await db.free_technical_reports.create_index("created_by")
         # Inventory Gestionale (fonte alternativa a Notion)
         inventory_local.set_db(db)
         await db.products.create_index("id", unique=True)
@@ -1913,7 +1916,12 @@ async def _phase2_startup_indexes():
         # F18 — Registro Log applicativo (eventi strutturati permanenti)
         await event_logger.ensure_indexes(db)
         # Configurazione Notion salvata dal pannello Impostazioni (override delle env locali).
-        notion_cfg = await db.settings.find_one({"_id": "notion_config"}) or {}
+        notion_migration = await db.settings.find_one({"_id": "notion_migration"}) or {}
+        notion_finalized = bool(notion_migration.get("finalized"))
+        notion_cfg = {} if notion_finalized else (await db.settings.find_one({"_id": "notion_config"}) or {})
+        if notion_finalized:
+            notion_service.configure(token="", inventario_ds_id="", receipts_ds_id="", tracker_ds_id="", ordini_ds_id="")
+            logger.info("Notion migration finalized: external integration forced OFF")
         if notion_cfg:
             notion_service.configure(
                 token=(secret_store.decrypt_secret(notion_cfg.get("token_encrypted") or "") or notion_service.NOTION_TOKEN),
@@ -1922,6 +1930,14 @@ async def _phase2_startup_indexes():
                 tracker_ds_id=(notion_cfg.get("tracker_ds_id") if "tracker_ds_id" in notion_cfg else notion_service.NOTION_TRACKER_DS_ID),
                 ordini_ds_id=(notion_cfg.get("ordini_ds_id") if "ordini_ds_id" in notion_cfg else notion_service.NOTION_ORDINI_DS_ID),
             )
+        # R60 — allinea subito tutte le installazioni già presenti nel Calendario.
+        # È idempotente: elabora soltanto eventi nuovi o modificati e non crea duplicati.
+        try:
+            from calendar_installation_sync import sync_all_calendar_installations
+            sync_stats = await sync_all_calendar_installations(db, actor="startup", force=False)
+            logging.info("R60 Calendar→Installazioni startup sync: %s", sync_stats)
+        except Exception as sync_exc:
+            logging.error("R60 Calendar→Installazioni startup sync failed: %s", sync_exc)
     except Exception as e:
         logging.error(f"MongoDB index creation failed: {e}")
 

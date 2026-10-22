@@ -229,7 +229,7 @@ export const AssistenzaPage = () => (
       F("tipo", "Tipo assistenza", { options: ["Remota", "In loco"], default: "Remota" }),
       F("priorita", "Priorità", { options: ["Bassa", "Normale", "Alta", "Urgente"], default: "Normale" }),
       F("tecnico", "Tecnico"),
-      F("numero_caso_wallbox", "Numero caso Wallbox"),
+      F("numero_caso_wallbox", "Caso Wallbox"),
       F("data", "Data", { type: "date" }),
       F("stato", "Stato", { options: ["Aperta", "Da programmare", "Programmata", "In lavorazione", "In attesa cliente / fornitore", "Tecnico in intervento", "Risolta", "Completata", "Chiusa"], default: "Aperta" }),
       F("descrizione", "Descrizione problema / intervento", { type: "textarea", full: true }),

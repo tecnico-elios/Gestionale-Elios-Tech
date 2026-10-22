@@ -19,7 +19,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from pydantic import BaseModel, Field, ConfigDict
 
 import auth as auth_mod
@@ -27,6 +27,7 @@ import notion_service
 import event_logger
 import email_service
 import secret_store
+from notion_order_inventory_bridge import sync_order_wallbox_serials, normalize_codes, reconcile_order_wallbox_serials
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +317,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
     RESET_GROUPS = {
         "crm": [
             "crm_lead", "crm_clienti", "crm_contatti", "crm_sedi", "crm_sopralluoghi",
-            "crm_preventivi", "crm_ordini_clienti", "crm_installazioni", "crm_assistenza",
+            "crm_preventivi", "crm_ordini_clienti", "crm_installazioni", "crm_interventi_tecnici", "crm_assistenza",
         ],
         "commesse": ["commesse"],
         "magazzino": [
@@ -337,6 +338,20 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         "documenti": "Documenti e allegati",
         "assistente": "Storico Assistente AI",
     }
+
+    SYSTEM_PRESERVED_COLLECTIONS = {
+        "users", "settings", "active_sessions", "audit_logs", "app_events",
+        "system_logs", "http_logs", "roles", "permissions", "feature_flags",
+        "schema_migrations", "custom_modules",
+    }
+
+    async def _all_operational_collections():
+        names = await db.list_collection_names()
+        return sorted(
+            name for name in names
+            if name not in SYSTEM_PRESERVED_COLLECTIONS
+            and not str(name).startswith("system.")
+        )
 
     async def _reset_preview():
         groups = {}
@@ -841,15 +856,32 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         selected_scopes = list(RESET_GROUPS.keys()) if body.scope == "all" else [body.scope]
         before = await _reset_preview()
         deleted = {}
-        for scope in selected_scopes:
-            for name in RESET_GROUPS[scope]:
-                res = await db[name].delete_many({})
-                deleted[name] = int(res.deleted_count)
-
-        # I contatori sono dati operativi: se si azzera tutto ripartono anche le numerazioni.
         if body.scope == "all":
-            res = await db.counters.delete_many({})
-            deleted["counters"] = int(res.deleted_count)
+            # Elimina ogni collezione operativa esistente, incluse quelle aggiunte da release future.
+            # Questo evita che Interventi tecnici, Calendario, report, archivi migrazione o nuovi
+            # moduli restino fuori dalla cancellazione totale.
+            for name in await _all_operational_collections():
+                res = await db[name].delete_many({})
+                deleted[name] = int(res.deleted_count or 0)
+        else:
+            for scope in selected_scopes:
+                for name in RESET_GROUPS[scope]:
+                    res = await db[name].delete_many({})
+                    deleted[name] = int(res.deleted_count or 0)
+
+        if body.scope == "all":
+            # Gli stati di sincronizzazione sono operativi. Se una migrazione NON è stata
+            # finalizzata, il reset la riporta a zero per consentire un nuovo import pulito.
+            # Una migrazione già finalizzata resta invece irreversibilmente chiusa.
+            calendar_state = await db.settings.find_one({"_id": "calendar_migration"}) or {}
+            notion_state = await db.settings.find_one({"_id": "notion_migration"}) or {}
+            await db.settings.delete_many({"_id": {"$in": [
+                "calendar_installations_sync", "calendar_operations_sync", "notion_migration_progress"
+            ]}})
+            if not calendar_state.get("finalized"):
+                await db.settings.delete_one({"_id": "calendar_migration"})
+            if not notion_state.get("finalized"):
+                await db.settings.delete_one({"_id": "notion_migration"})
 
         # Gli allegati fisici vengono rimossi solo quando si elimina l'area documenti/tutto.
         files_deleted = 0
@@ -869,6 +901,23 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
             except Exception as exc:
                 logging.getLogger(__name__).warning("Pulizia allegati incompleta: %s", exc)
+
+        if body.scope == "all":
+            # Elimina anche tutti gli allegati operativi, non soltanto la cartella Documenti.
+            try:
+                from pathlib import Path as _Path
+                uploads_root = _Path("/app/data/uploads")
+                if uploads_root.exists():
+                    for child in list(uploads_root.iterdir()):
+                        if child.is_dir():
+                            for f in child.rglob("*"):
+                                if f.is_file(): files_deleted += 1
+                            shutil.rmtree(child, ignore_errors=True)
+                        elif child.is_file():
+                            child.unlink(missing_ok=True); files_deleted += 1
+                uploads_root.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Pulizia completa allegati incompleta: %s", exc)
 
         # I log restano intenzionalmente: registriamo anche questa azione distruttiva.
         now = datetime.now(timezone.utc)
@@ -1085,6 +1134,11 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 shipped = await db.product_serials.count_documents({"product_id": doc["id"], "status": "shipped"})
                 doc["available"] = avail
                 doc["shipped"] = shipped
+                total_serials = await db.product_serials.count_documents({"product_id": doc["id"]})
+                doc["available_serial_count"] = avail
+                doc["historical_serial_count"] = max(0, total_serials - avail)
+                doc["notion_inventory_quantity"] = float(doc.get("notion_inventory_quantity", doc.get("quantity", 0)) or 0)
+                doc["serial_quantity_mismatch"] = abs(doc["notion_inventory_quantity"] - avail) > 0.000001
             out.append(doc)
         out.sort(key=lambda p: (p.get("name") or "").lower())
         return {"items": out, "count": len(out)}
@@ -1267,7 +1321,22 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         verona_tracker_ds_id: Optional[str] = None
         ordini_ds_id: Optional[str] = None
 
+    async def _notion_migration_finalized() -> bool:
+        state = await db.settings.find_one({"_id": "notion_migration"}) or {}
+        return bool(state.get("finalized"))
+
+    async def _ensure_notion_migration_open():
+        if await _notion_migration_finalized():
+            raise HTTPException(410, "Migrazione Notion conclusa: integrazione disattivata definitivamente")
+
     async def _apply_saved_notion_config() -> Dict[str, Any]:
+        if await _notion_migration_finalized():
+            notion_service.configure(token="", inventario_ds_id="", receipts_ds_id="", tracker_ds_id="", ordini_ds_id="")
+            return {
+                "token": "", "inventario_ds_id": "", "receipts_ds_id": "", "tracker_ds_id": "",
+                "ordini_ds_id": "", "verona_inventario_ds_id": "",
+                "verona_receipts_ds_id": "", "verona_tracker_ds_id": "",
+            }
         doc = await db.settings.find_one({"_id": "notion_config"}) or {}
         token = secret_store.decrypt_secret(doc.get("token_encrypted") or "") or (notion_service.NOTION_TOKEN or "").strip()
         inventario = (doc.get("inventario_ds_id") or notion_service.NOTION_INVENTARIO_DS_ID or "").strip()
@@ -1324,6 +1393,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
 
     @router.post("/notion/test")
     async def test_notion_config(current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         cfg = await _apply_saved_notion_config()
         if not cfg.get("token"):
             raise HTTPException(400, "Token Notion non configurato")
@@ -1341,6 +1411,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
 
     @router.get("/notion/import-preview")
     async def notion_import_preview(current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         cfg = await _apply_saved_notion_config()
         if not cfg.get("token"):
             raise HTTPException(400, "Token Notion non configurato")
@@ -1416,8 +1487,12 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         if not user_doc or not auth_mod.verify_password(body.admin_password or "", user_doc.get("password_hash", "")):
             raise HTTPException(403, "Password amministratore non valida")
         now=datetime.now(timezone.utc)
-        await db.settings.update_one({"_id":"notion_migration"},{"$set":{"finalized":True,"finalized_at":now,"completed_at":now}},upsert=True)
+        await db.settings.update_one({"_id":"notion_migration"},{"$set":{
+            "finalized":True,"finalized_at":now,"completed_at":now,"ready_to_finalize":False,
+            "integration_enabled":False,"credentials_removed":True,"provider":"local"
+        }},upsert=True)
         await db.settings.delete_one({"_id":"notion_config"})
+        await db.settings.delete_one({"_id":"notion_migration_progress"})
         notion_service.configure(token="", inventario_ds_id="", receipts_ds_id="", tracker_ds_id="", ordini_ds_id="")
         await db.audit_logs.insert_one({"at":now,"actor_id":str(current_user.get("_id", "")),"actor_username":current_user.get("username"),"action":"notion.migration.finalize","meta":{"credentials_removed":True}})
         return {"ok":True,"message":"Migrazione confermata. Connessione Notion rimossa."}
@@ -1437,6 +1512,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
 
     @router.put("/notion/config")
     async def put_notion_config(body: NotionConfigBody, current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         current = await db.settings.find_one({"_id": "notion_config"}) or {}
         updates: Dict[str, Any] = {}
         # Token vuoto = mantieni quello già salvato. Gli ID invece possono essere aggiornati/azzerati.
@@ -1543,6 +1619,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
 
     @router.get("/inventory/import-from-notion-preview")
     async def import_from_notion_preview(current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         plan = await _notion_inventory_plan()
         serial_products = sum(1 for x in plan["importable"] if x["tipo_gestione"] == "a_seriale")
         quantity_products = sum(1 for x in plan["importable"] if x["tipo_gestione"] == "a_quantita")
@@ -1571,6 +1648,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
 
     @router.post("/inventory/import-from-notion")
     async def import_from_notion(current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         """Importa SOLO Inventario Notion -> Magazzino Elios Tech locale.
 
         Garanzie:
@@ -1789,12 +1867,12 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             if not sid: continue
             is_verona="verona" in low
             if "inventario" in low and not is_verona and "inventario_ds_id" not in picked: picked["inventario_ds_id"]=sid
-            if ("entrate" in low or "arrivi" in low) and not is_verona and "receipts_ds_id" not in picked: picked["receipts_ds_id"]=sid
-            if ("uscite" in low or "tracker" in low or "spedizioni" in low) and not is_verona and "tracker_ds_id" not in picked: picked["tracker_ds_id"]=sid
+            if ("entrate" in low or "arrivi" in low or ("consegn" in low and ("entrata" in low or "entrate" in low or "ricev" in low))) and not is_verona and "receipts_ds_id" not in picked: picked["receipts_ds_id"]=sid  # R56_NOTION_SELECTIVE
+            if ("uscite" in low or "tracker" in low or "spedizioni" in low or ("consegn" in low and ("uscita" in low or "uscite" in low or "sped" in low))) and not is_verona and "tracker_ds_id" not in picked: picked["tracker_ds_id"]=sid
             if ("elios tech ordini" in low or low=="ordini" or "clienti" in low and "ordini" in low) and "ordini_ds_id" not in picked: picked["ordini_ds_id"]=sid
             if "inventario" in low and is_verona and "verona_inventario_ds_id" not in picked: picked["verona_inventario_ds_id"]=sid
-            if ("entrate" in low or "arrivi" in low) and is_verona and "verona_receipts_ds_id" not in picked: picked["verona_receipts_ds_id"]=sid
-            if ("uscite" in low or "tracker" in low or "spedizioni" in low) and is_verona and "verona_tracker_ds_id" not in picked: picked["verona_tracker_ds_id"]=sid
+            if ("entrate" in low or "arrivi" in low or ("consegn" in low and ("entrata" in low or "entrate" in low or "ricev" in low))) and is_verona and "verona_receipts_ds_id" not in picked: picked["verona_receipts_ds_id"]=sid
+            if ("uscite" in low or "tracker" in low or "spedizioni" in low or ("consegn" in low and ("uscita" in low or "uscite" in low or "sped" in low))) and is_verona and "verona_tracker_ds_id" not in picked: picked["verona_tracker_ds_id"]=sid
         if picked:
             cfg=await db.settings.find_one({"_id":"notion_config"}) or {}
             updates={k:v for k,v in picked.items() if not cfg.get(k)}
@@ -1831,8 +1909,45 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         doc.pop("_id",None)
         return doc
 
+    async def _run_notion_import_background(actor: Dict[str, Any]):
+        try:
+            result = await import_all_from_notion(current_user=actor)
+            progress = await db.settings.find_one({"_id": "notion_migration_progress"}) or {}
+            await _set_migration_progress(
+                state="completed", phase="Completata", percent=100,
+                processed=progress.get("processed", 0), total=progress.get("total", 0),
+                started_at=progress.get("started_at"), completed_at=datetime.now(timezone.utc),
+                message="Migrazione Notion completata", result=result,
+            )
+        except Exception as exc:
+            logger.exception("Migrazione Notion in background fallita")
+            progress = await db.settings.find_one({"_id": "notion_migration_progress"}) or {}
+            await _set_migration_progress(
+                state="error", phase="Errore", percent=progress.get("percent", 0),
+                processed=progress.get("processed", 0), total=progress.get("total", 0),
+                started_at=progress.get("started_at"), message=str(getattr(exc, "detail", None) or exc)[:500],
+            )
+
+    @router.post("/notion/import-all/start", status_code=202)
+    async def start_notion_import(background_tasks: BackgroundTasks, current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
+        progress = await db.settings.find_one({"_id": "notion_migration_progress"}) or {}
+        if progress.get("state") == "running":
+            updated = progress.get("updated_at")
+            age = None
+            if isinstance(updated, datetime):
+                age = (datetime.now(timezone.utc) - updated).total_seconds()
+            if age is None or age < 600:
+                return {"ok": True, "started": False, "already_running": True}
+        await _set_migration_progress(state="queued", phase="In coda", percent=0, processed=0, total=0, message="Migrazione in avvio")
+        actor = dict(current_user)
+        actor.pop("password_hash", None)
+        background_tasks.add_task(_run_notion_import_background, actor)
+        return {"ok": True, "started": True, "message": "Migrazione avviata sul server"}
+
     @router.post("/notion/import-all")
     async def import_all_from_notion(current_user=Depends(deps.require_admin)):
+        await _ensure_notion_migration_open()
         """Importa nel gestionale locale tutto ciò che è ricostruibile dalle fonti Notion configurate.
 
         - Inventario: prodotti, quantità e seriali disponibili.
@@ -1865,6 +1980,9 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 payload = {
                     "name": it.get("name") or code,
                     "code": code,
+                    "code_lower": code.casefold(),
+                    "warehouse_id": "elios-tech",
+                    "import_source": "notion_inventory",
                     "category": it.get("category"),
                     "tipo_gestione": tipo,
                     "unit": it.get("unit") or "pz",
@@ -1872,12 +1990,10 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     "active": True,
                     "updated_at": _now_iso(),
                 }
-                if tipo == "a_quantita":
-                    payload["quantity"] = float(it.get("quantity") or 0)
-                elif existing:
-                    payload["quantity"] = existing.get("quantity", 0)
-                else:
-                    payload["quantity"] = 0
+                # R69: la quantità Notion è autorevole per la giacenza anche per i prodotti
+                # a seriale. Il conteggio seriali è un controllo separato, non deve sovrascriverla.
+                payload["quantity"] = float(it.get("quantity") or 0)
+                payload["notion_inventory_quantity"] = float(it.get("quantity") or 0)
                 if existing:
                     local_id = existing["id"]
                     await db.products.update_one({"id": local_id}, {"$set": payload})
@@ -1893,21 +2009,29 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     available = {str(x).strip() for x in (it.get("serials") or []) if str(x).strip()}
                     for sn in available:
                         await db.product_serials.update_one(
-                            {"product_id": local_id, "serial_lower": sn.lower()},
+                            {"serial_lower": sn.lower()},
                             {"$set": {
                                 "product_id": local_id,
                                 "serial": sn,
                                 "serial_lower": sn.lower(),
                                 "status": "available",
+                                "warehouse_id": "elios-tech",
+                                "last_warehouse_id": "elios-tech",
+                                "import_source": "notion_inventory",
                                 "updated_at": _now_iso(),
                             }, "$setOnInsert": {"created_at": _now_iso()}},
                             upsert=True,
                         )
-                    await db.products.update_one({"id": local_id}, {"$set": {"quantity": len(available)}})
+                    await db.products.update_one({"id": local_id}, {"$set": {
+                        "available_serial_count": len(available),
+                        "serial_quantity_mismatch": abs(float(it.get("quantity") or 0) - len(available)) > 0.000001,
+                        "updated_at": _now_iso(),
+                    }})
 
         # 2) Clienti / contatti / sedi / ordini ricavati da Eliostech Ordini
         clients_created = clients_updated = sites_created = contacts_created = 0
         orders_created = orders_updated = 0
+        order_bridge_stats = {"products_created": 0, "products_linked": 0, "serials_created": 0, "serials_linked": 0, "movements_created": 0, "warnings": []}
         documents_imported = documents_skipped = document_errors = 0
         if notion_service.NOTION_ORDINI_DS_ID:
             pages = await _query_notion_source(notion_service.NOTION_ORDINI_DS_ID)
@@ -1936,8 +2060,8 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 key = company.casefold()
                 client = client_map.get(key)
                 # Tutti i campi operativi presenti in Eliostech Ordini.
-                codes_val = _notion_value(props, "Codice prodotto") or ""
-                codes = [x.strip() for x in str(codes_val).split(",") if x.strip()]
+                codes_val = _notion_value(props, "Codice prodotto") or []
+                codes = normalize_codes(codes_val)
                 sn_raw = _notion_value(props, "SN WB") or ""
                 qr_raw = _notion_value(props, "CODICI QR") or ""
                 serials = notion_service._parse_serials(str(sn_raw))
@@ -2118,6 +2242,25 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     await db.crm_ordini_clienti.insert_one(order_payload)
                     orders_created += 1
 
+                # R66: Eliostech Ordini alimenta anche lo storico Wallbox/seriali del Magazzino Elios.
+                # I seriali dell'ordine sono storici/assegnati: NON aumentano mai la giacenza disponibile.
+                local_order_id = str(existing_order["id"]) if existing_order else str(order_payload["id"])
+                bridge_result = await sync_order_wallbox_serials(
+                    db,
+                    codes=codes,
+                    serials=serials,
+                    client_id=str(client_id or ""),
+                    order_id=local_order_id,
+                    order_number=str(order_number or ""),
+                    order_date=str(order_date or ""),
+                    company=str(company or ""),
+                    notion_page_id=str(page.get("id") or ""),
+                    actor=str(current_user.get("username") or "notion-import"),
+                )
+                for stat_key in ("products_created", "products_linked", "serials_created", "serials_linked", "movements_created"):
+                    order_bridge_stats[stat_key] += int(bridge_result.get(stat_key) or 0)
+                order_bridge_stats["warnings"].extend(bridge_result.get("warnings") or [])
+
                 # Copia locale degli allegati Notion. I link firmati Notion sono temporanei,
                 # quindi scarichiamo i file durante la migrazione e li registriamo nel documentale.
                 file_categories = [
@@ -2265,8 +2408,8 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     continue
                 client_id = await _ensure_client_by_name(company)
                 number = _notion_value(props, "N° Ordine") or ""
-                codes_raw = _notion_value(props, "Codice prodotto") or ""
-                codes = [x.strip() for x in str(codes_raw).split(",") if x.strip()]
+                codes_raw = _notion_value(props, "Codice prodotto") or []
+                codes = normalize_codes(codes_raw)
                 sns = notion_service._parse_serials(str(_notion_value(props, "SN WB") or ""))
                 await db.crm_ordini_clienti.insert_one({
                     "id": str(_uuid.uuid4()), "numero": number, "cliente_id": client_id,
@@ -2550,6 +2693,9 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     if not ds_id: continue
                     title_parts = src.get("title") or []
                     title = "".join(str(x.get("plain_text") or "") for x in title_parts).strip() or f"Fonte {ds_id[:8]}"
+                    # R56: importa soltanto le fonti operative esplicitamente riconosciute.
+                    if ds_id not in known_ids:
+                        continue
                     try:
                         pages = await _query_notion_source(ds_id)
                         universal["sources"] += 1
@@ -2655,8 +2801,10 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                     payload=rr.json(); pages_found.extend(payload.get("results") or [])
                     if not payload.get("has_more"): break
                     cursor=payload.get("next_cursor")
-                pm=await db.custom_modules.find_one({"migration_role":"workspace_pages"})
-                if not pm:
+                # R56: le pagine autonome/generiche del workspace non fanno parte della migrazione operativa.
+                pages_found = []
+                pm={"id":"r56-pages-disabled"}
+                if False and not pm:
                     pm={"id":str(_uuid.uuid4()),"slug":"archivio-pagine-importate","name":"Archivio pagine importate","description":"Pagine e contenuti trasferiti durante la migrazione iniziale.","section":"amministrazione","active":True,"allow_create":True,"allow_edit":True,"allow_delete":True,"sort_order":950,"migration_role":"workspace_pages","fields":[{"key":"titolo","label":"Titolo","type":"text","showInList":True,"searchable":True},{"key":"contenuto","label":"Contenuto","type":"textarea","showInList":False,"searchable":True},{"key":"origine","label":"Origine","type":"text","showInList":True,"searchable":True},{"key":"url_originale","label":"Riferimento originale","type":"url","showInList":False,"searchable":False}],"created_at":datetime.now(timezone.utc),"updated_at":datetime.now(timezone.utc),"created_by":current_user.get("username")}
                     await db.custom_modules.insert_one(pm); universal["custom_modules"] += 1
                 for pg in pages_found:
@@ -2680,6 +2828,83 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         except Exception as exc:
             universal["errors"].append({"source":"workspace_pages","error":str(exc)[:240]})
 
+        # R68 - riconciliazione FINALE autorevole, eseguita soltanto dopo che tutte le
+        # fonti Notion sono state importate: Inventario, Tracker, Ordini correnti e Storico.
+        normalized_import_records = 0
+        async for _client in db.crm_clienti.find({"import_source": "notion"}):
+            _before = list(_client.get("codici_prodotto") or [])
+            _after = normalize_codes(_before)
+            if _after != _before:
+                await db.crm_clienti.update_one(
+                    {"id": _client.get("id")},
+                    {"$set": {"codici_prodotto": _after, "updated_at": datetime.now(timezone.utc)}},
+                )
+                normalized_import_records += 1
+        async for _order in db.crm_ordini_clienti.find({"import_source": {"$in": ["notion", "notion_storico"]}}):
+            _before = list(_order.get("prodotti_notion") or [])
+            _after = normalize_codes(_before)
+            if _after != _before:
+                await db.crm_ordini_clienti.update_one(
+                    {"id": _order.get("id")},
+                    {"$set": {"prodotti_notion": _after, "updated_at": datetime.now(timezone.utc)}},
+                )
+                normalized_import_records += 1
+
+        try:
+            order_bridge_stats = await reconcile_order_wallbox_serials(
+                db, actor=str(current_user.get("username") or "notion-import")
+            )
+            order_bridge_stats["normalized_import_records"] = normalized_import_records
+            inventory_consistency = []
+            async for _product in db.products.find({
+                "tipo_gestione": "a_seriale",
+                "$or": [
+                    {"warehouse_id": "elios-tech"},
+                    {"warehouse_id": {"$exists": False}},
+                    {"warehouse_id": ""},
+                ],
+            }):
+                _pid = str(_product.get("id") or "")
+                if not _pid:
+                    continue
+                _available = await db.product_serials.count_documents({"product_id": _pid, "status": "available"})
+                _total = await db.product_serials.count_documents({"product_id": _pid})
+                try:
+                    _qty = float(_product.get("notion_inventory_quantity", _product.get("quantity", 0)) or 0)
+                except Exception:
+                    _qty = 0.0
+                _mismatch = abs(_qty - _available) > 0.000001
+                await db.products.update_one({"id": _pid}, {"$set": {
+                    "available_serial_count": _available,
+                    "historical_serial_count": max(0, _total - _available),
+                    "serial_quantity_mismatch": _mismatch,
+                    "updated_at": datetime.now(timezone.utc),
+                }})
+                inventory_consistency.append({
+                    "product_id": _pid,
+                    "code": _product.get("code") or "",
+                    "name": _product.get("name") or "",
+                    "notion_quantity": _qty,
+                    "available_serials": _available,
+                    "historical_serials": max(0, _total - _available),
+                    "mismatch": _mismatch,
+                })
+            order_bridge_stats["inventory_consistency"] = inventory_consistency
+            order_bridge_stats["inventory_mismatches"] = [x for x in inventory_consistency if x.get("mismatch")]
+            logger.info(
+                "R68 riconciliazione finale Notion: tracker=%s linked=%s unresolved=%s mismatch=%s duplicates=%s normalized=%s placeholders_removed=%s",
+                order_bridge_stats.get("tracker_serials_used", 0),
+                order_bridge_stats.get("serials_linked", 0),
+                len(order_bridge_stats.get("unresolved_serials") or []),
+                len(order_bridge_stats.get("quantity_serial_mismatches") or []),
+                len(order_bridge_stats.get("duplicate_order_serials") or []),
+                normalized_import_records,
+                order_bridge_stats.get("placeholder_products_removed", 0),
+            )
+        except Exception as exc:
+            logger.exception("R68 riconciliazione finale Notion fallita")
+            raise HTTPException(500, f"Riconciliazione finale Notion fallita: {exc}")
+
         await _set_migration_progress(state="running", phase="Verifica e scollegamento", percent=94, processed=universal.get("records",0)+universal.get("pages",0), message="Verifica archivio locale, relazioni e allegati; rimozione credenziali di migrazione")
 
         result = {
@@ -2692,11 +2917,13 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
                 "sites_created": sites_created,
                 "orders_created": orders_created,
                 "orders_updated": orders_updated,
+                "warehouse_from_orders": order_bridge_stats,
                 "documents_imported": documents_imported,
                 "documents_skipped": documents_skipped,
                 "document_errors": document_errors,
             },
             "movements": {"receipts_imported": receipts_imported, "exits_imported": exits_imported},
+            "order_inventory_reconciliation": order_bridge_stats,
             "extra_sources": extra,
             "universal_archive": universal,
         }
