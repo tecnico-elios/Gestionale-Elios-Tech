@@ -1,0 +1,253 @@
+name: Consolidate clean R1 base
+
+on:
+  push:
+    branches:
+      - refactor/r1-clean-base
+    paths:
+      - .github/workflows/consolidate-r1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/r1-clean-base
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm install --legacy-peer-deps --no-audit --no-fund --save-dev ajv@8.17.1 ajv-keywords@5.1.0
+
+      - name: Materialize all historical frontend patches
+        working-directory: frontend
+        run: |
+          node scripts/apply-r54-copy.js
+          node scripts/apply-r55-unified-header.js
+          node scripts/apply-r56.js
+          node scripts/apply-r58-calendar-roles-v2.js
+          node scripts/apply-r59.js
+          node scripts/audit-r59-flows.js
+          node scripts/apply-r61-v2.js
+          node scripts/audit-r61.js
+          node scripts/apply-r62.js
+          node scripts/audit-r62.js
+          node scripts/apply-r63.js
+          node scripts/audit-r63.js
+          node scripts/prepare-r64.js
+          node scripts/apply-r64.js
+          node scripts/audit-r64.js
+          node scripts/apply-r70-free-reports.js
+          node scripts/audit-r70-free-reports.js
+          node scripts/apply-r72-report-signatures-pages.js
+          node scripts/audit-r72-report-signatures-pages.js
+          node scripts/apply-r76-install-report-free-fields.js
+          node scripts/audit-r76-install-report-free-fields.js
+          node scripts/apply-r77-install-report-parity.js
+          node scripts/audit-r77-install-report-parity.js
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Materialize all historical backend patches
+        run: |
+          python backend/scripts/apply_r56_backend.py
+          python backend/scripts/apply_r57_backend.py
+          python backend/scripts/apply_r58_calendar_roles.py
+          python backend/scripts/apply_r59_backend.py
+          python backend/scripts/audit_r59_flows.py
+          python backend/scripts/apply_r60_backend.py
+          python backend/scripts/audit_r60_flows.py
+          python backend/scripts/apply_r61_backend.py
+          python backend/scripts/audit_r61_flows.py
+          python backend/scripts/apply_r62_backend.py
+          python backend/scripts/audit_r62_flows.py
+          python backend/scripts/apply_r63_backend.py
+          python backend/scripts/audit_r63_flows.py
+          python backend/scripts/prepare_r64_backend.py
+          python backend/scripts/apply_r64_backend.py
+          python backend/scripts/audit_r64_flows.py
+          python backend/scripts/apply_r65_backend.py
+          python backend/scripts/audit_r65_flows.py
+          python backend/scripts/apply_r66_backend.py
+          python backend/scripts/audit_r66_flows.py
+          python backend/scripts/apply_r67_backend.py
+          python backend/scripts/audit_r67_flows.py
+          python backend/scripts/apply_r68_backend.py
+          python backend/scripts/audit_r68_flows.py
+          python backend/scripts/apply_r69_backend.py
+          python backend/scripts/audit_r69_flows.py
+          python backend/scripts/apply_r70_backend.py
+          python backend/scripts/audit_r70_flows.py
+          python backend/scripts/apply_r72_backend.py
+          python backend/scripts/audit_r72_flows.py
+          python backend/scripts/apply_r73_pdf_layout.py
+          python backend/scripts/audit_r73_pdf_layout.py
+          python backend/scripts/apply_r74_pdf_finish.py
+          python backend/scripts/audit_r74_pdf_finish.py
+          python backend/scripts/apply_r75_signature_contrast.py
+          python backend/scripts/audit_r75_signature_contrast.py
+          python backend/scripts/apply_r76_install_report_free_fields.py
+          python backend/scripts/audit_r76_install_report_free_fields.py
+          python backend/scripts/apply_r77_install_report_parity.py
+          python backend/scripts/audit_r77_install_report_parity.py
+          python backend/scripts/apply_r78_persistent_files.py
+          python backend/scripts/audit_r78_persistent_files.py
+          python backend/scripts/apply_r79_remove_lead_api.py
+          python backend/scripts/audit_r79_remove_lead_api.py
+
+      - name: Consolidate release CSS into R1
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('frontend/src')
+          app = root / 'App.js'
+          text = app.read_text(encoding='utf-8')
+          rx = re.compile(r'^import\s+["\']@/(r\d[^"\']*\.css)["\'];\s*$', re.M | re.I)
+          names = rx.findall(text)
+          seen = []
+          for name in names:
+              if name not in seen:
+                  seen.append(name)
+          chunks = []
+          for name in seen:
+              p = root / name
+              if p.exists():
+                  chunks.append(f'/* Consolidato da {name} nella nuova base R1 */\n' + p.read_text(encoding='utf-8').rstrip() + '\n')
+          if chunks:
+              (root / 'r1.css').write_text('\n'.join(chunks), encoding='utf-8')
+              text = rx.sub('', text)
+              anchor = 'import "@/App.css";'
+              if 'import "@/r1.css";' not in text:
+                  text = text.replace(anchor, anchor + '\nimport "@/r1.css";', 1)
+              app.write_text(text, encoding='utf-8')
+              for name in seen:
+                  p = root / name
+                  if p.exists() and p.name != 'r1.css':
+                      p.unlink()
+          PY
+
+      - name: Remove historical release patch scripts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          patterns = [
+              'frontend/scripts/apply-r*.js',
+              'frontend/scripts/audit-r*.js',
+              'frontend/scripts/prepare-r*.js',
+              'backend/scripts/apply_r*.py',
+              'backend/scripts/audit_r*.py',
+              'backend/scripts/prepare_r*.py',
+          ]
+          for pattern in patterns:
+              for path in Path('.').glob(pattern):
+                  path.unlink()
+          PY
+
+      - name: Replace Dockerfile with clean R1 build
+        run: |
+          cat > Dockerfile <<'EOF'
+          # Gestionale Elios Tech — R1 clean base
+          # Historical release patches through the former R79 are already materialized in source.
+
+          # ===== Frontend build =====
+          FROM node:20-alpine AS frontend
+          WORKDIR /app/frontend
+          COPY frontend/package*.json ./
+          RUN npm install --legacy-peer-deps --no-audit --no-fund \
+              && npm install --legacy-peer-deps --no-audit --no-fund --save-dev ajv@8.17.1 ajv-keywords@5.1.0
+          COPY frontend/ ./
+          ENV REACT_APP_BACKEND_URL="" \
+              GENERATE_SOURCEMAP=false \
+              DISABLE_ESLINT_PLUGIN=true
+          RUN npx craco build
+
+          # ===== Backend/runtime =====
+          FROM python:3.12-slim
+          ENV PYTHONDONTWRITEBYTECODE=1 \
+              PYTHONUNBUFFERED=1 \
+              FRONTEND_BUILD_DIR=/app/frontend_build \
+              UPLOAD_ROOT=/app/data/uploads/installazioni
+          WORKDIR /app
+          COPY backend/requirements.txt /app/backend/requirements.txt
+          RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+          COPY backend/ /app/backend/
+          RUN python -m compileall -q /app/backend
+          COPY --from=frontend /app/frontend/build /app/frontend_build
+          RUN mkdir -p /app/data/uploads/installazioni
+          WORKDIR /app/backend
+          CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+          EOF
+
+      - name: Mark new baseline as R1
+        run: |
+          printf 'R1\n' > VERSION
+          cat > RELEASE.md <<'EOF'
+          # Gestionale Elios Tech — R1
+
+          Questa è la nuova base consolidata del gestionale.
+
+          Tutte le modifiche valide delle precedenti release storiche fino alla vecchia R79 sono state materializzate direttamente nel codice sorgente. La build non applica più patch di release in sequenza.
+
+          La cronologia Git precedente resta disponibile per audit e rollback.
+
+          Da questa base la numerazione riparte da R1; la prossima modifica funzionale sarà R2.
+          EOF
+
+      - name: Remove temporary consolidation workflow
+        run: rm -f .github/workflows/consolidate-r1.yml
+
+      - name: Validate consolidated source
+        env:
+          CI: 'false'
+          REACT_APP_BACKEND_URL: ''
+          GENERATE_SOURCEMAP: 'false'
+          DISABLE_ESLINT_PLUGIN: 'true'
+        run: |
+          python -m compileall -q backend
+          cd frontend
+          npx craco build
+          cd ..
+          if grep -Eq 'apply[-_]r[0-9]+|audit[-_]r[0-9]+|prepare[-_]r[0-9]+' Dockerfile; then
+            echo 'Dockerfile contiene ancora patch storiche' >&2
+            exit 1
+          fi
+          if grep -Eq '^import ["\x27]@/r[2-9][0-9]' frontend/src/App.js; then
+            echo 'App.js contiene ancora CSS di release storiche' >&2
+            exit 1
+          fi
+
+      - name: Validate clean Docker build
+        run: docker build -t gestionale-elios-r1 .
+
+      - name: Commit consolidated R1 source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '[skip ci] R1: base pulita consolidata'
+          git push origin HEAD:refactor/r1-clean-base
