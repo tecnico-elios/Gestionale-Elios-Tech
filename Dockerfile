@@ -90,6 +90,9 @@ RUN python /app/backend/scripts/apply_r76_install_report_free_fields.py \
 RUN python /app/backend/scripts/apply_r77_install_report_parity.py \
     && python /app/backend/scripts/audit_r77_install_report_parity.py \
     && python -m compileall -q /app/backend
+RUN python /app/backend/scripts/apply_r78_persistent_files.py \
+    && python /app/backend/scripts/audit_r78_persistent_files.py \
+    && python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
 WORKDIR /app/backend
