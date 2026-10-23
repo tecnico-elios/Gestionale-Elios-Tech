@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - audit/r1-system-check
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
