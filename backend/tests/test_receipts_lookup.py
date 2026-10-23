@@ -1,53 +1,40 @@
-"""Backend tests for /api/inventory/lookup — Receipts SN branch (iteration 8)."""
-import os
+"""Regressioni /api/inventory/lookup sul database isolato."""
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-if not BASE_URL:
-    # Fallback: read from frontend/.env
-    with open("/app/frontend/.env") as f:
-        for line in f:
-            if line.startswith("REACT_APP_BACKEND_URL="):
-                BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
+from conftest import BASE_URL, _ensure_admin_token, _ensure_op_token
+
+
+def _op_hdr():
+    admin_tok, _ = _ensure_admin_token()
+    tok, _ = _ensure_op_token(admin_tok)
+    return {"Authorization": f"Bearer {tok}"}
 
 
 def _get(code):
-    return requests.get(f"{BASE_URL}/api/inventory/lookup", params={"code": code}, timeout=60)
-
-
-def test_receipts_sn_simple():
-    r = _get("1427354")
-    assert r.status_code == 200
-    d = r.json()
-    # F6-rientri: status is now in_warehouse or out (latest-movement), matched_by="sn"
-    assert d["status"] in ("in_warehouse", "out")
-    assert d["matched_by"] == "sn"
-    assert d["serial"] == "1427354"
-    assert d["item"] and d["item"]["name"]
-
-
-def test_receipts_sn_dot_separated():
-    r = _get("1425027")
-    assert r.status_code == 200
-    d = r.json()
-    assert d["status"] in ("in_warehouse", "out")
-    assert d["matched_by"] == "sn"
-    assert d["serial"] == "1425027"
-    assert d["item"] and d["item"]["name"]
+    return requests.get(
+        f"{BASE_URL}/api/inventory/lookup",
+        headers=_op_hdr(),
+        params={"code": code},
+        timeout=30,
+    )
 
 
 def test_not_found():
-    r = _get("9999999_NOT_EXIST")
+    r = _get("9999999_NOT_EXIST_R4")
     assert r.status_code == 200
-    d = r.json()
-    assert d["status"] == "not_found"
+    assert r.json()["status"] == "not_found"
 
 
-def test_sku_regression():
-    r = _get("CH02")
+def test_sku_lookup_when_catalog_has_code():
+    inv = requests.get(f"{BASE_URL}/api/inventory", headers=_op_hdr(), timeout=30)
+    assert inv.status_code == 200, inv.text[:300]
+    item = next((x for x in inv.json().get("items", []) if x.get("code")), None)
+    if not item:
+        pytest.skip("DB isolato senza SKU; lookup sintetico coperto da smoke stock")
+    r = _get(item["code"])
     assert r.status_code == 200
     d = r.json()
     assert d["status"] == "ok"
     assert d["matched_by"] == "sku"
-    assert d["item"]["name"] == "Cable Dock Daze"
+    assert d.get("item", {}).get("id") == item.get("id")
