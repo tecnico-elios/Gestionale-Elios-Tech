@@ -8,6 +8,12 @@ from __future__ import annotations
 from typing import Any
 
 import inventory_local
+import inventory_integrity
+
+# R4: applica le protezioni di integrità allo stesso modulo condiviso importato
+# anche da server.py. In questo modo Arrivi, Spedizioni e Trasferimenti usano
+# tutti la stessa implementazione rinforzata.
+inventory_integrity.install(inventory_local)
 
 
 async def get_source(db) -> str:
