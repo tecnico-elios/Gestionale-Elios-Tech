@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import requests
+from pymongo import MongoClient
 
 BASE = "http://127.0.0.1:8001"
+SYNC_DB = MongoClient(os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017"))[os.environ.get("DB_NAME", "elios_system_audit")]
 
 
 def fail(message: str, response: requests.Response | None = None) -> None:
@@ -137,8 +141,15 @@ def main() -> None:
     ).json()
     assert gen.get("document_id"), gen
 
+    install_db = SYNC_DB.crm_installazioni.find_one({"id": install_id})
+    assert install_db and install_db.get("report_installazione_gridfs_id"), install_db
+    install_doc = SYNC_DB.documents.find_one({"id": gen.get("document_id")})
+    assert install_doc and install_doc.get("gridfs_id"), install_doc
+    install_cache = Path(install_doc.get("stored_path") or "")
+    if install_cache.exists():
+        install_cache.unlink()
     pdf = expect("GET", f"/api/installation-reports/{install_id}/pdf", token=token)
-    assert pdf.content.startswith(b"%PDF"), "PDF installazione non valido"
+    assert pdf.content.startswith(b"%PDF"), "PDF installazione non valido dopo ripristino GridFS"
 
     upload = expect(
         "POST", f"/api/files/installazioni/{install_id}", token=token,
@@ -148,6 +159,11 @@ def main() -> None:
     document_id = upload.get("id")
     assert document_id, upload
 
+    uploaded_db = SYNC_DB.documents.find_one({"id": document_id})
+    assert uploaded_db and uploaded_db.get("gridfs_id"), uploaded_db
+    uploaded_cache = Path(uploaded_db.get("stored_path") or "")
+    if uploaded_cache.exists():
+        uploaded_cache.unlink()
     listing = expect("GET", f"/api/files/installazioni/{install_id}", token=token).json()
     assert any(x.get("id") == document_id for x in listing.get("items", [])), listing
 
@@ -178,8 +194,13 @@ def main() -> None:
         json={"data": {**report_data, "note": "aggiornato"}, "pdf_pages": "2-3"},
     ).json()
     assert free_gen.get("document_id"), free_gen
+    free_db = SYNC_DB.free_technical_reports.find_one({"id": free_id})
+    assert free_db and free_db.get("gridfs_id"), f"Report Tecnico senza gridfs_id: {free_db}"
+    free_cache = Path(free_db.get("pdf_path") or "")
+    if free_cache.exists():
+        free_cache.unlink()
     free_pdf = expect("GET", f"/api/free-reports/{free_id}/pdf", token=token)
-    assert free_pdf.content.startswith(b"%PDF"), "PDF standalone non valido"
+    assert free_pdf.content.startswith(b"%PDF"), "PDF standalone non valido dopo ripristino GridFS"
     expect("DELETE", f"/api/free-reports/{free_id}", token=token)
 
     # Assistenza collegata all'installazione.
@@ -193,6 +214,9 @@ def main() -> None:
     expect("DELETE", f"/api/crm/assistenza/{assistance_id}", token=token)
 
     # Pulizia record di test e verifica logout/sessione.
+    # La cancellazione deve essere bloccata finché il report installazione è collegato.
+    expect("DELETE", f"/api/crm/installazioni/{install_id}", status=409, token=token)
+    expect("DELETE", f"/api/files/document/{gen.get('document_id')}", token=token)
     expect("DELETE", f"/api/crm/installazioni/{install_id}", token=token)
     expect("DELETE", f"/api/crm/ordini-clienti/{order_id}", token=token)
     expect("DELETE", f"/api/crm/clienti/{client_id}", token=token)

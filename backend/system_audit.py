@@ -29,10 +29,10 @@ def ok(msg: str) -> None:
 
 
 version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-if version != "R1":
-    issue(f"VERSION attesa R1, trovata {version!r}")
+if not re.fullmatch(r"R[1-9][0-9]*", version):
+    issue(f"VERSION non valida: {version!r}")
 else:
-    ok("VERSION = R1")
+    ok(f"VERSION = {version}")
 
 # La nuova base non deve eseguire patch storiche a runtime/build.
 for rel in ("Dockerfile", "frontend/package.json"):
@@ -44,8 +44,8 @@ for rel in ("Dockerfile", "frontend/package.json"):
 
 server_text = (BACKEND / "server.py").read_text(encoding="utf-8")
 old_build = re.search(r'"build"\s*:\s*"([^"]+)"', server_text)
-if old_build and old_build.group(1) != "R1":
-    warn(f"server.py espone ancora build legacy: {old_build.group(1)}")
+if old_build and old_build.group(1) != version:
+    warn(f"server.py espone build non coerente: {old_build.group(1)} (VERSION={version})")
 
 # I Lead non devono più essere una risorsa operativa/API.
 active_files = [
