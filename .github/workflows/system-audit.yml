@@ -1,0 +1,105 @@
+name: Gestionale system audit
+
+on:
+  push:
+    branches:
+      - audit/r1-system-check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      MONGO_URL: mongodb://127.0.0.1:27017
+      DB_NAME: elios_system_audit
+      JWT_SECRET: elios-system-audit-secret-not-production
+      ADMIN_PASSWORD: audit-admin-password
+      CHECKLIST_RECIPIENTS: ""
+      PUBLIC_FRONTEND_URL: http://127.0.0.1:8001
+      REACT_APP_BACKEND_URL: ""
+      GENERATE_SOURCEMAP: "false"
+      DISABLE_ESLINT_PLUGIN: "true"
+      FRONTEND_BUILD_DIR: ${{ github.workspace }}/frontend/build
+      UPLOAD_ROOT: ${{ runner.temp }}/elios-audit-uploads
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Compile backend
+        run: python -m compileall -q backend
+
+      - name: Structural audit
+        id: structural
+        continue-on-error: true
+        run: python backend/system_audit.py
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm install --legacy-peer-deps --no-audit --no-fund --save-dev ajv@8.17.1 ajv-keywords@5.1.0
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Start isolated backend
+        run: |
+          mkdir -p "$UPLOAD_ROOT"
+          cd backend
+          nohup uvicorn server:app --host 127.0.0.1 --port 8001 >/tmp/elios-api.log 2>&1 &
+          echo $! >/tmp/elios-api.pid
+
+      - name: Integration smoke test
+        run: |
+          if ! python backend/integration_smoke.py; then
+            echo "---- backend log ----"
+            cat /tmp/elios-api.log || true
+            exit 1
+          fi
+
+      - name: Production unauthenticated smoke test
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 https://gestionale-elios-tech.onrender.com/ -o /tmp/live.html
+          grep -q "Gestionale Elios Tech" /tmp/live.html
+
+      - name: Report structural audit result
+        if: always()
+        run: |
+          echo "Structural audit outcome: ${{ steps.structural.outcome }}"
+          if [ "${{ steps.structural.outcome }}" != "success" ]; then
+            echo "Sono presenti residui/incoerenze strutturali da correggere prima della R2."
+          fi
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/elios-api.pid ]; then kill "$(cat /tmp/elios-api.pid)" || true; fi
