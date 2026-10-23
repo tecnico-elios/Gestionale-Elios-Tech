@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - audit/r1-system-check
+      - audit/r2-warehouse-check
   pull_request:
     branches:
       - main
@@ -91,6 +92,14 @@ jobs:
       - name: Integration smoke test
         run: |
           if ! python backend/integration_smoke.py; then
+            echo "---- backend log ----"
+            cat /tmp/elios-api.log || true
+            exit 1
+          fi
+
+      - name: Warehouse and commesse smoke test
+        run: |
+          if ! python backend/warehouse_operations_smoke.py; then
             echo "---- backend log ----"
             cat /tmp/elios-api.log || true
             exit 1
