@@ -4,6 +4,7 @@ import asyncio
 import os
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any, Dict
 
 from secret_store import encrypt_secret, decrypt_secret, mask_secret
@@ -89,7 +90,6 @@ async def send_email(db, recipient: str, subject: str, html_content: str) -> str
 
 
 def _send_sync_attachment(cfg: Dict[str, Any], recipient: str, subject: str, html_content: str, attachment_path, attachment_name: str, mime_type: str = "application/pdf") -> str:
-    from pathlib import Path
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = f'{cfg.get("from_name") or "Elios Tech"} <{cfg["from_email"]}>'
@@ -124,10 +124,33 @@ def _send_sync_attachment(cfg: Dict[str, Any], recipient: str, subject: str, htm
     return "smtp-sent"
 
 
+async def _ensure_persistent_attachment(db, attachment_path) -> Path:
+    """Garantisce che un allegato persistito in GridFS esista anche nella cache locale.
+
+    Render usa un filesystem effimero: dopo deploy o riavvio il percorso registrato nel
+    documento può non esistere più. In quel caso cerchiamo il metadato del documento e
+    ricostruiamo la copia locale da GridFS prima dell'invio email.
+    """
+    path = Path(attachment_path)
+    if path.exists():
+        return path
+
+    doc = await db.documents.find_one({"stored_path": str(path)}, {"gridfs_id": 1})
+    if doc and doc.get("gridfs_id"):
+        import persistent_files
+        try:
+            return await persistent_files.ensure_local(db, doc.get("gridfs_id"), path)
+        except FileNotFoundError:
+            pass
+
+    raise FileNotFoundError(f"Allegato non disponibile: {path}")
+
+
 async def send_email_with_attachment(db, recipient: str, subject: str, html_content: str, attachment_path, attachment_name: str, mime_type: str = "application/pdf") -> str:
     cfg = await get_email_config(db, include_secret=True)
     if not cfg.get("enabled"):
         raise RuntimeError("Invio email disattivato nelle Impostazioni")
     if not cfg.get("configured"):
         raise RuntimeError("Configurazione SMTP incompleta")
-    return await asyncio.to_thread(_send_sync_attachment, cfg, recipient, subject, html_content, attachment_path, attachment_name, mime_type)
+    resolved_path = await _ensure_persistent_attachment(db, attachment_path)
+    return await asyncio.to_thread(_send_sync_attachment, cfg, recipient, subject, html_content, resolved_path, attachment_name, mime_type)

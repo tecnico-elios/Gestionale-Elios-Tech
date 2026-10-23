@@ -1,11 +1,10 @@
-# Gestionale Elios Tech — R2
+# Gestionale Elios Tech — R3
 
-Release di stabilizzazione successiva alla nuova base R1.
+Release di sicurezza e affidabilità successiva alla R2.
 
 Correzioni principali:
-- controllo autorizzazioni corretto nella cancellazione Installazioni;
-- persistenza GridFS completa per il Report sotto Tecnico;
-- versione backend allineata automaticamente al file VERSION;
-- rimosso l’ultimo mapping Lead legacy;
-- audit strutturale e smoke test d’integrazione ripetibili;
-- test del ripristino PDF/documenti dopo perdita della cache locale.
+- API del Report sotto Tecnico protette con gli stessi permessi Installazioni usati dall’interfaccia;
+- utenti senza permesso Installazioni non possono leggere, creare, modificare, generare o eliminare Report tramite API diretta;
+- allegati email persistenti: se il file locale viene perso dopo un deploy/riavvio Render, viene ricostruito automaticamente da MongoDB GridFS prima dell’invio;
+- test automatici dedicati per permessi Report e ripristino allegati GridFS;
+- mantiene integralmente audit, test e correzioni della R2.

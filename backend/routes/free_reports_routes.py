@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import auth as auth_mod
 from routes.installation_report_routes import ASSET_DIR, UPLOAD_ROOT, _render_pdf
 import persistent_files
 
@@ -39,20 +40,30 @@ def build_router(db, deps) -> APIRouter:
     router = APIRouter(prefix="/free-reports", tags=["free-reports"])
     dep = deps.require_password_current
 
+    async def require_view(current=Depends(dep)):
+        if not auth_mod.has_permission(current, "installazioni", "view"):
+            raise HTTPException(403, "Non hai il permesso di visualizzare i report tecnici")
+        return current
+
+    async def require_edit(current=Depends(dep)):
+        if not auth_mod.has_permission(current, "installazioni", "edit"):
+            raise HTTPException(403, "Non hai il permesso di modificare i report tecnici")
+        return current
+
     @router.get("")
-    async def list_reports(current=Depends(dep)):
+    async def list_reports(current=Depends(require_view)):
         docs = await db.free_technical_reports.find({}, {"_id": 0}).sort("updated_at", -1).to_list(length=5000)
         return {"items": docs, "count": len(docs)}
 
     @router.get("/template")
-    async def template(current=Depends(dep)):
+    async def template(current=Depends(require_view)):
         path = ASSET_DIR / "modello_originale.pdf"
         if not path.exists():
             raise HTTPException(404, "Modello report non disponibile")
         return FileResponse(path, media_type="application/pdf", filename="DOCUMENTO PRE E POST INSTALLAZIONE.pdf")
 
     @router.get("/{report_id}")
-    async def get_report(report_id: str, current=Depends(dep)):
+    async def get_report(report_id: str, current=Depends(require_view)):
         doc = await db.free_technical_reports.find_one({"id": report_id}, {"_id": 0})
         if not doc:
             raise HTTPException(404, "Report non trovato")
@@ -65,7 +76,7 @@ def build_router(db, deps) -> APIRouter:
         }
 
     @router.post("")
-    async def create_report(body: FreeReportBody, current=Depends(dep)):
+    async def create_report(body: FreeReportBody, current=Depends(require_edit)):
         now = datetime.now(timezone.utc)
         rid = str(uuid.uuid4())
         data = dict(body.data or {})
@@ -86,7 +97,7 @@ def build_router(db, deps) -> APIRouter:
         return {"ok": True, "id": rid, "title": doc["title"], "data": data}
 
     @router.put("/{report_id}")
-    async def update_report(report_id: str, body: FreeReportBody, current=Depends(dep)):
+    async def update_report(report_id: str, body: FreeReportBody, current=Depends(require_edit)):
         existing = await db.free_technical_reports.find_one({"id": report_id})
         if not existing:
             raise HTTPException(404, "Report non trovato")
@@ -104,7 +115,7 @@ def build_router(db, deps) -> APIRouter:
         return {"ok": True, "id": report_id, "title": _display_title(data), "data": data}
 
     @router.post("/{report_id}/generate")
-    async def generate_report(report_id: str, body: FreeReportBody, current=Depends(dep)):
+    async def generate_report(report_id: str, body: FreeReportBody, current=Depends(require_edit)):
         existing = await db.free_technical_reports.find_one({"id": report_id})
         if not existing:
             raise HTTPException(404, "Report non trovato")
@@ -176,7 +187,7 @@ def build_router(db, deps) -> APIRouter:
         return {"ok": True, "id": report_id, "document_id": doc_id, "updated_existing": updated_existing, "pdf_pages": pdf_pages}
 
     @router.get("/{report_id}/pdf")
-    async def get_pdf(report_id: str, current=Depends(dep)):
+    async def get_pdf(report_id: str, current=Depends(require_view)):
         doc = await db.free_technical_reports.find_one({"id": report_id})
         if not doc:
             raise HTTPException(404, "Report non trovato")
@@ -191,7 +202,7 @@ def build_router(db, deps) -> APIRouter:
         return FileResponse(path, media_type="application/pdf", filename="Report_pre_post_installazione.pdf")
 
     @router.delete("/{report_id}")
-    async def delete_report(report_id: str, current=Depends(dep)):
+    async def delete_report(report_id: str, current=Depends(require_edit)):
         doc = await db.free_technical_reports.find_one({"id": report_id})
         if not doc:
             raise HTTPException(404, "Report non trovato")
