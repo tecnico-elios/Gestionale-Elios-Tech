@@ -14,6 +14,7 @@ if str(HERE) not in sys.path:
 
 import inventory_integrity
 import inventory_local
+import inventory_transfer_guard
 
 
 def ok(message: str) -> None:
@@ -61,6 +62,7 @@ async def main() -> None:
     db = client[db_name]
     inventory_local.set_db(db)
     inventory_integrity.install(inventory_local)
+    inventory_transfer_guard.install(inventory_local)
 
     try:
         q1 = await product(db, name="Cavo R4", code="R4-Q1", kind="a_quantita")
@@ -108,6 +110,7 @@ async def main() -> None:
         ok("Rientro dello stesso seriale sul prodotto corretto resta consentito")
 
         await inventory_local.create_receipt(s1, "R4-SN-002", 1, "2026-10-23", warehouse_id="elios-tech")
+        verona_before = await db.products.count_documents({"warehouse_id": "verona"})
         await expect_error(
             inventory_local.transfer_stock(
                 s1, 2, "elios-tech", "verona",
@@ -117,7 +120,8 @@ async def main() -> None:
         )
         before_transfer = await db.product_serials.find_one({"serial_lower": "r4-sn-002"})
         assert before_transfer.get("warehouse_id") == "elios-tech"
-        ok("Trasferimento con seriale duplicato bloccato prima di modificare il deposito")
+        assert await db.products.count_documents({"warehouse_id": "verona"}) == verona_before
+        ok("Trasferimento seriale invalido non modifica stock e non crea cloni destinazione")
 
         moved = await inventory_local.transfer_stock(
             s1, 1, "elios-tech", "verona",
@@ -128,6 +132,18 @@ async def main() -> None:
         assert moved_row.get("warehouse_id") == "verona", moved_row
         assert await db.local_transfers.count_documents({"id": moved["id"]}) == 1
         ok("Trasferimento serializzato sposta una sola unità e crea un solo storico")
+
+        # Quantità insufficiente: nessun secondo clone deve essere creato nel deposito.
+        target_count_before = await db.products.count_documents({"warehouse_id": "verona"})
+        await expect_error(
+            inventory_local.transfer_stock(
+                q1, 99, "elios-tech", "verona", serials=[], operator="Audit", note="insufficiente",
+            ),
+            "disponibili",
+        )
+        assert await qty(db, q1, "elios-tech") == 7
+        assert await db.products.count_documents({"warehouse_id": "verona"}) == target_count_before
+        ok("Trasferimento quantità insufficiente non crea prodotti destinazione")
 
         moved_qty = await inventory_local.transfer_stock(
             q1, 2, "elios-tech", "verona", serials=[], operator="Audit", note="quantità valida",
