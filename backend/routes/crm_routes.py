@@ -1375,7 +1375,7 @@ def build_router(db, auth_deps):
         if not existing:
             raise HTTPException(404, "Record non trovato")
         if resource == "installazioni":
-            _ensure_installation_owner_access(existing, current)
+            await _ensure_installation_owner_access(existing, current)
 
         linked = []
         for child_resource, child_field in DELETE_GUARDS.get(resource, []):

@@ -1,9 +1,11 @@
-# Gestionale Elios Tech — R1
+# Gestionale Elios Tech — R2
 
-Questa è la nuova base consolidata del gestionale.
+Release di stabilizzazione successiva alla nuova base R1.
 
-Tutte le modifiche valide delle precedenti release storiche fino alla vecchia R79 sono state materializzate direttamente nel codice sorgente. La build non applica più patch di release in sequenza.
-
-La cronologia Git precedente resta disponibile per audit e rollback.
-
-Da questa base la numerazione riparte da R1; la prossima modifica funzionale sarà R2.
+Correzioni principali:
+- controllo autorizzazioni corretto nella cancellazione Installazioni;
+- persistenza GridFS completa per il Report sotto Tecnico;
+- versione backend allineata automaticamente al file VERSION;
+- rimosso l’ultimo mapping Lead legacy;
+- audit strutturale e smoke test d’integrazione ripetibili;
+- test del ripristino PDF/documenti dopo perdita della cache locale.

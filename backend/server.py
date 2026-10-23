@@ -18,6 +18,17 @@ import httpx
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+
+def _current_version() -> str:
+    for candidate in (ROOT_DIR.parent / 'VERSION', ROOT_DIR / 'VERSION'):
+        try:
+            value = candidate.read_text(encoding='utf-8').strip()
+            if value:
+                return value
+        except OSError:
+            pass
+    return os.environ.get('APP_VERSION', 'R2')
+
 import notion_service
 import inventory_local
 from inventory_router import get_svc as _get_inv_svc, get_source as _get_inv_source
@@ -1835,7 +1846,7 @@ async def build_info():
     """
     return {
         "app": "Gestionale Elios Tech",
-        "build": "ERP-2026.10.01-R41-CALENDAR",
+        "build": _current_version(),
         "api_generation": 3,
     }
 
@@ -1935,7 +1946,7 @@ async def _phase2_startup_indexes():
         try:
             from calendar_installation_sync import sync_all_calendar_installations
             sync_stats = await sync_all_calendar_installations(db, actor="startup", force=False)
-            logging.info("R60 Calendar→Installazioni startup sync: %s", sync_stats)
+            logging.info("Calendar→Installazioni startup sync: %s", sync_stats)
         except Exception as sync_exc:
             logging.error("R60 Calendar→Installazioni startup sync failed: %s", sync_exc)
     except Exception as e:

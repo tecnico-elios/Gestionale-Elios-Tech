@@ -108,7 +108,6 @@ def _request_module_action(request: Request):
     if path.startswith("/api/crm/"):
         tail = path[len("/api/crm/"):].split("/", 1)[0]
         module = {
-            "lead": "ordini_clienti",
             "clienti": "ordini_clienti",
             "contatti": "ordini_clienti",
             "sedi": "ordini_clienti",

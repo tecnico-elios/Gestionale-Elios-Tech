@@ -1,7 +1,7 @@
-"""Gestione documentale locale del Gestionale Elios Tech.
+"""Gestione documentale del Gestionale Elios Tech.
 
-I file vengono salvati sul server locale in backend/uploads e i metadati in MongoDB.
-Nessuna dipendenza da Notion. Ogni documento è collegato a una risorsa/record.
+I file sono persistiti in MongoDB GridFS; il filesystem locale è solo una cache runtime
+ricostruibile dopo deploy o riavvio. Ogni documento è collegato a una risorsa/record.
 """
 from __future__ import annotations
 

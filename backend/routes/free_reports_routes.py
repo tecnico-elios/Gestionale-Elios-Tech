@@ -167,6 +167,7 @@ def build_router(db, deps) -> APIRouter:
             "data": data,
             "title": _display_title(data),
             "generated_document_id": doc_id,
+            "gridfs_id": gridfs_id,
             "pdf_path": str(out),
             "pdf_pages": pdf_pages,
             "updated_at": now,
