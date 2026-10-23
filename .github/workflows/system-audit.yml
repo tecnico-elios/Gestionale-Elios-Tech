@@ -65,8 +65,6 @@ jobs:
         run: python -m compileall -q backend
 
       - name: Structural audit
-        id: structural
-        continue-on-error: true
         run: python backend/system_audit.py
 
       - name: Install frontend dependencies
@@ -78,6 +76,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Build production Docker image
+        run: docker build -t gestionale-elios-audit .
 
       - name: Start isolated backend
         run: |
@@ -99,14 +100,6 @@ jobs:
         run: |
           curl --fail --silent --show-error --retry 3 --retry-delay 2 https://gestionale-elios-tech.onrender.com/ -o /tmp/live.html
           grep -q "Gestionale Elios Tech" /tmp/live.html
-
-      - name: Report structural audit result
-        if: always()
-        run: |
-          echo "Structural audit outcome: ${{ steps.structural.outcome }}"
-          if [ "${{ steps.structural.outcome }}" != "success" ]; then
-            echo "Sono presenti residui/incoerenze strutturali da correggere prima della R2."
-          fi
 
       - name: Stop backend
         if: always()
