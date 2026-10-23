@@ -9,11 +9,15 @@ from typing import Any
 
 import inventory_local
 import inventory_integrity
+import inventory_transfer_guard
 
 # R4: applica le protezioni di integrità allo stesso modulo condiviso importato
 # anche da server.py. In questo modo Arrivi, Spedizioni e Trasferimenti usano
 # tutti la stessa implementazione rinforzata.
 inventory_integrity.install(inventory_local)
+# La guardia trasferimenti viene applicata per ultima: valida e riserva la
+# sorgente prima di creare il prodotto nel deposito di destinazione.
+inventory_transfer_guard.install(inventory_local)
 
 
 async def get_source(db) -> str:
