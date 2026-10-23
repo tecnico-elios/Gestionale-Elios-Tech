@@ -60,6 +60,28 @@ for path in active_files:
     if path.name == "auth.py" and re.search(r'["\']lead["\']\s*:\s*["\']ordini_clienti["\']', text):
         warn("auth.py contiene ancora mapping permessi legacy per Lead")
 
+# I test automatici devono restare isolati: nessun fallback verso Emergent,
+# Render o percorsi assoluti del vecchio container /app.
+tests_dir = BACKEND / "tests"
+external_test_refs = []
+for path in tests_dir.glob("*.py"):
+    text = path.read_text(encoding="utf-8")
+    if "emergentagent.com" in text or "onrender.com" in text:
+        external_test_refs.append(f"{path.name}: URL esterno")
+    if "/app/frontend/.env" in text or "sys.path.insert(0, \"/app/backend\")" in text:
+        external_test_refs.append(f"{path.name}: percorso /app legacy")
+if external_test_refs:
+    for ref in external_test_refs:
+        issue(f"Test backend non isolato: {ref}")
+else:
+    ok("Test backend isolati: nessun fallback Emergent/Render o /app legacy")
+
+router_text = (BACKEND / "inventory_router.py").read_text(encoding="utf-8")
+if 'return "gestionale"' not in router_text:
+    issue("inventory_router.py non dichiara il Gestionale come fonte operativa")
+else:
+    ok("Fonte inventario operativa = gestionale")
+
 # Import reale dell'app: intercetta import mancanti, route non registrate e collisioni.
 os.environ.setdefault("MONGO_URL", "mongodb://127.0.0.1:27017")
 os.environ.setdefault("DB_NAME", "elios_system_audit")
