@@ -385,6 +385,10 @@ async def transfer_stock(item_page_id: str, quantity: float, from_warehouse_id: 
         "operator": operator, "note": (note or "").strip(), "created_at": now
     }
     await db.local_transfers.insert_one(doc)
+    # Motor/PyMongo aggiunge `_id` (ObjectId) al dict passato a insert_one.
+    # Non deve uscire dalla API: FastAPI non può serializzarlo e risponderebbe 500
+    # nonostante il trasferimento sia già stato eseguito.
+    doc.pop("_id", None)
     return doc
 
 

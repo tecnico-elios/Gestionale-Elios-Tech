@@ -113,14 +113,16 @@ def main() -> None:
     expect("GET", "/api/inventory/lookup?code=AUD-R2-SN-001&warehouse_id=elios-tech", token=token)
 
     # Trasferimenti tra depositi: quantità e seriale.
-    expect(
+    qty_transfer = expect(
         "POST", "/api/warehouse/transfers", token=token,
         json={"product_id": qty_id, "quantity": 3, "serials": [], "from_warehouse_id": "elios-tech", "to_warehouse_id": "verona", "note": "Audit quantità"},
-    )
-    expect(
+    ).json()["transfer"]
+    qty_verona_id = qty_transfer["target_product_id"]
+    ser_transfer = expect(
         "POST", "/api/warehouse/transfers", token=token,
         json={"product_id": ser_id, "quantity": 1, "serials": ["AUD-R2-SN-002"], "from_warehouse_id": "elios-tech", "to_warehouse_id": "verona", "note": "Audit seriale"},
-    )
+    ).json()["transfer"]
+    ser_verona_id = ser_transfer["target_product_id"]
     # Non deve essere possibile trasferire di nuovo dal deposito sbagliato lo stesso seriale.
     expect(
         "POST", "/api/warehouse/transfers", token=token, status=409,
@@ -130,9 +132,9 @@ def main() -> None:
     inv_elios = expect("GET", "/api/inventory?warehouse_id=elios-tech", token=token).json().get("items", [])
     inv_verona = expect("GET", "/api/inventory?warehouse_id=verona", token=token).json().get("items", [])
     assert float(inventory_item(inv_elios, qty_id).get("quantity") or 0) == 7
-    assert float(inventory_item(inv_verona, qty_id).get("quantity") or 0) == 3
+    assert float(inventory_item(inv_verona, qty_verona_id).get("quantity") or 0) == 3
     assert float(inventory_item(inv_elios, ser_id).get("quantity") or 0) == 1
-    assert float(inventory_item(inv_verona, ser_id).get("quantity") or 0) == 1
+    assert float(inventory_item(inv_verona, ser_verona_id).get("quantity") or 0) == 1
 
     transfers = expect("GET", "/api/warehouse/transfers", token=token).json().get("items", [])
     assert len(transfers) >= 2, transfers
@@ -142,7 +144,7 @@ def main() -> None:
     # Riporta il seriale a Elios per il test Commessa.
     expect(
         "POST", "/api/warehouse/transfers", token=token,
-        json={"product_id": ser_id, "quantity": 1, "serials": ["AUD-R2-SN-002"], "from_warehouse_id": "verona", "to_warehouse_id": "elios-tech", "note": "Rientro audit"},
+        json={"product_id": ser_verona_id, "quantity": 1, "serials": ["AUD-R2-SN-002"], "from_warehouse_id": "verona", "to_warehouse_id": "elios-tech", "note": "Rientro audit"},
     )
 
     # Commessa mista quantità + seriale.
