@@ -1,0 +1,150 @@
+name: Apply R2 audit fixes
+
+on:
+  push:
+    branches:
+      - audit/r1-system-check
+    paths:
+      - .github/workflows/apply-r2-audit-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: audit/r1-system-check
+          fetch-depth: 0
+
+      - name: Apply verified R2 fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  if new in text:
+                      print(f'[OK] {label}: già applicato')
+                      return
+                  raise SystemExit(f'{label}: blocco non trovato in {path}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'[OK] {label}')
+
+          # 1) Controllo autorizzazioni cancellazione Installazioni: la coroutine va attesa.
+          replace(
+              'backend/routes/crm_routes.py',
+              '        if resource == "installazioni":\n            _ensure_installation_owner_access(existing, current)\n',
+              '        if resource == "installazioni":\n            await _ensure_installation_owner_access(existing, current)\n',
+              'await controllo proprietario installazione',
+          )
+
+          # 2) Report Tecnico: conserva l’id GridFS anche sul record principale.
+          replace(
+              'backend/routes/free_reports_routes.py',
+              '            "generated_document_id": doc_id,\n            "pdf_path": str(out),\n',
+              '            "generated_document_id": doc_id,\n            "gridfs_id": gridfs_id,\n            "pdf_path": str(out),\n',
+              'persistenza GridFS report tecnico',
+          )
+
+          # 3) Rimuove l’ultimo mapping Lead ormai non più esistente.
+          replace(
+              'backend/auth.py',
+              '            "lead": "ordini_clienti",\n',
+              '',
+              'rimozione mapping Lead legacy',
+          )
+
+          # 4) La build-info legge la versione reale dal file VERSION.
+          server = Path('backend/server.py')
+          text = server.read_text(encoding='utf-8')
+          anchor = "ROOT_DIR = Path(__file__).parent\nload_dotenv(ROOT_DIR / '.env')\n"
+          helper = "ROOT_DIR = Path(__file__).parent\nload_dotenv(ROOT_DIR / '.env')\n\n\ndef _current_version() -> str:\n    for candidate in (ROOT_DIR.parent / 'VERSION', ROOT_DIR / 'VERSION'):\n        try:\n            value = candidate.read_text(encoding='utf-8').strip()\n            if value:\n                return value\n        except OSError:\n            pass\n    return os.environ.get('APP_VERSION', 'R2')\n"
+          if '_current_version()' not in text:
+              if anchor not in text:
+                  raise SystemExit('server version helper anchor non trovato')
+              text = text.replace(anchor, helper, 1)
+          text = text.replace('"build": "ERP-2026.10.01-R41-CALENDAR",', '"build": _current_version(),')
+          text = text.replace('R60 Calendar→Installazioni startup sync:', 'Calendar→Installazioni startup sync:')
+          server.write_text(text, encoding='utf-8')
+
+          # Docker: rende VERSION disponibile anche nel container runtime.
+          replace(
+              'Dockerfile',
+              'COPY backend/ /app/backend/\nRUN python -m compileall -q /app/backend\n',
+              'COPY backend/ /app/backend/\nCOPY VERSION /app/VERSION\nRUN python -m compileall -q /app/backend\n',
+              'VERSION nel container',
+          )
+
+          # Documentazione storage corretta.
+          replace(
+              'backend/routes/documents_routes.py',
+              '"""Gestione documentale locale del Gestionale Elios Tech.\n\nI file vengono salvati sul server locale in backend/uploads e i metadati in MongoDB.\nNessuna dipendenza da Notion. Ogni documento è collegato a una risorsa/record.\n"""',
+              '"""Gestione documentale del Gestionale Elios Tech.\n\nI file sono persistiti in MongoDB GridFS; il filesystem locale è solo una cache runtime\nricostruibile dopo deploy o riavvio. Ogni documento è collegato a una risorsa/record.\n"""',
+              'docstring storage persistente',
+          )
+
+          # Audit riutilizzabile per R2, R3, ...
+          audit = Path('backend/system_audit.py')
+          text = audit.read_text(encoding='utf-8')
+          text = text.replace(
+              'if version != "R1":\n    issue(f"VERSION attesa R1, trovata {version!r}")\nelse:\n    ok("VERSION = R1")',
+              'if not re.fullmatch(r"R[1-9][0-9]*", version):\n    issue(f"VERSION non valida: {version!r}")\nelse:\n    ok(f"VERSION = {version}")',
+          )
+          text = text.replace(
+              'if old_build and old_build.group(1) != "R1":\n    warn(f"server.py espone ancora build legacy: {old_build.group(1)}")',
+              'if old_build and old_build.group(1) != version:\n    warn(f"server.py espone build non coerente: {old_build.group(1)} (VERSION={version})")',
+          )
+          audit.write_text(text, encoding='utf-8')
+
+          # Smoke test: verifica guard di cancellazione e ripristino GridFS dopo perdita cache locale.
+          smoke = Path('backend/integration_smoke.py')
+          text = smoke.read_text(encoding='utf-8')
+          text = text.replace(
+              'import json\nimport sys\nimport time\nfrom typing import Any\n\nimport requests\n',
+              'import json\nimport os\nimport sys\nimport time\nfrom pathlib import Path\nfrom typing import Any\n\nimport requests\nfrom pymongo import MongoClient\n',
+          )
+          text = text.replace(
+              'BASE = "http://127.0.0.1:8001"\n',
+              'BASE = "http://127.0.0.1:8001"\nSYNC_DB = MongoClient(os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017"))[os.environ.get("DB_NAME", "elios_system_audit")]\n',
+          )
+          text = text.replace(
+              '    pdf = expect("GET", f"/api/installation-reports/{install_id}/pdf", token=token)\n    assert pdf.content.startswith(b"%PDF"), "PDF installazione non valido"\n',
+              '    install_db = SYNC_DB.crm_installazioni.find_one({"id": install_id})\n    assert install_db and install_db.get("report_installazione_gridfs_id"), install_db\n    install_doc = SYNC_DB.documents.find_one({"id": gen.get("document_id")})\n    assert install_doc and install_doc.get("gridfs_id"), install_doc\n    install_cache = Path(install_doc.get("stored_path") or "")\n    if install_cache.exists():\n        install_cache.unlink()\n    pdf = expect("GET", f"/api/installation-reports/{install_id}/pdf", token=token)\n    assert pdf.content.startswith(b"%PDF"), "PDF installazione non valido dopo ripristino GridFS"\n',
+          )
+          text = text.replace(
+              '    listing = expect("GET", f"/api/files/installazioni/{install_id}", token=token).json()\n',
+              '    uploaded_db = SYNC_DB.documents.find_one({"id": document_id})\n    assert uploaded_db and uploaded_db.get("gridfs_id"), uploaded_db\n    uploaded_cache = Path(uploaded_db.get("stored_path") or "")\n    if uploaded_cache.exists():\n        uploaded_cache.unlink()\n    listing = expect("GET", f"/api/files/installazioni/{install_id}", token=token).json()\n',
+          )
+          text = text.replace(
+              '    free_pdf = expect("GET", f"/api/free-reports/{free_id}/pdf", token=token)\n    assert free_pdf.content.startswith(b"%PDF"), "PDF standalone non valido"\n',
+              '    free_db = SYNC_DB.free_technical_reports.find_one({"id": free_id})\n    assert free_db and free_db.get("gridfs_id"), f"Report Tecnico senza gridfs_id: {free_db}"\n    free_cache = Path(free_db.get("pdf_path") or "")\n    if free_cache.exists():\n        free_cache.unlink()\n    free_pdf = expect("GET", f"/api/free-reports/{free_id}/pdf", token=token)\n    assert free_pdf.content.startswith(b"%PDF"), "PDF standalone non valido dopo ripristino GridFS"\n',
+          )
+          text = text.replace(
+              '    expect("DELETE", f"/api/crm/installazioni/{install_id}", token=token)\n    expect("DELETE", f"/api/crm/ordini-clienti/{order_id}", token=token)\n',
+              '    # La cancellazione deve essere bloccata finché il report installazione è collegato.\n    expect("DELETE", f"/api/crm/installazioni/{install_id}", status=409, token=token)\n    expect("DELETE", f"/api/files/document/{gen.get(\'document_id\')}", token=token)\n    expect("DELETE", f"/api/crm/installazioni/{install_id}", token=token)\n    expect("DELETE", f"/api/crm/ordini-clienti/{order_id}", token=token)\n',
+          )
+          smoke.write_text(text, encoding='utf-8')
+
+          Path('VERSION').write_text('R2\n', encoding='utf-8')
+          Path('RELEASE.md').write_text('''# Gestionale Elios Tech — R2\n\nRelease di stabilizzazione successiva alla nuova base R1.\n\nCorrezioni principali:\n- controllo autorizzazioni corretto nella cancellazione Installazioni;\n- persistenza GridFS completa per il Report sotto Tecnico;\n- versione backend allineata automaticamente al file VERSION;\n- rimosso l’ultimo mapping Lead legacy;\n- audit strutturale e smoke test d’integrazione ripetibili;\n- test del ripristino PDF/documenti dopo perdita della cache locale.\n''', encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/apply-r2-audit-fixes.yml
+
+      - name: Compile patched backend
+        run: python -m compileall -q backend
+
+      - name: Commit R2 fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'R2: corregge problemi emersi dall audit completo'
+          git push origin HEAD:audit/r1-system-check
