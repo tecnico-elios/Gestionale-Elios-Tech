@@ -144,7 +144,7 @@ export const SopralluoghiPage = () => {
       }),
       F("telefono", "Telefono"),
       F("email", "Email", { type: "email" }),
-      F("indirizzo_libero", "Indirizzo sopralluogo", { full: true }),
+      F("indirizzo_libero", "Indirizzo sopralluogo", { full: true, addressAutocomplete: true, help: "Scrivi via, civico e comune, poi seleziona il risultato corretto per confermare Maps e meteo." }),
       F("tecnico", "Tecnico"),
       F("data", "Data", { type: "date", required: true }),
       F("ora", "Ora", { type: "time" }),

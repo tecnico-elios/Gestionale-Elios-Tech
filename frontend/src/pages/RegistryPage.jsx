@@ -72,6 +72,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   const [clientSaving, setClientSaving] = useState(false);
   const [documentsTarget, setDocumentsTarget] = useState(null);
   const [clientView, setClientView] = useState("active");
+  const [addressSearch, setAddressSearch] = useState({ query: "", loading: false, items: [], open: false, error: "" });
 
   const empty = useMemo(
     () => Object.fromEntries(fields.map((f) => [f.key, f.default ?? (f.type === "checkbox" ? false : "")])),
@@ -166,6 +167,52 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
     setLookupSearch({});
     setLookupOpen({});
     setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open || resource !== "sopralluoghi") return undefined;
+    const query = String(form.indirizzo_libero || "").trim();
+    if (form.indirizzo_verificato || query.length < 4) {
+      setAddressSearch((prev) => ({ ...prev, query, items: [], open: false, loading: false, error: "" }));
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      setAddressSearch({ query, loading: true, items: [], open: true, error: "" });
+      try {
+        const { data } = await axios.get(`${API}/address-search`, { params: { q: query } });
+        setAddressSearch({ query, loading: false, items: data?.items || [], open: true, error: "" });
+      } catch (e) {
+        setAddressSearch({ query, loading: false, items: [], open: true, error: errorText(e) });
+      }
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [open, resource, form.indirizzo_libero, form.indirizzo_verificato]);
+
+  const changeAddressField = (field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [field.key]: value,
+      indirizzo_verificato: false,
+      indirizzo_latitudine: "",
+      indirizzo_longitudine: "",
+      comune_libero: "",
+      provincia_libera: "",
+      cap_libero: "",
+    }));
+  };
+
+  const chooseAddress = (item) => {
+    setForm((prev) => ({
+      ...prev,
+      indirizzo_libero: item.label || prev.indirizzo_libero,
+      indirizzo_verificato: true,
+      indirizzo_latitudine: item.latitude,
+      indirizzo_longitudine: item.longitude,
+      comune_libero: item.comune || "",
+      provincia_libera: item.provincia || "",
+      cap_libero: item.cap || "",
+    }));
+    setAddressSearch({ query: item.label || "", loading: false, items: [], open: false, error: "" });
   };
 
   const changeField = (field, value) => {
@@ -573,6 +620,36 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                         )}
                         {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
+                    ) : f.addressAutocomplete ? (
+                      <div className="relative mt-1">
+                        <Input
+                          className={`h-12 pr-10 ${form.indirizzo_verificato ? "border-emerald-400 bg-emerald-50/40" : ""}`}
+                          type="text"
+                          value={form[f.key] || ""}
+                          onChange={(e) => changeAddressField(f, e.target.value)}
+                          onFocus={() => {
+                            if (!form.indirizzo_verificato && String(form[f.key] || "").trim().length >= 4) {
+                              setAddressSearch((prev) => ({ ...prev, open: true }));
+                            }
+                          }}
+                          autoComplete="off"
+                          required={f.required}
+                          disabled={disabled}
+                          placeholder="Inizia a scrivere via, civico e comune..."
+                        />
+                        <MapPin size={18} className={`absolute right-3 top-3.5 ${form.indirizzo_verificato ? "text-emerald-600" : "text-slate-400"}`}/>
+                        {form.indirizzo_verificato && <div className="mt-1 text-xs font-bold text-emerald-700">✓ Indirizzo verificato: Maps e meteo useranno questa posizione esatta.</div>}
+                        {!form.indirizzo_verificato && String(form[f.key] || "").trim().length >= 4 && <div className="mt-1 text-xs text-slate-500">Seleziona uno dei risultati per confermare posizione e meteo.</div>}
+                        {addressSearch.open && !form.indirizzo_verificato && (
+                          <div className="absolute z-[70] left-0 right-0 mt-1 rounded-lg border border-slate-200 bg-white shadow-xl max-h-64 overflow-auto">
+                            {addressSearch.loading ? <div className="px-3 py-3 text-sm text-slate-500">Ricerca indirizzo…</div> : addressSearch.error ? <div className="px-3 py-3 text-sm text-amber-700">{addressSearch.error}</div> : addressSearch.items.length ? addressSearch.items.map((item, i) => (
+                              <button key={`${item.latitude}-${item.longitude}-${i}`} type="button" onMouseDown={(e)=>e.preventDefault()} onClick={() => chooseAddress(item)} className="block w-full border-b border-slate-100 px-3 py-2.5 text-left hover:bg-blue-50 last:border-0">
+                                <div className="flex items-start gap-2"><MapPin size={16} className="mt-0.5 shrink-0 text-[#1A456B]"/><div><div className="text-sm font-semibold text-slate-900">{item.label}</div><div className="text-[11px] text-slate-500">Posizione trovata · seleziona per confermare</div></div></div>
+                              </button>
+                            )) : <div className="px-3 py-3 text-sm text-slate-500">Nessun indirizzo trovato. Aggiungi anche il comune.</div>}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <Input
                         className="mt-1 h-12"
@@ -597,17 +674,21 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
               const mapAddress = freeAddress || siteAddress;
               return <div className="mb-4 space-y-3">
                 {mapAddress && <a
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-[#1A456B] hover:bg-blue-100"
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapAddress)}`}
+                  className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold hover:bg-blue-100 ${form.indirizzo_verificato ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-blue-200 bg-blue-50 text-[#1A456B]"}`}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(form.indirizzo_verificato && form.indirizzo_latitudine && form.indirizzo_longitudine ? `${form.indirizzo_latitudine},${form.indirizzo_longitudine}` : mapAddress)}`}
                   target="_blank" rel="noreferrer"
-                ><MapPin size={18} weight="fill"/>Apri in Google Maps · {mapAddress}</a>}
+                ><MapPin size={18} weight="fill"/>{form.indirizzo_verificato ? "Posizione confermata in Google Maps" : "Apri in Google Maps"} · {mapAddress}</a>}
                 <InstallationWeather
                   date={form.data}
                   site={selectedSite}
                   address={freeAddress}
-                  comune={selectedSite?.comune || ""}
-                  provincia={selectedSite?.provincia || ""}
-                  cap={selectedSite?.cap || ""}
+                  comune={selectedSite?.comune || form.comune_libero || ""}
+                  provincia={selectedSite?.provincia || form.provincia_libera || ""}
+                  cap={selectedSite?.cap || form.cap_libero || ""}
+                  latitude={form.indirizzo_verificato ? form.indirizzo_latitudine : null}
+                  longitude={form.indirizzo_verificato ? form.indirizzo_longitudine : null}
+                  verified={Boolean(form.indirizzo_verificato)}
+                  subject={resource === "sopralluoghi" ? "sopralluogo" : "installazione"}
                 />
               </div>;
             })()}
