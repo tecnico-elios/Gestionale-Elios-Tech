@@ -85,7 +85,11 @@ def main() -> None:
     # CRUD Clienti.
     client = expect(
         "POST", "/api/crm/clienti", token=token,
-        json={"ragione_sociale": "Cliente Audit R1", "tipo": "Azienda", "note": "Creato solo dal test automatico"},
+        json={
+            "ragione_sociale": "Cliente Audit R1", "tipo": "Azienda",
+            "email": "audit.client@example.com", "telefono": "+39 333 123 4567",
+            "partita_iva": "12345678901", "note": "Creato solo dal test automatico",
+        },
     ).json()
     client_id = client.get("id")
     assert client_id, client
@@ -98,6 +102,34 @@ def main() -> None:
         json={"ragione_sociale": "Cliente Audit R1 Aggiornato", "tipo": "Azienda"},
     ).json()
     assert updated.get("ragione_sociale") == "Cliente Audit R1 Aggiornato", updated
+
+    # R9: duplicati cliente normalizzati e duplicati sede devono essere bloccati.
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato Email", "tipo": "Azienda", "email": "AUDIT.CLIENT@example.com"},
+    )
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato Telefono", "tipo": "Azienda", "telefono": "393331234567"},
+    )
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato PIVA", "tipo": "Azienda", "partita_iva": "123 456 789 01"},
+    )
+
+    site = expect(
+        "POST", "/api/crm/sedi", token=token,
+        json={"cliente_id": client_id, "nome": "Sede Audit", "indirizzo": "Via Audit", "civico": "1", "comune": "Piacenza"},
+    ).json()
+    site_id = site.get("id")
+    assert site_id, site
+    expect(
+        "POST", "/api/crm/sedi", status=409, token=token,
+        json={"cliente_id": client_id, "nome": "sede   audit", "indirizzo": "via   audit", "civico": "1", "comune": "PIACENZA"},
+    )
+    # Aggiornare il record con i propri dati non deve essere considerato duplicato.
+    expect("PUT", f"/api/crm/sedi/{site_id}", token=token, json={"nome": "Sede Audit", "indirizzo": "Via Audit", "civico": "1", "comune": "Piacenza"})
+    expect("DELETE", f"/api/crm/sedi/{site_id}", token=token)
 
     # Ordine cliente semplice collegato al cliente.
     order = expect(

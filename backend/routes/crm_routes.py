@@ -6,6 +6,7 @@ import uuid
 import io
 import json
 import hashlib
+import re
 from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -116,6 +117,75 @@ def build_router(db, auth_deps):
         if not name:
             raise HTTPException(404, "Risorsa non valida")
         return db[name]
+
+    def _norm_text(value: Any) -> str:
+        return " ".join(str(value or "").strip().split()).casefold()
+
+    def _digits(value: Any) -> str:
+        return re.sub(r"\D+", "", str(value or ""))
+
+    def _compact_id(value: Any) -> str:
+        return re.sub(r"[\s.\-/]+", "", str(value or "")).casefold()
+
+    def _space_pattern(value: Any) -> str:
+        parts = str(value or "").strip().split()
+        return r"^" + r"\s+".join(re.escape(part) for part in parts) + r"$" if parts else ""
+
+    def _digits_pattern(value: Any) -> str:
+        digits = _digits(value)
+        return r"^\D*" + r"\D*".join(re.escape(ch) for ch in digits) + r"\D*$" if digits else ""
+
+    def _compact_pattern(value: Any) -> str:
+        compact = _compact_id(value)
+        sep = r"[\s.\-/]*"
+        return r"^" + sep.join(re.escape(ch) for ch in compact) + r"$" if compact else ""
+
+    async def _duplicate_client(data: Dict[str, Any], exclude_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        ors = []
+        email = str(data.get("email") or "").strip()
+        phone = _digits_pattern(data.get("telefono"))
+        partita_iva = _compact_pattern(data.get("partita_iva"))
+        codice_fiscale = _compact_pattern(data.get("codice_fiscale"))
+        if email:
+            ors.append({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
+        if phone:
+            ors.append({"telefono": {"$regex": phone, "$options": "i"}})
+        if partita_iva:
+            ors.append({"partita_iva": {"$regex": partita_iva, "$options": "i"}})
+        if codice_fiscale:
+            ors.append({"codice_fiscale": {"$regex": codice_fiscale, "$options": "i"}})
+        if not ors:
+            return None
+        query: Dict[str, Any] = {"$or": ors}
+        if exclude_id:
+            query["id"] = {"$ne": str(exclude_id)}
+        return await coll("clienti").find_one(query)
+
+    async def _duplicate_site(data: Dict[str, Any], exclude_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        cliente_id = str(data.get("cliente_id") or "").strip()
+        nome = _space_pattern(data.get("nome"))
+        indirizzo = _space_pattern(data.get("indirizzo"))
+        comune = _space_pattern(data.get("comune"))
+        if not (cliente_id and nome and indirizzo and comune):
+            return None
+        query: Dict[str, Any] = {
+            "cliente_id": cliente_id,
+            "nome": {"$regex": nome, "$options": "i"},
+            "indirizzo": {"$regex": indirizzo, "$options": "i"},
+            "comune": {"$regex": comune, "$options": "i"},
+        }
+        civico = _space_pattern(data.get("civico"))
+        if civico:
+            query["civico"] = {"$regex": civico, "$options": "i"}
+        else:
+            query["$or"] = [{"civico": {"$exists": False}}, {"civico": ""}, {"civico": None}]
+        if exclude_id:
+            query["id"] = {"$ne": str(exclude_id)}
+        return await coll("sedi").find_one(query)
+
+    def _duplicate_client_message(duplicate: Dict[str, Any]) -> str:
+        label = duplicate.get("ragione_sociale") or " ".join(filter(None, [duplicate.get("nome"), duplicate.get("cognome")])) or "senza nome"
+        return f"Esiste già il cliente '{label}' con uno dei dati identificativi inseriti"
 
     def _user_id(current: Dict[str, Any]) -> str:
         return str(current.get("_id") or current.get("id") or "")
@@ -293,13 +363,9 @@ def build_router(db, auth_deps):
             return None, sede_id
 
         # Prima prova a riusare una anagrafica già esistente per evitare duplicati.
-        ors = []
-        import re
-        if email:
-            ors.append({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
-        if telefono:
-            ors.append({"telefono": {"$regex": f"^{re.escape(telefono)}$", "$options": "i"}})
-        existing = await coll("clienti").find_one({"$or": ors}) if ors else None
+        # Il confronto usa la stessa normalizzazione del CRUD centrale (es. telefono
+        # con/spazi, trattini o parentesi viene riconosciuto come lo stesso numero).
+        existing = await _duplicate_client({"email": email, "telefono": telefono})
         if existing:
             cliente_id = str(existing.get("id"))
         else:
@@ -1285,17 +1351,16 @@ def build_router(db, auth_deps):
         data = body.model_dump(exclude_none=True)
         data = await normalize_relations(resource, data)
 
-        # Anagrafica cliente unica: previene i duplicati più comuni.
+        # Anagrafiche uniche: la protezione è centralizzata sul backend, quindi
+        # vale per Clienti/Ordini, Preventivi, Sopralluoghi e qualsiasi altro ingresso.
         if resource == "clienti":
-            ors = []
-            for field in ("partita_iva", "codice_fiscale", "email", "telefono"):
-                value = str(data.get(field) or "").strip()
-                if value:
-                    ors.append({field: {"$regex": f"^{__import__('re').escape(value)}$", "$options": "i"}})
-            if ors:
-                duplicate = await c.find_one({"$or": ors})
-                if duplicate:
-                    raise HTTPException(409, f"Esiste già il cliente '{duplicate.get('ragione_sociale') or duplicate.get('nome') or 'senza nome'}' con uno dei dati inseriti")
+            duplicate = await _duplicate_client(data)
+            if duplicate:
+                raise HTTPException(409, _duplicate_client_message(duplicate))
+        if resource == "sedi":
+            duplicate = await _duplicate_site(data)
+            if duplicate:
+                raise HTTPException(409, f"Esiste già la sede '{duplicate.get('nome') or 'senza nome'}' per questo cliente")
 
         # Gli stati Inviato/Accettato devono passare dalle azioni dedicate,
         # così PDF/revisione e commessa restano coerenti.
@@ -1375,6 +1440,21 @@ def build_router(db, auth_deps):
         data.pop("created_at", None)
         data.pop("created_by", None)
         data = await normalize_relations(resource, data)
+
+        # Anche una modifica non può trasformare un record in un duplicato.
+        if resource == "clienti":
+            merged_client = dict(existing)
+            merged_client.update(data)
+            duplicate = await _duplicate_client(merged_client, exclude_id=record_id)
+            if duplicate:
+                raise HTTPException(409, _duplicate_client_message(duplicate))
+        if resource == "sedi":
+            merged_site = dict(existing)
+            merged_site.update(data)
+            duplicate = await _duplicate_site(merged_site, exclude_id=record_id)
+            if duplicate:
+                raise HTTPException(409, f"Esiste già la sede '{duplicate.get('nome') or 'senza nome'}' per questo cliente")
+
         if resource == "preventivi" and existing.get("pdf_signature"):
             merged_for_pdf = dict(existing)
             merged_for_pdf.update(data)
