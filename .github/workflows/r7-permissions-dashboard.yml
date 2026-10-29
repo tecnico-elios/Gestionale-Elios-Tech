@@ -51,6 +51,9 @@ jobs:
       - name: Apply R7 hardening
         run: python scripts/apply_r7_permissions_dashboard.py
 
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
       - name: Compile backend
         run: python -m compileall -q backend
 
