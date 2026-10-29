@@ -69,6 +69,28 @@ os.environ.setdefault("CHECKLIST_RECIPIENTS", "")
 os.environ.setdefault("PUBLIC_FRONTEND_URL", "http://127.0.0.1:8001")
 sys.path.insert(0, str(BACKEND))
 
+# Le route CRM statiche, che non coincidono con una chiave RESOURCES, devono
+# essere mappate esplicitamente al modulo autorizzativo corretto.
+try:
+    import auth as audit_auth  # noqa: E402
+    from types import SimpleNamespace
+
+    permission_cases = [
+        ("GET", "/api/crm/clienti-summary", ("ordini_clienti", "view")),
+        ("GET", "/api/crm/ordini-insights", ("commesse", "view")),
+        ("GET", "/api/crm/interventi-tecnici", ("installazioni", "view")),
+        ("POST", "/api/crm/interventi-tecnici", ("installazioni", "create")),
+    ]
+    for method, path, expected in permission_cases:
+        req = SimpleNamespace(method=method, url=SimpleNamespace(path=path))
+        actual = audit_auth._request_module_action(req)
+        if actual != expected:
+            issue(f"Mapping permesso errato per {method} {path}: {actual!r}, atteso {expected!r}")
+        else:
+            ok(f"Mapping permesso {method} {path} -> {expected[0]}/{expected[1]}")
+except Exception as exc:
+    issue(f"Verifica mapping permessi fallita: {type(exc).__name__}: {exc}")
+
 try:
     import server  # noqa: E402
 except Exception as exc:  # pragma: no cover - CI diagnostic

@@ -114,7 +114,10 @@ def _request_module_action(request: Request):
             "sopralluoghi": "sopralluoghi",
             "preventivi": "preventivi",
             "ordini-clienti": "ordini_clienti",
+            "clienti-summary": "ordini_clienti",
+            "ordini-insights": "commesse",
             "installazioni": "installazioni",
+            "interventi-tecnici": "installazioni",
             "assistenza": "assistenza",
         }.get(tail)
         if tail == "meta":
