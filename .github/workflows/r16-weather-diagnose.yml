@@ -1,0 +1,39 @@
+name: R16 weather diagnose
+
+on:
+  push:
+    branches: [fix/r16-sopralluoghi-meteo]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Open-Meteo esatto
+        run: |
+          python - <<'PY'
+          import json, urllib.parse, urllib.request, urllib.error
+          params = {
+            'latitude': 45.0526,
+            'longitude': 9.6930,
+            'daily': 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max',
+            'timezone': 'Europe/Rome',
+            'forecast_days': 16,
+          }
+          url = 'https://api.open-meteo.com/v1/forecast?' + urllib.parse.urlencode(params)
+          print(url)
+          req = urllib.request.Request(url, headers={'User-Agent':'Gestionale-Elios-Tech/1.0 weather'})
+          try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+              body = r.read().decode('utf-8')
+              print('STATUS', r.status)
+              print(body[:1200])
+          except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace')
+            print('HTTP ERROR', e.code)
+            print(body[:2000])
+            raise
+          PY
