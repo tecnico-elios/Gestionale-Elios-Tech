@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { API } from "../lib/apiBase";
 import RegistryPage from "./RegistryPage";
 import InstallazioniCalendarPage from "./InstallazioniCalendarPage";
 
@@ -16,6 +19,28 @@ const CLIENT_LOOKUP = { lookupResource: "clienti", lookupLabel: clientLabel };
 const SITE_LOOKUP = { lookupResource: "sedi", lookupLabel: siteLabel };
 const ORDER_LOOKUP = { lookupResource: "ordini-clienti", lookupLabel: orderLabel };
 const COMMESSA_LOOKUP = { lookupEndpoint: "crm/lookups/commesse", lookupKey: "commesse", lookupLabel: commessaLabel };
+
+const DEFAULT_OPERATIONAL_OPTIONS = {
+  sopralluoghi_stati: ["Da programmare", "Programmato", "Eseguito", "Annullato"],
+  assistenza_tipi: ["Remota", "In loco"],
+  assistenza_priorita: ["Bassa", "Normale", "Alta", "Urgente"],
+  assistenza_stati: ["Aperta", "Da programmare", "Programmata", "In lavorazione", "In attesa cliente / fornitore", "Tecnico in intervento", "Risolta", "Completata", "Chiusa"],
+};
+
+function useOperationalOptions() {
+  const [options, setOptions] = useState(DEFAULT_OPERATIONAL_OPTIONS);
+  useEffect(() => {
+    let active = true;
+    axios.get(`${API}/operational-options`).then(({ data }) => {
+      if (!active || !data) return;
+      setOptions({ ...DEFAULT_OPERATIONAL_OPTIONS, ...data });
+    }).catch(() => {
+      // Fallback locale: le pagine restano operative anche durante un errore di rete temporaneo.
+    });
+    return () => { active = false; };
+  }, []);
+  return options;
+}
 
 export const ClientiPage = () => (
   <RegistryPage
@@ -102,7 +127,9 @@ export const SediPage = () => (
   />
 );
 
-export const SopralluoghiPage = () => (
+export const SopralluoghiPage = () => {
+  const operational = useOperationalOptions();
+  return (
   <RegistryPage
     resource="sopralluoghi"
     title="Sopralluoghi"
@@ -121,7 +148,7 @@ export const SopralluoghiPage = () => (
       F("tecnico", "Tecnico"),
       F("data", "Data", { type: "date", required: true }),
       F("ora", "Ora", { type: "time" }),
-      F("stato", "Stato", { options: ["Da programmare", "Programmato", "Eseguito", "Annullato"], default: "Da programmare" }),
+      F("stato", "Stato", { options: operational.sopralluoghi_stati, default: operational.sopralluoghi_stati?.[0] || "Da programmare" }),
       F("potenza", "Potenza disponibile"),
       F("impianto", "Impianto"),
       F("distanza", "Distanza indicativa"),
@@ -135,7 +162,8 @@ export const SopralluoghiPage = () => (
       F("stato", "Stato"),
     ]}
   />
-);
+  );
+};
 
 export const PreventiviPage = () => (
   <RegistryPage
@@ -204,7 +232,9 @@ export const OrdiniClientiPage = () => (
 
 export const InstallazioniPage = () => <InstallazioniCalendarPage />;
 
-export const AssistenzaPage = () => (
+export const AssistenzaPage = () => {
+  const operational = useOperationalOptions();
+  return (
   <RegistryPage
     resource="assistenza"
     title="Assistenza"
@@ -226,12 +256,12 @@ export const AssistenzaPage = () => (
       }),
       F("cliente_id", "Cliente", { ...CLIENT_LOOKUP, required: true, clearOnChange: ["sede_id"] }),
       F("sede_id", "Sede", { ...SITE_LOOKUP, dependsOn: "cliente_id", lookupFilterBy: "cliente_id" }),
-      F("tipo", "Tipo assistenza", { options: ["Remota", "In loco"], default: "Remota" }),
-      F("priorita", "Priorità", { options: ["Bassa", "Normale", "Alta", "Urgente"], default: "Normale" }),
+      F("tipo", "Tipo assistenza", { options: operational.assistenza_tipi, default: operational.assistenza_tipi?.[0] || "Remota" }),
+      F("priorita", "Priorità", { options: operational.assistenza_priorita, default: operational.assistenza_priorita?.includes("Normale") ? "Normale" : (operational.assistenza_priorita?.[0] || "Normale") }),
       F("tecnico", "Tecnico"),
       F("numero_caso_wallbox", "Caso Wallbox"),
       F("data", "Data", { type: "date" }),
-      F("stato", "Stato", { options: ["Aperta", "Da programmare", "Programmata", "In lavorazione", "In attesa cliente / fornitore", "Tecnico in intervento", "Risolta", "Completata", "Chiusa"], default: "Aperta" }),
+      F("stato", "Stato", { options: operational.assistenza_stati, default: operational.assistenza_stati?.[0] || "Aperta" }),
       F("descrizione", "Descrizione problema / intervento", { type: "textarea", full: true }),
       F("note_tecniche", "Note tecniche", { type: "textarea", full: true }),
     ]}
@@ -244,4 +274,5 @@ export const AssistenzaPage = () => (
       F("stato", "Stato"),
     ]}
   />
-);
+  );
+};

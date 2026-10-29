@@ -72,6 +72,17 @@ def main() -> None:
     me = expect("GET", "/api/auth/me", token=token).json()
     assert me.get("username") == "auditadmin" and me.get("role") == "admin", me
 
+    # R10: opzioni operative configurabili da Admin e leggibili da ogni utente autenticato.
+    admin_settings = expect("GET", "/api/admin/settings", token=token).json()
+    operativo = admin_settings.get("operativo") or {}
+    assert operativo.get("sopralluoghi_stati") and operativo.get("assistenza_stati"), operativo
+    probe = {k: list(v) for k, v in operativo.items()}
+    probe["sopralluoghi_stati"] = list(probe["sopralluoghi_stati"]) + ["Verifica R10"]
+    saved_settings = expect("PUT", "/api/admin/settings", token=token, json={"operativo": probe}).json()
+    assert "Verifica R10" in saved_settings.get("operativo", {}).get("sopralluoghi_stati", []), saved_settings
+    public_options = expect("GET", "/api/operational-options", token=token).json()
+    assert "Verifica R10" in public_options.get("sopralluoghi_stati", []), public_options
+
     # Feature flag pubblico e aree principali autenticate.
     expect("GET", "/api/features")
     expect("GET", "/api/commesse", token=token)

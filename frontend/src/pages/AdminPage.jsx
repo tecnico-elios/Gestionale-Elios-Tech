@@ -257,9 +257,66 @@ function WarehousePane() {
   );
 }
 
+function OperationalOptionsPane() {
+  const [options, setOptions] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const fields = [
+    ["sopralluoghi_stati", "Stati sopralluoghi", "Una voce per riga. Il primo valore diventa lo stato predefinito dei nuovi sopralluoghi."],
+    ["assistenza_tipi", "Tipi assistenza", "Esempio: Remota, In loco."],
+    ["assistenza_priorita", "Priorità assistenza", "Le priorità disponibili nei ticket di assistenza."],
+    ["assistenza_stati", "Stati assistenza", "Il primo valore diventa lo stato predefinito dei nuovi ticket."],
+  ];
+  const load = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings`);
+      setOptions(data.operativo || {});
+    } catch (e) {
+      toast.error("Impossibile caricare stati e priorità", { description: formatError(e) });
+    }
+  };
+  useEffect(() => { load(); }, []);
+  const update = (key, value) => setOptions((prev) => ({ ...(prev || {}), [key]: value.split("\n") }));
+  const save = async () => {
+    const cleaned = {};
+    for (const [key, label] of fields) {
+      const seen = new Set();
+      cleaned[key] = (options?.[key] || []).map((x) => String(x || "").trim()).filter((x) => x && !seen.has(x) && seen.add(x));
+      if (!cleaned[key].length) return toast.error(`${label}: inserisci almeno una voce`);
+    }
+    setSaving(true);
+    try {
+      const { data } = await axios.put(`${API}/admin/settings`, { operativo: cleaned });
+      setOptions(data.operativo || cleaned);
+      window.dispatchEvent(new Event("elios:settings-changed"));
+      toast.success("Stati e priorità salvati");
+    } catch (e) {
+      toast.error("Salvataggio stati e priorità fallito", { description: formatError(e) });
+    } finally { setSaving(false); }
+  };
+  if (!options) return <div className="text-sm text-slate-500">Caricamento…</div>;
+  return <SectionCard title="Stati e priorità operative" description="Configura le voci usate nei moduli operativi attivi.">
+    <div className="mb-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+      Inserisci una voce per riga. I record già esistenti mantengono il proprio valore anche se una voce viene rimossa in seguito.
+    </div>
+    <div className="grid lg:grid-cols-2 gap-4">
+      {fields.map(([key, label, hint]) => <div key={key}>
+        <Label>{label}</Label>
+        <textarea
+          rows={key === "assistenza_stati" ? 9 : 5}
+          className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          value={(options[key] || []).join("\n")}
+          onChange={(e) => update(key, e.target.value)}
+        />
+        <p className="mt-1 text-xs text-slate-500">{hint}</p>
+      </div>)}
+    </div>
+    <div className="mt-4 flex justify-end"><Button onClick={save} disabled={saving} className="h-11 et-btn-primary">{saving ? "Salvataggio…" : "Salva stati e priorità"}</Button></div>
+  </SectionCard>;
+}
+
 function OperationsPane() {
   const [tab, setTab] = useState("arrivi");
-  const tabs = [["arrivi","Arrivi"],["spedizioni","Spedizioni"],["workflow","Automazioni"]];
+  const tabs = [["arrivi","Arrivi"],["spedizioni","Spedizioni"],["options","Stati e priorità"],["workflow","Automazioni"]];
   return (
     <div className="space-y-4">
       <div className="settings-page-intro">
@@ -271,6 +328,7 @@ function OperationsPane() {
       </div>
       {tab === "arrivi" && <SectionCard title="Arrivi" description="Controlli applicati quando il materiale entra a magazzino."><SettingsArriviTab /></SectionCard>}
       {tab === "spedizioni" && <SectionCard title="Spedizioni" description="Controlli applicati prima dell'uscita del materiale."><SettingsSpedizioniTab /></SectionCard>}
+      {tab === "options" && <OperationalOptionsPane />}
       {tab === "workflow" && <SectionCard title="Automazioni operative" description="Passaggi automatici già attivi nel flusso Elios Tech.">
         <div className="grid md:grid-cols-2 gap-3 text-sm">
           {["Ordine confermato → crea/aggiorna la Commessa", "Preventivo accettato → crea/aggiorna la Commessa", "Spedizione completa → rende disponibile la fase successiva", "Installazione completata → aggiorna lo storico cliente"].map((x) => <div key={x} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-emerald-800 flex gap-2"><CheckCircle size={18} weight="fill" className="shrink-0" />{x}</div>)}
