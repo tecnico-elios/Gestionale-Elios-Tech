@@ -1,5 +1,6 @@
 import "@/App.css";
 import "@/r1.css";
+import "@/r6.css";
 
 
 
