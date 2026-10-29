@@ -1,0 +1,56 @@
+name: R16 fix sopralluoghi meteo
+
+on:
+  push:
+    branches: [fix/r16-sopralluoghi-meteo]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Applica R16
+        run: python scripts/r16_fix_sopralluoghi.py
+      - name: Compila backend
+        run: python -m compileall -q backend
+      - name: Verifica regole sopralluogo
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          t = Path('frontend/src/pages/RegistryPage.jsx').read_text()
+          assert 'hasConfirmedLocation' in t
+          assert 'verifiedFreeAddress ? freeAddress : ""' in t
+          assert 'indirizzo_latitudine: ""' in t
+          s = Path('backend/server.py').read_text()
+          assert 'Gestionale-Elios-Tech/1.0 weather' in s
+          assert 'Servizio meteo temporaneamente occupato' in s
+          print('R16 guards OK')
+          PY
+      - name: Installa frontend
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          DISABLE_ESLINT_PLUGIN: 'true'
+        run: npm run build
+      - name: Commit R16 validata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION backend/server.py frontend/src/pages/RegistryPage.jsx
+          if ! git diff --cached --quiet; then
+            git commit -m "R16 — Sopralluoghi senza posizione automatica e meteo controllato"
+            git push
+          fi
