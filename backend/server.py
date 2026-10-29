@@ -1756,8 +1756,75 @@ async def get_server_time():
 
 
 
+@api_router.get("/address-search", dependencies=[Depends(dep_current_user)])
+async def address_search(q: str):
+    """Autocomplete indirizzi italiani tramite Photon/OSM. Restituisce coordinate da riusare per Maps e meteo."""
+    query = " ".join((q or "").strip().split())
+    if len(query) < 4:
+        return {"items": []}
+
+    timeout = httpx.Timeout(6.0, connect=4.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            r = await client.get(
+                "https://photon.komoot.io/api/",
+                params={"q": query, "limit": 6, "lang": "it"},
+                headers={"User-Agent": "Gestionale-Elios-Tech/1.0 address-autocomplete"},
+            )
+            r.raise_for_status()
+            features = (r.json() or {}).get("features") or []
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Ricerca indirizzo non raggiungibile: timeout")
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Ricerca indirizzo non raggiungibile: {type(e).__name__}")
+
+    items = []
+    seen = set()
+    for feature in features:
+        props = feature.get("properties") or {}
+        coords = ((feature.get("geometry") or {}).get("coordinates") or [])
+        if len(coords) < 2:
+            continue
+        countrycode = str(props.get("countrycode") or "").upper()
+        if countrycode and countrycode != "IT":
+            continue
+
+        street = props.get("street") or props.get("name") or ""
+        housenumber = props.get("housenumber") or ""
+        postcode = props.get("postcode") or ""
+        city = props.get("city") or props.get("town") or props.get("village") or props.get("municipality") or ""
+        province = props.get("county") or props.get("state") or ""
+        country = props.get("country") or "Italia"
+
+        first = " ".join([str(street).strip(), str(housenumber).strip()]).strip()
+        locality = " ".join([str(postcode).strip(), str(city).strip()]).strip()
+        parts = [x for x in [first, locality, str(province).strip(), str(country).strip()] if x]
+        # evita ripetizioni tipo "Piacenza, Piacenza"
+        clean_parts = []
+        for part in parts:
+            if not clean_parts or part.casefold() != clean_parts[-1].casefold():
+                clean_parts.append(part)
+        label = ", ".join(clean_parts) or str(props.get("name") or query)
+
+        lat = float(coords[1]); lon = float(coords[0])
+        key = (round(lat, 6), round(lon, 6), label.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "label": label,
+            "latitude": lat,
+            "longitude": lon,
+            "comune": city,
+            "provincia": province,
+            "cap": postcode,
+            "country": country,
+        })
+    return {"items": items[:6]}
+
+
 @api_router.get("/weather-installation", dependencies=[Depends(dep_current_user)])
-async def weather_installation(date: str, comune: str = "", provincia: str = "", cap: str = "", address: str = ""):
+async def weather_installation(date: str, comune: str = "", provincia: str = "", cap: str = "", address: str = "", latitude: Optional[float] = None, longitude: Optional[float] = None):
     """Meteo per una installazione. Geocodifica lato backend per evitare problemi CORS del browser."""
     from datetime import date as _date
     try:
@@ -1790,35 +1857,49 @@ async def weather_installation(date: str, comune: str = "", provincia: str = "",
         for part in reversed(parts):
             add(part)
         add(address)
-    if not candidates:
-        raise HTTPException(422, "Manca il Comune della sede")
+    if not candidates and (latitude is None or longitude is None):
+        raise HTTPException(422, "Manca la località: seleziona un indirizzo suggerito")
 
     timeout = httpx.Timeout(8.0, connect=5.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             loc = None
             used = None
-            for candidate in candidates:
-                r = await client.get("https://geocoding-api.open-meteo.com/v1/search", params={
-                    "name": candidate, "count": 5, "language": "it", "countryCode": "IT", "format": "json"
-                })
-                r.raise_for_status()
-                results = r.json().get("results") or []
-                if results:
-                    # preferisci l'Italia; se presente, prova a far combaciare provincia/admin1 senza renderla obbligatoria
-                    italy = [x for x in results if str(x.get("country_code") or "").upper() == "IT"] or results
-                    loc = italy[0]
-                    if provincia:
-                        prov_u = provincia.upper()
-                        for x in italy:
-                            admin1 = str(x.get("admin1") or "").upper()
-                            admin2 = str(x.get("admin2") or "").upper()
-                            if prov_u in admin1 or prov_u in admin2:
-                                loc = x; break
-                    used = candidate
-                    break
-            if not loc:
-                raise HTTPException(422, f"Località non trovata. Comune ricevuto: {comune or '-'}")
+            if latitude is not None and longitude is not None:
+                try:
+                    lat = float(latitude); lon = float(longitude)
+                except (TypeError, ValueError):
+                    raise HTTPException(422, "Coordinate indirizzo non valide")
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    raise HTTPException(422, "Coordinate indirizzo fuori intervallo")
+                loc = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "name": comune or address or "Posizione verificata",
+                    "admin2": provincia,
+                }
+                used = "coordinate verificate"
+            else:
+                for candidate in candidates:
+                    r = await client.get("https://geocoding-api.open-meteo.com/v1/search", params={
+                        "name": candidate, "count": 5, "language": "it", "countryCode": "IT", "format": "json"
+                    })
+                    r.raise_for_status()
+                    results = r.json().get("results") or []
+                    if results:
+                        italy = [x for x in results if str(x.get("country_code") or "").upper() == "IT"] or results
+                        loc = italy[0]
+                        if provincia:
+                            prov_u = provincia.upper()
+                            for x in italy:
+                                admin1 = str(x.get("admin1") or "").upper()
+                                admin2 = str(x.get("admin2") or "").upper()
+                                if prov_u in admin1 or prov_u in admin2:
+                                    loc = x; break
+                        used = candidate
+                        break
+                if not loc:
+                    raise HTTPException(422, "Località non trovata. Seleziona un indirizzo suggerito per confermare posizione e meteo.")
 
             r = await client.get("https://api.open-meteo.com/v1/forecast", params={
                 "latitude": loc["latitude"],
