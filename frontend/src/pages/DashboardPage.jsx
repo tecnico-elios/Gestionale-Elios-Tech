@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { formatDateIT } from "../lib/dateFmt";
+import { useAuth } from "../lib/AuthContext";
 
 function localDateString(date = new Date()) {
   const y = date.getFullYear();
@@ -47,11 +48,21 @@ function TaskRow({ icon: Icon, title, subtitle, detail, to, urgent }) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [data, setData] = useState({ clienti: [], sedi: [], sopralluoghi: [], preventivi: [], ordini: [], installazioni: [], assistenza: [], anomalie: [], sottoScorta: [], esauriti: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [refreshSeconds, setRefreshSeconds] = useState(0);
+
+  const canView = useCallback((module) => {
+    if (!user) return false;
+    if (user.role === "admin") return true;
+    const perms = Array.isArray(user.effective_permissions)
+      ? user.effective_permissions
+      : (Array.isArray(user.permissions) ? user.permissions : []);
+    return perms.includes(module) || perms.includes(`${module}:view`);
+  }, [user]);
 
   const safeGet = useCallback(async (url, fallback) => {
     try { return (await axios.get(url)).data; } catch { return fallback; }
@@ -61,16 +72,18 @@ export default function DashboardPage() {
     if (!silent) setLoading(true);
     setError("");
     try {
+      const emptyItems = Promise.resolve({ items: [] });
+      const emptyObject = Promise.resolve({});
       const [clienti, sedi, sopralluoghi, preventivi, ordini, installazioni, assistenza, anomalie, kpi] = await Promise.all([
-        safeGet(`${API}/crm/clienti`, { items: [] }),
-        safeGet(`${API}/crm/sedi`, { items: [] }),
-        safeGet(`${API}/crm/sopralluoghi`, { items: [] }),
-        safeGet(`${API}/crm/preventivi`, { items: [] }),
-        safeGet(`${API}/crm/ordini-clienti`, { items: [] }),
-        safeGet(`${API}/crm/installazioni`, { items: [] }),
-        safeGet(`${API}/crm/assistenza`, { items: [] }),
-        safeGet(`${API}/anomalie?limit=200`, { items: [] }),
-        safeGet(`${API}/dashboard/kpi`, {}),
+        canView("ordini_clienti") ? safeGet(`${API}/crm/clienti`, { items: [] }) : emptyItems,
+        canView("ordini_clienti") ? safeGet(`${API}/crm/sedi`, { items: [] }) : emptyItems,
+        canView("sopralluoghi") ? safeGet(`${API}/crm/sopralluoghi`, { items: [] }) : emptyItems,
+        canView("preventivi") ? safeGet(`${API}/crm/preventivi`, { items: [] }) : emptyItems,
+        canView("ordini_clienti") ? safeGet(`${API}/crm/ordini-clienti`, { items: [] }) : emptyItems,
+        canView("installazioni") ? safeGet(`${API}/crm/installazioni`, { items: [] }) : emptyItems,
+        canView("assistenza") ? safeGet(`${API}/crm/assistenza`, { items: [] }) : emptyItems,
+        canView("anomalie") ? safeGet(`${API}/anomalie?limit=200`, { items: [] }) : emptyItems,
+        canView("inventario") ? safeGet(`${API}/dashboard/kpi`, {}) : emptyObject,
       ]);
       setData({
         clienti: clienti.items || [], sedi: sedi.items || [], sopralluoghi: sopralluoghi.items || [],
@@ -82,7 +95,7 @@ export default function DashboardPage() {
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "Errore caricamento Dashboard");
     } finally { if (!silent) setLoading(false); }
-  }, [safeGet]);
+  }, [safeGet, canView]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -116,6 +129,8 @@ export default function DashboardPage() {
   const sediById = useMemo(() => Object.fromEntries(data.sedi.map((x) => [String(x.id), x])), [data.sedi]);
   const clientName = useCallback((id) => { const c = clientiById[String(id)] || {}; return c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" ") || "Cliente"; }, [clientiById]);
   const siteName = useCallback((id) => { const s = sediById[String(id)] || {}; return s.nome || [s.indirizzo, s.comune].filter(Boolean).join(" · ") || "Sede"; }, [sediById]);
+  const recordClientName = useCallback((x) => x?.cliente_nome || x?.nominativo || clientName(x?.cliente_id), [clientName]);
+  const recordSiteName = useCallback((x) => x?.sede_nome || x?.sede || siteName(x?.sede_id), [siteName]);
 
   const today = localDateString();
   const programmate = data.installazioni.filter((x) => normalize(x.stato) === "programmata");
@@ -140,8 +155,8 @@ export default function DashboardPage() {
     });
     data.installazioni.forEach((x) => {
       const stato = normalize(x.stato);
-      if (["in sospeso", "sospesa"].includes(stato)) out.push({ key: `i-s-${x.id}`, priority: 1, icon: Wrench, title: "Installazione sospesa", subtitle: `${clientName(x.cliente_id)} · ${siteName(x.sede_id)}`, detail: x.note || "Richiede verifica", to: "/installazioni", urgent: true });
-      else if (["da programmare", "confermata / da installare", "confermata", "da installare"].includes(stato)) out.push({ key: `i-${x.id}`, priority: 2, icon: Wrench, title: "Installazione da gestire", subtitle: `${clientName(x.cliente_id)} · ${siteName(x.sede_id)}`, detail: x.data ? `Data: ${formatDateIT(x.data)}` : "Da programmare", to: "/installazioni" });
+      if (["in sospeso", "sospesa"].includes(stato)) out.push({ key: `i-s-${x.id}`, priority: 1, icon: Wrench, title: "Installazione sospesa", subtitle: `${recordClientName(x)} · ${recordSiteName(x)}`, detail: x.note || "Richiede verifica", to: "/installazioni", urgent: true });
+      else if (["da programmare", "confermata / da installare", "confermata", "da installare"].includes(stato)) out.push({ key: `i-${x.id}`, priority: 2, icon: Wrench, title: "Installazione da gestire", subtitle: `${recordClientName(x)} · ${recordSiteName(x)}`, detail: x.data ? `Data: ${formatDateIT(x.data)}` : "Da programmare", to: "/installazioni" });
     });
     data.sopralluoghi.forEach((x) => {
       if (normalize(x.stato) !== "da programmare") return;
@@ -153,17 +168,17 @@ export default function DashboardPage() {
     });
     data.anomalie.filter((x) => normalize(x.status || x.stato) !== "risolta").slice(0, 5).forEach((x) => out.push({ key: `e-${x.id || x._id}`, priority: 1, icon: Warning, title: "Anomalia da verificare", subtitle: x.title || x.message || x.tipo || "Sistema", detail: x.detail || x.descrizione || "", to: "/anomalie", urgent: true }));
     return out.sort((a, b) => a.priority - b.priority).slice(0, 12);
-  }, [data.assistenza, data.installazioni, data.sopralluoghi, data.preventivi, data.anomalie, clientName, siteName]);
+  }, [data.assistenza, data.installazioni, data.sopralluoghi, data.preventivi, data.anomalie, clientName, siteName, recordClientName, recordSiteName]);
 
   const quickFlow = [
-    [ShoppingCart, "Clienti e ordini", "/clienti-ordini"],
-    [Wrench, "Commesse", "/commesse"],
-    [ClipboardText, "Sopralluoghi", "/sopralluoghi"],
-    [FileText, "Preventivi", "/preventivi"],
-    [CalendarBlank, "Calendario", "/calendario"],
-    [Wrench, "Installazioni", "/installazioni"],
-    [Headset, "Assistenza", "/assistenza"],
-  ];
+    [ShoppingCart, "Clienti e ordini", "/clienti-ordini", "ordini_clienti"],
+    [Wrench, "Commesse", "/commesse", "commesse"],
+    [ClipboardText, "Sopralluoghi", "/sopralluoghi", "sopralluoghi"],
+    [FileText, "Preventivi", "/preventivi", "preventivi"],
+    [CalendarBlank, "Calendario", "/calendario", "calendar"],
+    [Wrench, "Installazioni", "/installazioni", "installazioni"],
+    [Headset, "Assistenza", "/assistenza", "assistenza"],
+  ].filter(([, , , module]) => canView(module));
 
   return (
     <div className="r52-dashboard" data-testid="dashboard-page">
@@ -187,12 +202,12 @@ export default function DashboardPage() {
           <div><div className="r52-section-kicker">Situazione</div><h2>Indicatori principali</h2></div>
         </div>
         <div className="r52-dashboard-stat-grid">
-          <StatCard icon={CalendarBlank} title="Programmate" value={programmate.length} meta={`${programmateOggi} oggi`} to="/installazioni" tone="blue" />
-          <StatCard icon={Wrench} title="Da installare" value={daInstallare.length} meta="da programmare / confermate" to="/installazioni" tone="navy" />
-          <StatCard icon={Headset} title="Assistenze" value={assistenzeAperte.length} meta="aperte o in lavorazione" to="/assistenza" tone="teal" />
-          <StatCard icon={ClipboardText} title="Sopralluoghi" value={sopralluoghiAperti.length} meta="da gestire" to="/sopralluoghi" tone="violet" />
-          <StatCard icon={ShoppingCart} title="Ordini aperti" value={ordiniAperti.length} meta={`${preventiviAperti.length} preventivi aperti`} to="/clienti-ordini" tone="amber" />
-          <StatCard icon={Package} title="Magazzino critico" value={magazzinoCritico} meta={`${data.esauriti.length} esauriti`} to="/inventario" tone="red" />
+          {canView("installazioni") && <StatCard icon={CalendarBlank} title="Programmate" value={programmate.length} meta={`${programmateOggi} oggi`} to="/installazioni" tone="blue" />}
+          {canView("installazioni") && <StatCard icon={Wrench} title="Da installare" value={daInstallare.length} meta="da programmare / confermate" to="/installazioni" tone="navy" />}
+          {canView("assistenza") && <StatCard icon={Headset} title="Assistenze" value={assistenzeAperte.length} meta="aperte o in lavorazione" to="/assistenza" tone="teal" />}
+          {canView("sopralluoghi") && <StatCard icon={ClipboardText} title="Sopralluoghi" value={sopralluoghiAperti.length} meta="da gestire" to="/sopralluoghi" tone="violet" />}
+          {canView("ordini_clienti") && <StatCard icon={ShoppingCart} title="Ordini aperti" value={ordiniAperti.length} meta={canView("preventivi") ? `${preventiviAperti.length} preventivi aperti` : "ordini da gestire"} to="/clienti-ordini" tone="amber" />}
+          {canView("inventario") && <StatCard icon={Package} title="Magazzino critico" value={magazzinoCritico} meta={`${data.esauriti.length} esauriti`} to="/inventario" tone="red" />}
         </div>
       </section>
 

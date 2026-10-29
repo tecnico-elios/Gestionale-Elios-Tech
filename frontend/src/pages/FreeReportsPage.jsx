@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { FilePdf, Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 import { API } from "../lib/apiBase";
 import StandaloneInstallationReportDialog from "../components/StandaloneInstallationReportDialog";
+import { appConfirm } from "../lib/appConfirm";
 
 export default function FreeReportsPage(){
   const [items,setItems]=useState([]); const [loading,setLoading]=useState(true); const [search,setSearch]=useState(""); const [open,setOpen]=useState(false); const [selected,setSelected]=useState(null);
@@ -11,7 +12,7 @@ export default function FreeReportsPage(){
   useEffect(()=>{load()},[]);
   const filtered=useMemo(()=>{const q=search.trim().toLowerCase();if(!q)return items;return items.filter(r=>[r.title,r.data?.cliente,r.data?.tecnico,r.data?.data,r.data?.indirizzo,...(r.data?.seriali||[])].some(v=>String(v||"").toLowerCase().includes(q)))},[items,search]);
   const create=()=>{setSelected(null);setOpen(true)}; const edit=(r)=>{setSelected(r);setOpen(true)};
-  const remove=async(r)=>{if(!window.confirm(`Eliminare il report “${r.title||"Report pre e post installazione"}”?`))return;try{await axios.delete(`${API}/free-reports/${r.id}`);toast.success("Report eliminato");await load()}catch(e){toast.error(e?.response?.data?.detail||"Impossibile eliminare il report")}};
+  const remove=async(r)=>{if(!(await appConfirm({title:"Elimina report installazione",message:`Eliminare definitivamente il report “${r.title||"Report pre e post installazione"}”?`,confirmLabel:"Elimina",danger:true})))return;try{await axios.delete(`${API}/free-reports/${r.id}`);toast.success("Report eliminato");await load()}catch(e){toast.error(e?.response?.data?.detail||"Impossibile eliminare il report")}};
   const openPdf=async(r)=>{try{const {data}=await axios.get(`${API}/free-reports/${r.id}/pdf`,{responseType:"blob"});const u=URL.createObjectURL(data);window.open(u,"_blank","noopener,noreferrer");setTimeout(()=>URL.revokeObjectURL(u),60000)}catch(e){toast.error(e?.response?.data?.detail||"PDF non ancora disponibile")}};
   return <div className="space-y-5" data-testid="free-reports-page">
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3"><div><h2 className="text-xl font-black text-slate-900">Report pre e post installazione</h2><p className="text-sm text-slate-500 mt-1">Lo stesso report disponibile nelle Installazioni, ma compilabile liberamente senza collegamento obbligatorio a cliente o installazione.</p></div><button onClick={create} className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"><Plus size={18}/> Nuovo report</button></div>
