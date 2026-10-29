@@ -93,6 +93,34 @@ def main() -> None:
     if inv.status_code == 503:
         print("[INFO] Inventario non configurato nel DB effimero: comportamento atteso")
 
+    # R11: sopralluoghi e preventivi di prospect non devono creare automaticamente un Cliente.
+    clients_before_prospect = SYNC_DB.crm_clienti.count_documents({})
+    prospect_survey = expect(
+        "POST", "/api/crm/sopralluoghi", token=token,
+        json={
+            "nominativo": "Prospect Audit Non Cliente", "telefono": "+39 333 777 8899",
+            "email": "prospect.audit@example.com", "indirizzo_libero": "Via Prospect 10, Piacenza",
+            "data": "2026-10-24", "stato": "Da programmare",
+        },
+    ).json()
+    assert prospect_survey.get("id") and not prospect_survey.get("cliente_id"), prospect_survey
+    assert SYNC_DB.crm_clienti.count_documents({}) == clients_before_prospect
+
+    prospect_quote = expect(
+        "POST", "/api/crm/preventivi", token=token,
+        json={
+            "nominativo": "Prospect Audit Non Cliente", "telefono": "+39 333 777 8899",
+            "email": "prospect.audit@example.com", "sopralluogo_id": prospect_survey["id"],
+            "data": "2026-10-24", "stato": "Bozza",
+            "righe": [{"tipo_riga": "servizio", "descrizione": "Offerta prospect", "quantity": 1, "prezzo_unitario": 100, "iva": 22}],
+        },
+    ).json()
+    assert prospect_quote.get("id") and not prospect_quote.get("cliente_id"), prospect_quote
+    assert prospect_quote.get("nominativo") == "Prospect Audit Non Cliente", prospect_quote
+    assert SYNC_DB.crm_clienti.count_documents({}) == clients_before_prospect
+    expect("DELETE", f"/api/crm/preventivi/{prospect_quote['id']}", token=token)
+    expect("DELETE", f"/api/crm/sopralluoghi/{prospect_survey['id']}", token=token)
+
     # CRUD Clienti.
     client = expect(
         "POST", "/api/crm/clienti", token=token,
