@@ -54,6 +54,9 @@ jobs:
           replace_count('backend/routes/auth_routes.py', 'Field(min_length=6, max_length=128)', 'Field(min_length=8, max_length=128)', 3)
           replace_count('backend/routes/admin_users_routes.py', 'Field(min_length=6, max_length=128)', 'Field(min_length=8, max_length=128)', 2)
 
+          # Compatibilità esplicita con cryptography 50.x: evita crash pyOpenSSL GEN_EMAIL.
+          replace_once('backend/requirements.txt', 'cryptography>=42.0.8\n', 'cryptography>=42.0.8\npyOpenSSL>=26.4.0,<27.0.0\n')
+
           # Credenziali di test conformi alla nuova policy.
           replace_once('backend/tests/conftest.py', 'TEST_ADMIN_PWD = "test_admin_ci_pw_1"\nTEST_OP_USER = "test_op_ci"\nTEST_OP_PWD = "test_op_ci_pw_1"', 'TEST_ADMIN_PWD = "Test_Admin_CI!1"\nTEST_OP_USER = "test_op_ci"\nTEST_OP_PWD = "Test_Op_CI!1"')
 
