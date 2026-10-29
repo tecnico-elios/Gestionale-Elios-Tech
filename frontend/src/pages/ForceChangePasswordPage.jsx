@@ -9,6 +9,7 @@ import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import { Eye, EyeSlash, Lock, ShieldWarning, SignOut } from "@phosphor-icons/react";
 import EliosLogo from "../components/EliosLogo";
+import { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 function formatError(err) {
   const d = err?.response?.data?.detail;
@@ -28,7 +29,8 @@ export default function ForceChangePasswordPage() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (newPwd.length < 6) { toast.error("La nuova password deve avere almeno 6 caratteri"); return; }
+    const passwordError = validatePassword(newPwd);
+    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }
     if (newPwd !== confirm) { toast.error("Le password non coincidono"); return; }
     if (newPwd === oldPwd) { toast.error("La nuova password deve essere diversa da quella temporanea"); return; }
     setBusy(true);
@@ -71,8 +73,8 @@ export default function ForceChangePasswordPage() {
                 <button type="button" onClick={() => setShow((s) => !s)} className="r52-auth-eye" tabIndex={-1} aria-label={show ? "Nascondi password" : "Mostra password"}>{show ? <EyeSlash size={18} /> : <Eye size={18} />}</button>
               </div>
             </div>
-            <div><Label>Nuova password <span className="text-slate-400 font-normal">(min. 6 caratteri)</span></Label><Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="fcp-new-password" /></div>
-            <div><Label>Conferma nuova password</Label><Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="fcp-confirm-password" /></div>
+            <div><Label>Nuova password <span className="text-slate-400 font-normal">({PASSWORD_POLICY_HINT})</span></Label><Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={8} className="h-12 mt-1" data-testid="fcp-new-password" /></div>
+            <div><Label>Conferma nuova password</Label><Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={8} className="h-12 mt-1" data-testid="fcp-confirm-password" /></div>
             <Button type="submit" disabled={busy || !oldPwd || !newPwd || !confirm} className="h-12 w-full et-btn-primary border-0" data-testid="fcp-submit">{busy ? "Salvo…" : "Imposta password e continua"}</Button>
             <button type="button" onClick={handleLogout} className="r52-auth-back" data-testid="fcp-logout"><SignOut size={15} /> Annulla e torna al login</button>
           </form>

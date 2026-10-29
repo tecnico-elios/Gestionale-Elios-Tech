@@ -32,7 +32,7 @@ class CreateUserBody(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     username: str = Field(min_length=2, max_length=32)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     role: str = Field(default=auth_mod.ROLE_OPERATOR)
     email: Optional[str] = Field(default=None, max_length=200)
 
@@ -49,7 +49,7 @@ class UpdateUserBody(BaseModel):
 
 class ResetPasswordBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    new_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 def _normalize_username(u: str) -> str:

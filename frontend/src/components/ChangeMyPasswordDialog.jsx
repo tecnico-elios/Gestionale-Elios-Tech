@@ -9,6 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "./ui/dialog";
 import { Eye, EyeSlash, Lock } from "@phosphor-icons/react";
+import { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 
 const TOKEN_KEY = "elios_jwt";
@@ -33,8 +34,9 @@ export default function ChangeMyPasswordDialog({ open, onClose }) {
       toast.error("Le password non coincidono");
       return;
     }
-    if (newPwd.length < 6) {
-      toast.error("La nuova password deve avere almeno 6 caratteri");
+    const passwordError = validatePassword(newPwd);
+    if (passwordError) {
+      toast.error("Password non valida", { description: passwordError });
       return;
     }
     setBusy(true);
@@ -72,7 +74,7 @@ export default function ChangeMyPasswordDialog({ open, onClose }) {
           </DialogTitle>
           <DialogDescription>
             La vecchia password è necessaria per confermare la modifica.
-            Il nuovo token sostituirà quello attuale.
+            Il nuovo token sostituirà quello attuale. {PASSWORD_POLICY_HINT}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
@@ -98,7 +100,7 @@ export default function ChangeMyPasswordDialog({ open, onClose }) {
                 value={newPwd}
                 onChange={(e) => setNewPwd(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
                 className="h-11 mt-1 pr-10"
                 data-testid="cmp-new-password"
               />
@@ -121,7 +123,7 @@ export default function ChangeMyPasswordDialog({ open, onClose }) {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="h-11 mt-1"
               data-testid="cmp-confirm-password"
             />

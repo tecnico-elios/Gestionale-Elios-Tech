@@ -12,6 +12,7 @@ import {
 } from "../components/ui/dialog";
 import { Eye, EyeSlash, User as UserIcon, Lock, ShieldCheck } from "@phosphor-icons/react";
 import EliosLogo from "../components/EliosLogo";
+import { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 
 
@@ -37,6 +38,11 @@ function BootstrapForm() {
     e.preventDefault();
     if (password !== confirm) {
       toast.error("Le password non coincidono");
+      return;
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      toast.error("Password non valida", { description: passwordError });
       return;
     }
     setBusy(true);
@@ -99,7 +105,7 @@ function BootstrapForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={8}
             className="h-12 bg-slate-900/40 border-slate-100/30 text-white placeholder:text-slate-300/60 focus-visible:ring-amber-300/50 pr-10"
           />
           <button type="button" onClick={() => setShow((s) => !s)}
@@ -113,10 +119,11 @@ function BootstrapForm() {
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           required
-          minLength={6}
+          minLength={8}
           className="h-12 bg-slate-900/40 border-slate-100/30 text-white placeholder:text-slate-300/60 focus-visible:ring-amber-300/50"
         />
       </div>
+      <div className="text-[11px] text-slate-200/80">{PASSWORD_POLICY_HINT}</div>
       <Button
         type="submit"
         disabled={busy}

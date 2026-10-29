@@ -91,6 +91,47 @@ try:
 except Exception as exc:
     issue(f"Verifica mapping permessi fallita: {type(exc).__name__}: {exc}")
 
+# La policy password deve restare unica e forte su backend e frontend.
+try:
+    for weak in ("Abc!123", "solominuscole!2026", "SenzaSpeciale2026"):
+        try:
+            audit_auth.validate_password(weak)
+        except ValueError:
+            pass
+        else:
+            issue(f"Policy password troppo permissiva per {weak!r}")
+    audit_auth.validate_password("Password!2026")
+    ok("Policy password: minimo 8, maiuscola e carattere speciale")
+except Exception as exc:
+    issue(f"Verifica policy password fallita: {type(exc).__name__}: {exc}")
+
+password_ui_files = [
+    FRONTEND / "src" / "pages" / "LoginPage.jsx",
+    FRONTEND / "src" / "pages" / "ForceChangePasswordPage.jsx",
+    FRONTEND / "src" / "pages" / "ResetPasswordPage.jsx",
+    FRONTEND / "src" / "pages" / "AdminUsersPage.jsx",
+    FRONTEND / "src" / "components" / "ChangeMyPasswordDialog.jsx",
+]
+for path in password_ui_files:
+    text = path.read_text(encoding="utf-8")
+    if "minLength={6}" in text or "almeno 6 caratteri" in text.lower() or "min. 6 caratteri" in text.lower():
+        issue(f"{path.relative_to(ROOT)}: residuo policy password a 6 caratteri")
+else:
+    ok("Frontend password allineato alla policy R8")
+
+native_dialog_hits = []
+for path in (FRONTEND / "src").rglob("*"):
+    if path.suffix not in {".js", ".jsx"}:
+        continue
+    text = path.read_text(encoding="utf-8")
+    if re.search(r"\bwindow\.(?:confirm|alert|prompt)\s*\(", text):
+        native_dialog_hits.append(path.relative_to(ROOT))
+if native_dialog_hits:
+    for path in native_dialog_hits:
+        issue(f"Popup browser nativo residuo: {path}")
+else:
+    ok("Nessun popup browser nativo window.confirm/alert/prompt")
+
 try:
     import server  # noqa: E402
 except Exception as exc:  # pragma: no cover - CI diagnostic
