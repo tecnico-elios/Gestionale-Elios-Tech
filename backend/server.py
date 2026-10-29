@@ -1768,7 +1768,7 @@ async def address_search(q: str):
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             r = await client.get(
                 "https://photon.komoot.io/api/",
-                params={"q": query, "limit": 6, "lang": "it"},
+                params={"q": query, "limit": 6},
                 headers={"User-Agent": "Gestionale-Elios-Tech/1.0 address-autocomplete"},
             )
             r.raise_for_status()
