@@ -225,6 +225,8 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   };
 
   const lookupOptions = (field) => {
+    const needle = String(lookupSearch[field.key] || "").trim().toLowerCase();
+    if (field.suggestOnlyAfterTyping && !needle) return [];
     let list = lookups[lookupKey(field)] || [];
     if (field.lookupFilterBy && field.dependsOn) {
       const parentValue = form[field.dependsOn];
@@ -235,7 +237,6 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
     if (typeof field.lookupFilter === "function") {
       list = list.filter((x) => field.lookupFilter(x, form));
     }
-    const needle = String(lookupSearch[field.key] || "").trim().toLowerCase();
     if (needle) {
       list = list.filter((x) => `${optionLabel(x, field)} ${Object.values(x || {}).join(" ")}`.toLowerCase().includes(needle));
     }
@@ -517,7 +518,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                             placeholder={disabledByDependency ? "Seleziona prima il campo precedente" : `Scrivi o scegli ${f.label.toLowerCase()}...`}
                             value={lookupTextValue(f)}
                             onChange={(e) => typeLookup(f, e.target.value)}
-                            onFocus={() => !disabled && setLookupOpen((p) => ({ ...p, [f.key]: true }))}
+                            onFocus={() => !disabled && !f.suggestOnlyAfterTyping && setLookupOpen((p) => ({ ...p, [f.key]: true }))}
                             onBlur={() => setTimeout(() => setLookupOpen((p) => ({ ...p, [f.key]: false })), 160)}
                             required={f.required && !f.allowFreeText}
                             disabled={disabled}
@@ -525,10 +526,13 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                           />
                           <button type="button" tabIndex={-1} disabled={disabled}
                             onMouseDown={(e)=>e.preventDefault()}
-                            onClick={() => setLookupOpen((p) => ({ ...p, [f.key]: !p[f.key] }))}
+                            onClick={() => {
+                              if (f.suggestOnlyAfterTyping && !lookupTextValue(f).trim()) return;
+                              setLookupOpen((p) => ({ ...p, [f.key]: !p[f.key] }));
+                            }}
                             className="absolute right-1 top-1 h-10 w-9 rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-40">⌄</button>
                         </div>
-                        {lookupOpen[f.key] && !disabled && (
+                        {lookupOpen[f.key] && !disabled && (!f.suggestOnlyAfterTyping || lookupTextValue(f).trim()) && (
                           <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-60 overflow-auto">
                             {lookupOptions(f).length ? lookupOptions(f).map((o) => {
                               const key = f.lookupValueKey || "id";
