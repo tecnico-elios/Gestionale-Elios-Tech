@@ -85,7 +85,11 @@ def main() -> None:
     # CRUD Clienti.
     client = expect(
         "POST", "/api/crm/clienti", token=token,
-        json={"ragione_sociale": "Cliente Audit R1", "tipo": "Azienda", "note": "Creato solo dal test automatico"},
+        json={
+            "ragione_sociale": "Cliente Audit R1", "tipo": "Azienda",
+            "email": "audit.client@example.com", "telefono": "+39 333 123 4567",
+            "partita_iva": "12345678901", "note": "Creato solo dal test automatico",
+        },
     ).json()
     client_id = client.get("id")
     assert client_id, client
@@ -98,6 +102,34 @@ def main() -> None:
         json={"ragione_sociale": "Cliente Audit R1 Aggiornato", "tipo": "Azienda"},
     ).json()
     assert updated.get("ragione_sociale") == "Cliente Audit R1 Aggiornato", updated
+
+    # R9: duplicati cliente normalizzati e duplicati sede devono essere bloccati.
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato Email", "tipo": "Azienda", "email": "AUDIT.CLIENT@example.com"},
+    )
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato Telefono", "tipo": "Azienda", "telefono": "393331234567"},
+    )
+    expect(
+        "POST", "/api/crm/clienti", status=409, token=token,
+        json={"ragione_sociale": "Duplicato PIVA", "tipo": "Azienda", "partita_iva": "123 456 789 01"},
+    )
+
+    site = expect(
+        "POST", "/api/crm/sedi", token=token,
+        json={"cliente_id": client_id, "nome": "Sede Audit", "indirizzo": "Via Audit", "civico": "1", "comune": "Piacenza"},
+    ).json()
+    site_id = site.get("id")
+    assert site_id, site
+    expect(
+        "POST", "/api/crm/sedi", status=409, token=token,
+        json={"cliente_id": client_id, "nome": "sede   audit", "indirizzo": "via   audit", "civico": "1", "comune": "PIACENZA"},
+    )
+    # Aggiornare il record con i propri dati non deve essere considerato duplicato.
+    expect("PUT", f"/api/crm/sedi/{site_id}", token=token, json={"nome": "Sede Audit", "indirizzo": "Via Audit", "civico": "1", "comune": "Piacenza"})
+    expect("DELETE", f"/api/crm/sedi/{site_id}", token=token)
 
     # Ordine cliente semplice collegato al cliente.
     order = expect(
@@ -204,10 +236,7 @@ def main() -> None:
     expect("DELETE", f"/api/free-reports/{free_id}", token=token)
 
     # Assistenza collegata all'installazione.
-    assistance = expect(
-        "POST", "/api/crm/assistenza", token=token,
-        json={"cliente_id": client_id, "installazione_id": install_id, "problema": "Test automatico", "stato": "Aperta"},
-    ).json()
+    assistance = expect("POST", "/api/crm/assistenza", token=token, json={"cliente_id": client_id, "installazione_id": install_id, "problema": "Test automatico", "stato": "Aperta"}).json()
     assistance_id = assistance.get("id")
     assert assistance_id, assistance
     expect("GET", "/api/crm/assistenza", token=token)
@@ -219,6 +248,13 @@ def main() -> None:
     expect("DELETE", f"/api/files/document/{gen.get('document_id')}", token=token)
     expect("DELETE", f"/api/crm/installazioni/{install_id}", token=token)
     expect("DELETE", f"/api/crm/ordini-clienti/{order_id}", token=token)
+
+    # Email/telefono del cliente generano automaticamente il Referente principale:
+    # lo smoke deve rimuoverlo prima di verificare la cancellazione protetta del cliente.
+    primary_contact = SYNC_DB.crm_contatti.find_one({"cliente_id": client_id, "is_primary": True})
+    if primary_contact and primary_contact.get("id"):
+        expect("DELETE", f"/api/crm/contatti/{primary_contact['id']}", token=token)
+
     expect("DELETE", f"/api/crm/clienti/{client_id}", token=token)
 
     expect("POST", "/api/auth/logout", token=token)
