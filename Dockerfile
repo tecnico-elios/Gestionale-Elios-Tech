@@ -28,4 +28,4 @@ RUN python -m compileall -q /app/backend
 COPY --from=frontend /app/frontend/build /app/frontend_build
 RUN mkdir -p /app/data/uploads/installazioni
 WORKDIR /app/backend
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app_entry:app --host 0.0.0.0 --port ${PORT:-8000}"]

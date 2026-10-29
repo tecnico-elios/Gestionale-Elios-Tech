@@ -85,7 +85,7 @@ jobs:
           mkdir -p "$UPLOAD_ROOT"
           cd backend
           export FRONTEND_BUILD_DIR="$GITHUB_WORKSPACE/frontend/build"
-          nohup uvicorn server:app --host 127.0.0.1 --port 8001 >/tmp/elios-api.log 2>&1 &
+          nohup uvicorn app_entry:app --host 127.0.0.1 --port 8001 >/tmp/elios-api.log 2>&1 &
           echo $! >/tmp/elios-api.pid
 
       - name: Integration smoke test
