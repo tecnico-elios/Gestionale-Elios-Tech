@@ -3,7 +3,7 @@ import { API } from "../lib/apiBase";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Plus, MagnifyingGlass, PencilSimple, Trash, FileText, Archive, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { Plus, MagnifyingGlass, PencilSimple, Trash, FileText, Archive, ArrowCounterClockwise, MapPin } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -588,9 +588,28 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                 );
               })}
             </div>
-            {resource === "installazioni" && (() => {
+            {(resource === "installazioni" || resource === "sopralluoghi") && (() => {
               const selectedSite = (lookups.sedi || []).find((x) => String(x.id) === String(form.sede_id));
-              return <div className="mb-4"><InstallationWeather date={form.data} site={selectedSite}/></div>;
+              const siteAddress = selectedSite
+                ? [[selectedSite.indirizzo, selectedSite.civico].filter(Boolean).join(" "), selectedSite.cap, selectedSite.comune, selectedSite.provincia].filter(Boolean).join(", ")
+                : "";
+              const freeAddress = String(form.indirizzo_libero || "").trim();
+              const mapAddress = freeAddress || siteAddress;
+              return <div className="mb-4 space-y-3">
+                {mapAddress && <a
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-[#1A456B] hover:bg-blue-100"
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapAddress)}`}
+                  target="_blank" rel="noreferrer"
+                ><MapPin size={18} weight="fill"/>Apri in Google Maps · {mapAddress}</a>}
+                <InstallationWeather
+                  date={form.data}
+                  site={selectedSite}
+                  address={freeAddress}
+                  comune={selectedSite?.comune || ""}
+                  provincia={selectedSite?.provincia || ""}
+                  cap={selectedSite?.cap || ""}
+                />
+              </div>;
             })()}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button>
