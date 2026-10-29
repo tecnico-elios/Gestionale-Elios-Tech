@@ -69,7 +69,7 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
     <div className="r52-commandbar">
       <div>
         <div className="r52-commandbar-title">Analisi {isRevenue ? "economica" : "Wallbox"}</div>
-        <div className="r52-commandbar-subtitle">Dati aggregati dagli ordini e dalle date firma registrate nel gestionale.</div>
+        <div className="r52-commandbar-subtitle">Valore degli ordini raggruppato per cliente e ultima data firma. Include gli ordini ancora da fatturare; non rappresenta le fatture emesse.</div>
       </div>
       <div className="r52-commandbar-actions">
         <CalendarBlank size={17} className="text-slate-400" />
@@ -83,16 +83,16 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
       <div className="r52-insight-metrics-grid">
         <Metric label={isRevenue ? "Totale anno" : "Wallbox anno"} value={isRevenue ? euro(annualRevenue) : annualWb.toLocaleString("it-IT")} sub={String(year)} Icon={Icon} />
         <Metric label="Mesi con attività" value={String(activeMonths)} sub="su 12 mesi" Icon={CalendarBlank} />
-        <Metric label={isRevenue ? "Clienti con fatturato" : "Clienti con wallbox"} value={String(filtered.filter((r) => Number(isRevenue ? (r.fatturato ?? r.capitale ?? 0) : (r.wb_totali ?? r.qty_wb ?? 0)) > 0).length)} sub="nel periodo selezionato" Icon={TrendUp} />
+        <Metric label={isRevenue ? "Clienti con ordini" : "Clienti con wallbox"} value={String(filtered.filter((r) => Number(isRevenue ? (r.fatturato ?? r.capitale ?? 0) : (r.wb_totali ?? r.qty_wb ?? 0)) > 0).length)} sub="nel periodo selezionato" Icon={TrendUp} />
       </div>
 
       <section className="r52-panel r52-chart-panel">
-        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Mensile</div><h2>{isRevenue ? "Fatturato per mese" : "Wallbox per mese"}</h2><p>Distribuzione basata sulla data firma registrata nel gestionale.</p></div><Icon size={23} className="text-[#1A456B]" /></div>
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Mensile</div><h2>{isRevenue ? "Valore ordini per mese" : "Wallbox per mese"}</h2><p>Distribuzione basata sulla data firma registrata nel gestionale.</p></div><Icon size={23} className="text-[#1A456B]" /></div>
         <div className="r52-chart-body"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="name" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Bar dataKey={dataKey} fill="#2d6ea3" radius={[7, 7, 0, 0]} /></BarChart></ResponsiveContainer></div>
       </section>
 
       <section className="r52-panel r52-chart-panel">
-        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>{isRevenue ? "Andamento fatturato annuale" : "Andamento wallbox annuale"}</h2><p>Confronto tra gli anni presenti nel database.</p></div></div>
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>{isRevenue ? "Andamento valore ordini annuale" : "Andamento wallbox annuale"}</h2><p>Confronto tra gli anni presenti nel database.</p></div></div>
         <div className="r52-chart-body smaller"><ResponsiveContainer width="100%" height="100%"><LineChart data={yearly} margin={{ top: 12, right: 18, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="year" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Line type="monotone" dataKey={dataKey} stroke="#2d6ea3" strokeWidth={3} dot={{ r: 4, fill: "#f6c344", stroke: "#1a456b", strokeWidth: 2 }} /></LineChart></ResponsiveContainer></div>
       </section>
     </>}

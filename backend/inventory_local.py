@@ -385,6 +385,8 @@ async def transfer_stock(item_page_id: str, quantity: float, from_warehouse_id: 
         "operator": operator, "note": (note or "").strip(), "created_at": now
     }
     await db.local_transfers.insert_one(doc)
+    # Motor adds a BSON _id in place; it is not part of the public response.
+    doc.pop("_id", None)
     return doc
 
 
@@ -415,7 +417,7 @@ async def list_receipts_all(date_from: Optional[str] = None, date_to: Optional[s
     out = []
     async for row in db.local_receipts.find(q).sort("data_consegna", -1):
         wid = row.get("warehouse_id") or WAREHOUSE_ELIOS
-        out.append({"id": row.get("id"), "sn": row.get("sn"), "quantity": row.get("quantity"), "date": row.get("data_consegna"), "item_ids": [row.get("product_id")] if row.get("product_id") else [], "item_name": row.get("product_name"), "unit": row.get("unit") or "pz", "warehouse_id": wid, "warehouse_name": WAREHOUSES.get(wid, wid), "created_time": row.get("created_at")})
+        out.append({"id": row.get("id"), "sn": row.get("sn"), "quantity": row.get("quantity"), "date": row.get("data_consegna"), "operator": row.get("operator"), "item_ids": [row.get("product_id")] if row.get("product_id") else [], "item_name": row.get("product_name"), "unit": row.get("unit") or "pz", "warehouse_id": wid, "warehouse_name": WAREHOUSES.get(wid, wid), "created_time": row.get("created_at")})
     return out
 
 

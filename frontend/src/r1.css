@@ -1403,7 +1403,7 @@ html, body, #root, .App { background: var(--r52-bg); }
 
 /* Elimina i vecchi hero duplicati: se la prima riga contiene un h1 e comandi,
    mantiene i comandi come toolbar; se contiene solo titolo, la nasconde. */
-.r52-page-host > div > div:first-child:has(h1):has(button) {
+.r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):has(button) {
   min-height: 50px;
   padding: 8px 10px;
   margin: 0 0 12px !important;
@@ -1416,10 +1416,10 @@ html, body, #root, .App { background: var(--r52-bg); }
   justify-content: flex-end !important;
   gap: 8px !important;
 }
-.r52-page-host > div > div:first-child:has(h1):has(button) > div:first-child {
+.r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):has(button) > div:first-child {
   display: none !important;
 }
-.r52-page-host > div > div:first-child:has(h1):not(:has(button)) {
+.r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):not(:has(button)) {
   display: none !important;
 }
 
@@ -1573,7 +1573,7 @@ html, body, #root, .App { background: var(--r52-bg); }
 }
 
 @media (max-width: 720px) {
-  .r52-page-host > div > div:first-child:has(h1):has(button) {
+  .r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):has(button) {
     min-height: 44px;
     padding: 6px 8px;
   }

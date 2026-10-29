@@ -1,0 +1,2 @@
+# Install after backend/requirements.txt. Tests use an in-memory Mongo substitute.
+mongomock-motor==0.0.36

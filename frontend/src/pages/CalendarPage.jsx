@@ -21,7 +21,12 @@ import { appConfirm } from "../lib/appConfirm";
 const pad = (n) => String(n).padStart(2, "0");
 const localIso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
 const inputIso = (d) => localIso(d).slice(0, 16);
-const dateKey = (value) => String(value || "").slice(0, 10);
+const dateKey = (value) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d, n) => { const out = new Date(d); out.setDate(out.getDate() + n); return out; };
 const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);

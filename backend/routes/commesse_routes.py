@@ -1106,7 +1106,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             "operator": operator,
             "structure": doc.get("cliente"),
             "taken_by": doc.get("operatore_carico") or operator,
-            "order_page_id": doc.get("order_page_id"),
+            "order_page_id": doc.get("ordine_cliente_id") or doc.get("order_page_id"),
             "notes": combined_notes,
             "items": items_payload,
             "commessa_ref": doc.get("number"),
@@ -1237,10 +1237,11 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         if doc.get("stato") != "bozza_spedizione":
             raise HTTPException(409, "Confermabile solo da bozza_spedizione o pronta")
         auth_header = request.headers.get("Authorization") or ""
-        base = os.environ.get("INTERNAL_API_BASE") or "http://localhost:8001"
         # Usa il payload persistito (se presente) altrimenti ricostruisci dai dati correnti
         draft = doc.get("shipment_draft") or {}
         payload = draft.get("payload") or await _build_draft_payload(doc, current.get("username"))
+        # Older drafts did not preserve the native order link.
+        payload = {**payload, "order_page_id": doc.get("ordine_cliente_id") or doc.get("order_page_id") or payload.get("order_page_id")}
         # F28.b — Assicura shipping_date SEMPRE presente (retro-compat con bozze pre-fix)
         if not payload.get("shipping_date"):
             payload["shipping_date"] = doc.get("data_prevista") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1253,8 +1254,14 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
         # ma per pulizia log/curl li omettiamo). commessa_ref viene silenziosamente ignorato dal backend
         # (ChecklistPayload ha extra="ignore") ma lo lasciamo perché serve al log della commessa.
         try:
-            async with httpx.AsyncClient(timeout=90.0, headers={"Authorization": auth_header}) as client:
-                r = await client.post(f"{base}/api/checklist/send", json=payload)
+            # Dispatch through the same authenticated application. Render's PORT
+            # is dynamic: a loopback request to 8001 fails in the Docker runtime.
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=request.app),
+                base_url="http://internal", timeout=90.0,
+                headers={"Authorization": auth_header},
+            ) as client:
+                r = await client.post("/api/checklist/send", json=payload)
             if r.status_code >= 400:
                 await event_logger.log_event(
                     db, category="COMMESSE", event_type="COMMESSA_SPEDIZIONE_FALLITA",

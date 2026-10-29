@@ -24,7 +24,7 @@ const STATO_LABEL = {
   in_preparazione: { txt: "In preparazione", cls: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: "🟡" },
   parziale: { txt: "Parziale", cls: "bg-orange-100 text-orange-800 border-orange-200", icon: "🟠" },
   pronta: { txt: "Pronta", cls: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: "🟢" },
-  solo_servizi: { txt: "Solo servizi · da programmare", cls: "bg-sky-100 text-sky-800 border-sky-200", icon: "🛠️" },
+  solo_servizi: { txt: "Solo servizi", cls: "bg-sky-100 text-sky-800 border-sky-200", icon: "🛠️" },
   bozza_spedizione: { txt: "Bozza spedizione", cls: "bg-indigo-100 text-indigo-800 border-indigo-200", icon: "📝" },
   parzialmente_spedita: { txt: "Parzialmente spedita", cls: "bg-amber-100 text-amber-800 border-amber-200", icon: "📦" },
   spedita: { txt: "Spedita", cls: "bg-slate-200 text-slate-700 border-slate-300", icon: "🚚" },
@@ -54,7 +54,7 @@ function CommessePage() {
     if (open) setSelected(open);
   }, []);
   return (
-    <div className="max-w-6xl mx-auto px-2 py-3 sm:px-4 sm:py-6" data-testid="commesse-page">
+    <div className="w-full min-w-0 max-w-6xl mx-auto px-2 py-3 sm:px-4 sm:py-6" data-testid="commesse-page">
       {selected ? (
         <CommessaDetail id={selected} onBack={() => setSelected(null)} />
       ) : creating ? (
@@ -717,7 +717,7 @@ function CommessaDetail({ id, onBack }) {
   const canCreateDraftGate = canCreateDraft || c.stato === "parzialmente_spedita";
 
   return (
-    <div className="space-y-4">
+    <div className="commessa-detail space-y-4">
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onBack} data-testid="commessa-back"><ArrowLeft size={16} /></Button>
         <h1 className="font-display text-lg sm:text-xl font-black flex-1 truncate">#{c.number} · {c.cliente}</h1>
@@ -729,7 +729,7 @@ function CommessaDetail({ id, onBack }) {
           <Badge className={PRIO_LABEL[c.priorita]?.cls}>{PRIO_LABEL[c.priorita]?.txt}</Badge>
           {c.operatore_carico && <span className="text-xs text-slate-600"><User size={12} className="inline" /> {c.operatore_carico}</span>}
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <div className="commessa-info-box"><span className="commessa-info-label">Cliente</span><span className="commessa-info-value truncate">{c.cliente}</span></div>
           <div className="commessa-info-box"><span className="commessa-info-label">Materiali</span><span className="commessa-info-value">{(c.righe || []).length}</span></div>
           <div className="commessa-info-box"><span className="commessa-info-label">Richiesti</span><span className="commessa-info-value">{totalQty}</span></div>

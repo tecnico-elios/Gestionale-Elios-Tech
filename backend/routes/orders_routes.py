@@ -31,7 +31,7 @@ async def _labels(db, order: Dict[str, Any]) -> Dict[str, str]:
     site_name = ""
     if sede:
         site_name = (sede.get("nome") or sede.get("indirizzo") or sede.get("comune") or "").strip()
-    structure = site_name or client_name or (order.get("cliente") or "").strip() or (order.get("numero") or "Ordine")
+    structure = " · ".join(x for x in [client_name, site_name] if x) or (order.get("cliente") or "").strip() or (order.get("numero") or "Ordine")
     title = " · ".join(x for x in [order.get("numero"), client_name, site_name] if x)
     return {"structure": structure, "title": title, "client_name": client_name, "site_name": site_name}
 

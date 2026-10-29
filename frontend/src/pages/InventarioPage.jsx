@@ -43,7 +43,7 @@ export function ProductDialog({ open, onClose, product, onSaved, warehouseId, wa
   const save = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
-      const catalogPayload = { ...form, warehouse_id: warehouseId, low_stock_threshold: 0, location: "" };
+      const catalogPayload = { ...form, unit_price: form.unit_price === "" ? null : form.unit_price, warehouse_id: warehouseId, low_stock_threshold: 0, location: "" };
       const response = edit
         ? await axios.put(`${API}/products/${product.id}`, catalogPayload)
         : await axios.post(`${API}/products`, catalogPayload);

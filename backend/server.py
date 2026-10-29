@@ -1138,7 +1138,7 @@ async def list_movimenti(
             "id": r.get("id"), "type": "arrivo", "date": r.get("date"),
             "created_time": r.get("created_time"), "product": r.get("item_name"),
             "quantity": r.get("quantity"), "unit": r.get("unit") or "pz",
-            "serial_or_code": r.get("sn") or "", "cliente": None, "taken_by": None,
+            "serial_or_code": r.get("sn") if r.get("sn") != r.get("item_name") else "", "cliente": None, "taken_by": r.get("operator"),
             "warehouse_id": r.get("warehouse_id"), "warehouse_name": r.get("warehouse_name"),
         })
     # Le spedizioni serializzate vengono mostrate come una sola riga per prodotto
@@ -1502,6 +1502,8 @@ async def submit_arrivo(
         logging.warning(f"update_inventory_serials fallito (non blocca l'arrivo): {e}")
 
     # 4) Email
+    await db.local_receipts.update_many({"id": {"$in": receipts_ids}}, {"$set": {"operator": payload.operator, "fornitore": payload.fornitore}})
+
     # F9 §28: filtra per evento "arrivi"
     recipients = await get_recipients_for_event("arrivi")
     # F8 fix: passa il fuso configurato all'email builder così l'orario di registrazione
