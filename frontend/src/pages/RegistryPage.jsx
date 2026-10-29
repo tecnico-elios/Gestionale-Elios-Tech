@@ -1,3 +1,4 @@
+import { formatDateIT } from "../lib/dateFmt";
 import { API } from "../lib/apiBase";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -116,6 +117,12 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
     const key = cfg.lookupValueKey || "id";
     const found = list.find((x) => String(x?.[key]) === String(value));
     return found ? optionLabel(found, cfg) : "Record non trovato";
+  };
+
+  const displayCell = (column, row) => {
+    if (lookupKey(column)) return resolveLookup(column, row[column.key]);
+    if (fields.some((field) => field.key === column.key && field.type === "date")) return formatDateIT(row[column.key]) || "—";
+    return (row[column.key] ?? "—") || "—";
   };
 
   const shown = useMemo(() => {
@@ -361,7 +368,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                 {columns.map((c) => (
                   <div key={c.key} className="grid grid-cols-[110px_1fr] gap-2 text-sm">
                     <span className="text-slate-500 font-medium">{c.label}</span>
-                    <span className="text-slate-900 break-words">{lookupKey(c) ? resolveLookup(c, x[c.key]) : (x[c.key] ?? "—") || "—"}</span>
+                    <span className="text-slate-900 break-words">{displayCell(c, x)}</span>
                   </div>
                 ))}
               </div>
@@ -392,7 +399,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                 <tr><td colSpan={columns.length + 1} className="p-10 text-center text-slate-500">Nessun record presente.</td></tr>
               ) : shown.map((x) => (
                 <tr key={x.id} className="border-t border-slate-100 hover:bg-slate-50/60">
-                  {columns.map((c) => <td key={c.key} className="px-4 py-3">{lookupKey(c) ? resolveLookup(c, x[c.key]) : (x[c.key] ?? "—") || "—"}</td>)}
+                  {columns.map((c) => <td key={c.key} className="px-4 py-3">{displayCell(c, x)}</td>)}
                   <td className="px-4 py-2">
                     <div className="flex justify-end gap-1">
                       {rowActions && rowActions(x, { reload: load })}

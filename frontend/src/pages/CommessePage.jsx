@@ -735,7 +735,7 @@ function CommessaDetail({ id, onBack }) {
           <div className="commessa-info-box"><span className="commessa-info-label">Richiesti</span><span className="commessa-info-value">{totalQty}</span></div>
           <div className="commessa-info-box"><span className="commessa-info-label">Preparati</span><span className="commessa-info-value text-amber-700">{pickedQty}</span></div>
           <div className="commessa-info-box"><span className="commessa-info-label">Spediti</span><span className="commessa-info-value text-emerald-700">{shippedQty}</span></div>
-          <div className="commessa-info-box"><span className="commessa-info-label">Spedizione</span><span className="commessa-info-value">{c.data_prevista ? formatDateIT(c.data_prevista) : "Da definire"}</span></div>
+          <div className="commessa-info-box"><span className="commessa-info-label">{c.shipped_at ? "Ultima spedizione" : "Spedizione prevista"}</span><span className="commessa-info-value">{formatDateIT(c.shipped_at || c.data_prevista) || "Da definire"}</span></div>
         </div>
         {hasMaterial && <div className="rounded-xl border border-slate-200 bg-white/80 p-3">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2"><span>Avanzamento materiale</span><span>{totalQty ? Math.round((shippedQty / totalQty) * 100) : 0}% spedito</span></div>
