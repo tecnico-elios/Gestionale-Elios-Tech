@@ -29,6 +29,16 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Normalize legacy comment
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/ChecklistPage.jsx')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('(clienteOrderId null)', '(clienteClientId null)')
+          p.write_text(s, encoding='utf-8')
+          PY
+
       - name: Apply R5 continuation patch
         run: python scripts/apply_r5_continuation.py
 
