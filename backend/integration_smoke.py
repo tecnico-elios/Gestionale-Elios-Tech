@@ -236,10 +236,7 @@ def main() -> None:
     expect("DELETE", f"/api/free-reports/{free_id}", token=token)
 
     # Assistenza collegata all'installazione.
-    assistance = expect(
-        "POST", "/api/crm/assistenza", token=token,
-        json={"cliente_id": client_id, "installazione_id": install_id, "problema": "Test automatico", "stato": "Aperta"},
-    ).json()
+    assistance = expect("POST", "/api/crm/assistenza", token=token, json={"cliente_id": client_id, "installazione_id": install_id, "problema": "Test automatico", "stato": "Aperta"}).json()
     assistance_id = assistance.get("id")
     assert assistance_id, assistance
     expect("GET", "/api/crm/assistenza", token=token)
@@ -251,6 +248,13 @@ def main() -> None:
     expect("DELETE", f"/api/files/document/{gen.get('document_id')}", token=token)
     expect("DELETE", f"/api/crm/installazioni/{install_id}", token=token)
     expect("DELETE", f"/api/crm/ordini-clienti/{order_id}", token=token)
+
+    # Email/telefono del cliente generano automaticamente il Referente principale:
+    # lo smoke deve rimuoverlo prima di verificare la cancellazione protetta del cliente.
+    primary_contact = SYNC_DB.crm_contatti.find_one({"cliente_id": client_id, "is_primary": True})
+    if primary_contact and primary_contact.get("id"):
+        expect("DELETE", f"/api/crm/contatti/{primary_contact['id']}", token=token)
+
     expect("DELETE", f"/api/crm/clienti/{client_id}", token=token)
 
     expect("POST", "/api/auth/logout", token=token)
