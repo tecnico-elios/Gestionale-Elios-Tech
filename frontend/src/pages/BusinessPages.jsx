@@ -135,7 +135,7 @@ export const SopralluoghiPage = () => {
     title="Sopralluoghi"
     subtitle="Il sopralluogo può essere collegato a un cliente esistente oppure creato per un prospect non ancora acquisito."
     fields={[
-      F("cliente_id", "Cliente / prospect", { ...CLIENT_LOOKUP, allowFreeText: true, freeTextTarget: "nominativo", inlineCreateClient: true, clearOnChange: ["sede_id"] }),
+      F("cliente_id", "Cliente / prospect", { ...CLIENT_LOOKUP, allowFreeText: true, freeTextTarget: "nominativo", clearOnChange: ["sede_id"], help: "Se non selezioni un cliente esistente, il nominativo resta un prospect e non viene creata alcuna anagrafica cliente." }),
       F("sede_id", "Sede cliente", {
         ...SITE_LOOKUP,
         dependsOn: "cliente_id",
@@ -155,7 +155,7 @@ export const SopralluoghiPage = () => {
       F("note", "Note tecniche", { type: "textarea", full: true }),
     ]}
     columns={[
-      F("cliente_id", "Cliente", CLIENT_LOOKUP),
+      F("cliente_id", "Cliente / prospect", { ...CLIENT_LOOKUP, fallbackKey: "nominativo" }),
       F("sede_id", "Sede", SITE_LOOKUP),
       F("data", "Data"),
       F("tecnico", "Tecnico"),

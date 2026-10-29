@@ -123,7 +123,13 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   };
 
   const displayCell = (column, row) => {
-    if (lookupKey(column)) return resolveLookup(column, row[column.key]);
+    if (lookupKey(column)) {
+      const rawValue = row[column.key];
+      if (!rawValue && column.fallbackKey && row[column.fallbackKey]) return row[column.fallbackKey];
+      const resolved = resolveLookup(column, rawValue);
+      if (resolved === "Record non trovato" && column.fallbackKey && row[column.fallbackKey]) return row[column.fallbackKey];
+      return resolved;
+    }
     if (fields.some((field) => field.key === column.key && field.type === "date")) return formatDateIT(row[column.key]) || "—";
     return (row[column.key] ?? "—") || "—";
   };
@@ -537,7 +543,7 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                             )}
                           </div>
                         )}
-                        {f.allowFreeText && !form[f.key] && lookupTextValue(f) && <div className="text-xs text-amber-700 mt-1">Puoi lasciarlo come prospect oppure usare “Aggiungi nuovo cliente” per creare subito l’anagrafica e la sede.</div>}
+                        {f.allowFreeText && !form[f.key] && lookupTextValue(f) && <div className="text-xs text-amber-700 mt-1">{f.inlineCreateClient ? "Puoi lasciarlo come prospect oppure creare subito l’anagrafica cliente." : "Verrà salvato come prospect. Non viene creata alcuna anagrafica cliente."}</div>}
                         {f.inlineCreateSite && !disabledByDependency && (
                           <div className="mt-2 flex items-center gap-2 flex-wrap">
                             {lookupOptions(f).length === 0 && (
