@@ -1,0 +1,163 @@
+name: R8 controlled patch
+
+on:
+  push:
+    branches:
+      - fix/r8-sicurezza-coerenza
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[r8-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/r8-sicurezza-coerenza
+          fetch-depth: 0
+
+      - name: Apply deterministic R8 patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def replace_once(path, old, new):
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly 1 occurrence, found {count}: {old[:100]!r}')
+              write(path, text.replace(old, new, 1))
+
+          def replace_count(path, old, new, expected):
+              text = read(path)
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} occurrences, found {count}: {old!r}')
+              write(path, text.replace(old, new))
+
+          # Backend: una sola policy, applicata da ogni flusso che salva password.
+          replace_once('backend/auth.py', 'import os\nimport uuid\nimport logging\n', 'import os\nimport re\nimport uuid\nimport logging\n')
+          replace_once(
+              'backend/auth.py',
+              '''def hash_password(password: str) -> str:\n    if not password or len(password) < 6:\n        raise ValueError("La password deve avere almeno 6 caratteri")\n    salt = bcrypt.gensalt(rounds=12)\n    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")\n''',
+              '''PASSWORD_POLICY_MESSAGE = "La password deve avere almeno 8 caratteri, una lettera maiuscola e un carattere speciale"\n\n\ndef validate_password(password: str) -> None:\n    if not password or len(password) < 8:\n        raise ValueError(PASSWORD_POLICY_MESSAGE)\n    if not re.search(r"[A-Z]", password):\n        raise ValueError(PASSWORD_POLICY_MESSAGE)\n    if not re.search(r"[^A-Za-z0-9]", password):\n        raise ValueError(PASSWORD_POLICY_MESSAGE)\n\n\ndef hash_password(password: str) -> str:\n    validate_password(password)\n    salt = bcrypt.gensalt(rounds=12)\n    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")\n'''
+          )
+          replace_count('backend/routes/auth_routes.py', 'Field(min_length=6, max_length=128)', 'Field(min_length=8, max_length=128)', 3)
+          replace_count('backend/routes/admin_users_routes.py', 'Field(min_length=6, max_length=128)', 'Field(min_length=8, max_length=128)', 2)
+
+          # Credenziali di test conformi alla nuova policy.
+          replace_once('backend/tests/conftest.py', 'TEST_ADMIN_PWD = "test_admin_ci_pw_1"\nTEST_OP_USER = "test_op_ci"\nTEST_OP_PWD = "test_op_ci_pw_1"', 'TEST_ADMIN_PWD = "Test_Admin_CI!1"\nTEST_OP_USER = "test_op_ci"\nTEST_OP_PWD = "Test_Op_CI!1"')
+
+          # Utility frontend condivisa, così tutti i form mostrano e applicano la stessa regola.
+          Path('frontend/src/lib/passwordPolicy.js').write_text('''export const PASSWORD_POLICY_HINT = "Minimo 8 caratteri, una maiuscola e un carattere speciale.";\n\nexport function validatePassword(password) {\n  const value = String(password || "");\n  if (value.length < 8) return PASSWORD_POLICY_HINT;\n  if (!/[A-Z]/.test(value)) return PASSWORD_POLICY_HINT;\n  if (!/[^A-Za-z0-9]/.test(value)) return PASSWORD_POLICY_HINT;\n  return null;\n}\n''', encoding='utf-8')
+
+          # Bootstrap primo Admin.
+          replace_once('frontend/src/pages/LoginPage.jsx', 'import EliosLogo from "../components/EliosLogo";\n', 'import EliosLogo from "../components/EliosLogo";\nimport { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";\n')
+          replace_once(
+              'frontend/src/pages/LoginPage.jsx',
+              '''    if (password !== confirm) {\n      toast.error("Le password non coincidono");\n      return;\n    }\n    setBusy(true);''',
+              '''    if (password !== confirm) {\n      toast.error("Le password non coincidono");\n      return;\n    }\n    const passwordError = validatePassword(password);\n    if (passwordError) {\n      toast.error("Password non valida", { description: passwordError });\n      return;\n    }\n    setBusy(true);'''
+          )
+          replace_count('frontend/src/pages/LoginPage.jsx', 'minLength={6}', 'minLength={8}', 2)
+          replace_once(
+              'frontend/src/pages/LoginPage.jsx',
+              '''      </div>\n      <Button\n        type="submit"\n        disabled={busy}\n        className="h-12 w-full bg-slate-800/80 hover:bg-slate-800 text-white border border-white/10 mt-2"''',
+              '''      </div>\n      <div className="text-[11px] text-slate-200/80">{PASSWORD_POLICY_HINT}</div>\n      <Button\n        type="submit"\n        disabled={busy}\n        className="h-12 w-full bg-slate-800/80 hover:bg-slate-800 text-white border border-white/10 mt-2"'''
+          )
+
+          # Cambio password obbligatorio al primo accesso.
+          replace_once('frontend/src/pages/ForceChangePasswordPage.jsx', 'import EliosLogo from "../components/EliosLogo";\n', 'import EliosLogo from "../components/EliosLogo";\nimport { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";\n')
+          replace_once('frontend/src/pages/ForceChangePasswordPage.jsx', '    if (newPwd.length < 6) { toast.error("La nuova password deve avere almeno 6 caratteri"); return; }', '    const passwordError = validatePassword(newPwd);\n    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }')
+          replace_count('frontend/src/pages/ForceChangePasswordPage.jsx', 'minLength={6}', 'minLength={8}', 2)
+          replace_once('frontend/src/pages/ForceChangePasswordPage.jsx', 'Nuova password <span className="text-slate-400 font-normal">(min. 6 caratteri)</span>', 'Nuova password <span className="text-slate-400 font-normal">({PASSWORD_POLICY_HINT})</span>')
+
+          # Reset da link.
+          replace_once('frontend/src/pages/ResetPasswordPage.jsx', 'import EliosLogo from "../components/EliosLogo";\n', 'import EliosLogo from "../components/EliosLogo";\nimport { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";\n')
+          replace_once('frontend/src/pages/ResetPasswordPage.jsx', '    if (newPwd.length < 6) { toast.error("Almeno 6 caratteri"); return; }', '    const passwordError = validatePassword(newPwd);\n    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }')
+          replace_count('frontend/src/pages/ResetPasswordPage.jsx', 'minLength={6}', 'minLength={8}', 2)
+          replace_once('frontend/src/pages/ResetPasswordPage.jsx', '          <p className="r52-auth-card-copy">Inserisci la nuova password. Il link è valido una sola volta e per 1 ora.</p>', '          <p className="r52-auth-card-copy">Inserisci la nuova password. Il link è valido una sola volta e per 1 ora.</p>\n          <p className="text-xs text-slate-500 mt-1">{PASSWORD_POLICY_HINT}</p>')
+
+          # Cambio password dal menu utente.
+          replace_once('frontend/src/components/ChangeMyPasswordDialog.jsx', 'import { Eye, EyeSlash, Lock } from "@phosphor-icons/react";\n', 'import { Eye, EyeSlash, Lock } from "@phosphor-icons/react";\nimport { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";\n')
+          replace_once(
+              'frontend/src/components/ChangeMyPasswordDialog.jsx',
+              '''    if (newPwd.length < 6) {\n      toast.error("La nuova password deve avere almeno 6 caratteri");\n      return;\n    }''',
+              '''    const passwordError = validatePassword(newPwd);\n    if (passwordError) {\n      toast.error("Password non valida", { description: passwordError });\n      return;\n    }'''
+          )
+          replace_count('frontend/src/components/ChangeMyPasswordDialog.jsx', 'minLength={6}', 'minLength={8}', 2)
+          replace_once('frontend/src/components/ChangeMyPasswordDialog.jsx', '            La vecchia password è necessaria per confermare la modifica.\n            Il nuovo token sostituirà quello attuale.', '            La vecchia password è necessaria per confermare la modifica.\n            Il nuovo token sostituirà quello attuale. {PASSWORD_POLICY_HINT}')
+
+          # Creazione/reset utenti dall'Admin.
+          replace_once('frontend/src/pages/AdminUsersPage.jsx', 'import { fmtDateTime, useTz } from "../lib/tz";\n', 'import { fmtDateTime, useTz } from "../lib/tz";\nimport { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";\n')
+          replace_once(
+              'frontend/src/pages/AdminUsersPage.jsx',
+              '''  const submit = async (e) => {\n    e.preventDefault();\n    setBusy(true);''',
+              '''  const submit = async (e) => {\n    e.preventDefault();\n    const passwordError = validatePassword(form.password);\n    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }\n    setBusy(true);'''
+          )
+          replace_once(
+              'frontend/src/pages/AdminUsersPage.jsx',
+              '''  const save = async () => {\n    setBusy(true);\n    try { await axios.post(`${API}/admin/users/${user.id}/reset-password`, { new_password: pwd });''',
+              '''  const save = async () => {\n    const passwordError = validatePassword(pwd);\n    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }\n    setBusy(true);\n    try { await axios.post(`${API}/admin/users/${user.id}/reset-password`, { new_password: pwd });'''
+          )
+          replace_count('frontend/src/pages/AdminUsersPage.jsx', 'minLength={6}', 'minLength={8}', 2)
+          replace_once('frontend/src/pages/AdminUsersPage.jsx', '<p className="text-xs text-slate-500 mt-1">Al primo accesso l\'utente dovrà impostarne una nuova.</p>', '<p className="text-xs text-slate-500 mt-1">{PASSWORD_POLICY_HINT} Al primo accesso l\'utente dovrà impostarne una nuova.</p>')
+          replace_once('frontend/src/pages/AdminUsersPage.jsx', 'disabled={busy || pwd.length < 6}', 'disabled={busy || !!validatePassword(pwd)}')
+
+          # Piccola incoerenza di ordinamento rimasta nel menu Tecnico.
+          replace_once('frontend/src/components/AppLayout.jsx', '{ key: "report_liberi", to: "/report-liberi", label: "Report installazione", icon: FileText, testid: "nav-report-liberi", module: "installazioni", section: "tecnico", order: 35 },', '{ key: "report_liberi", to: "/report-liberi", label: "Report installazione", icon: FileText, testid: "nav-report-liberi", module: "installazioni", section: "tecnico", order: 40 },')
+          replace_once('frontend/src/components/AppLayout.jsx', '{ key: "interventi_tecnici", to: "/interventi-tecnici", label: "Interventi tecnici", icon: Wrench, testid: "nav-interventi-tecnici", module: "installazioni", section: "tecnico", order: 35 },', '{ key: "interventi_tecnici", to: "/interventi-tecnici", label: "Interventi tecnici", icon: Wrench, testid: "nav-interventi-tecnici", module: "installazioni", section: "tecnico", order: 50 },')
+          replace_once('frontend/src/components/AppLayout.jsx', '{ key: "assistenza", to: "/assistenza", label: "Assistenza", icon: Headset, testid: "nav-assistenza", module: "assistenza", section: "tecnico", order: 40 },', '{ key: "assistenza", to: "/assistenza", label: "Assistenza", icon: Headset, testid: "nav-assistenza", module: "assistenza", section: "tecnico", order: 60 },')
+
+          # Regressioni permanenti: policy password e popup nativi.
+          audit_path = 'backend/system_audit.py'
+          audit = read(audit_path)
+          anchor = '''except Exception as exc:\n    issue(f"Verifica mapping permessi fallita: {type(exc).__name__}: {exc}")\n\ntry:\n    import server  # noqa: E402\n'''
+          addition = '''except Exception as exc:\n    issue(f"Verifica mapping permessi fallita: {type(exc).__name__}: {exc}")\n\n# La policy password deve restare unica e forte su backend e frontend.\ntry:\n    for weak in ("Abc!123", "solominuscole!2026", "SenzaSpeciale2026"):\n        try:\n            audit_auth.validate_password(weak)\n        except ValueError:\n            pass\n        else:\n            issue(f"Policy password troppo permissiva per {weak!r}")\n    audit_auth.validate_password("Password!2026")\n    ok("Policy password: minimo 8, maiuscola e carattere speciale")\nexcept Exception as exc:\n    issue(f"Verifica policy password fallita: {type(exc).__name__}: {exc}")\n\npassword_ui_files = [\n    FRONTEND / "src" / "pages" / "LoginPage.jsx",\n    FRONTEND / "src" / "pages" / "ForceChangePasswordPage.jsx",\n    FRONTEND / "src" / "pages" / "ResetPasswordPage.jsx",\n    FRONTEND / "src" / "pages" / "AdminUsersPage.jsx",\n    FRONTEND / "src" / "components" / "ChangeMyPasswordDialog.jsx",\n]\nfor path in password_ui_files:\n    text = path.read_text(encoding="utf-8")\n    if "minLength={6}" in text or "almeno 6 caratteri" in text.lower() or "min. 6 caratteri" in text.lower():\n        issue(f"{path.relative_to(ROOT)}: residuo policy password a 6 caratteri")\nelse:\n    ok("Frontend password allineato alla policy R8")\n\nnative_dialog_hits = []\nfor path in (FRONTEND / "src").rglob("*"):\n    if path.suffix not in {".js", ".jsx"}:\n        continue\n    text = path.read_text(encoding="utf-8")\n    if re.search(r"\\bwindow\\.(?:confirm|alert|prompt)\\s*\\(", text):\n        native_dialog_hits.append(path.relative_to(ROOT))\nif native_dialog_hits:\n    for path in native_dialog_hits:\n        issue(f"Popup browser nativo residuo: {path}")\nelse:\n    ok("Nessun popup browser nativo window.confirm/alert/prompt")\n\ntry:\n    import server  # noqa: E402\n'''
+          if audit.count(anchor) != 1:
+              raise SystemExit('backend/system_audit.py: anchor R8 non univoco')
+          write(audit_path, audit.replace(anchor, addition, 1))
+
+          write('VERSION', 'R8\n')
+          PY
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Compile backend
+        run: python -m compileall -q backend
+
+      - name: Structural audit
+        env:
+          MONGO_URL: mongodb://127.0.0.1:27017
+          DB_NAME: elios_system_audit
+          JWT_SECRET: elios-system-audit-secret
+          ADMIN_PASSWORD: Audit_Admin!2026
+        run: python backend/system_audit.py
+
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Commit validated R8 changes
+        shell: bash
+        run: |
+          rm -f .github/workflows/r8-controlled-patch.yml
+          git config user.name "Elios Tech CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "R8: uniforma sicurezza password e controlli UI [r8-applied]"
+          git push origin HEAD:fix/r8-sicurezza-coerenza
