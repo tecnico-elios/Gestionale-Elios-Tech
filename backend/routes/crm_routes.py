@@ -691,6 +691,69 @@ def build_router(db, auth_deps):
             "timeline": timeline, "notion": notion_data,
         }
 
+    @router.get("/ordini-insights")
+    async def ordini_insights(current=Depends(dep)):
+        """Dataset analitico non aggregato: una riga per ordine e per la sua data reale.
+
+        Evita l'errore del vecchio riepilogo clienti che sommava tutti gli ordini di un
+        cliente e attribuiva il totale all'ultima data firma. I record legacy presenti
+        solo sull'anagrafica cliente vengono mantenuti come fallback, senza duplicare
+        i clienti che hanno già ordini reali.
+        """
+        clients_task = db.crm_clienti.find(
+            {"archived": {"$ne": True}},
+            {"_id": 0, "id": 1, "ragione_sociale": 1, "nome_struttura": 1, "nome": 1, "cognome": 1,
+             "data_firma": 1, "capitale": 1, "qty_wb": 1}
+        ).to_list(length=10000)
+        orders_task = db.crm_ordini_clienti.find(
+            {},
+            {"_id": 0, "id": 1, "numero": 1, "cliente_id": 1, "nominativo": 1, "cliente": 1,
+             "data_firma": 1, "data": 1, "importo": 1, "qty_wb": 1,
+             "stato": 1, "stato_commerciale": 1, "stato_finanziaria": 1}
+        ).to_list(length=20000)
+        clients, orders = await asyncio.gather(clients_task, orders_task)
+
+        def client_name(c: Dict[str, Any]) -> str:
+            return str(c.get("ragione_sociale") or c.get("nome_struttura") or " ".join(x for x in [c.get("nome"), c.get("cognome")] if x) or "Cliente").strip()
+
+        by_id = {str(c.get("id") or ""): c for c in clients}
+        clients_with_orders = {str(o.get("cliente_id") or "") for o in orders if o.get("cliente_id")}
+        items: List[Dict[str, Any]] = []
+        for o in orders:
+            cid = str(o.get("cliente_id") or "")
+            c = by_id.get(cid) or {}
+            date = str(o.get("data_firma") or o.get("data") or "")[:10]
+            items.append({
+                "id": o.get("id"), "ordine_id": o.get("id"), "numero": o.get("numero"),
+                "cliente_id": cid or None,
+                "cliente": client_name(c) if c else (o.get("nominativo") or o.get("cliente") or "Cliente"),
+                "data_firma": date,
+                "fatturato": float(o.get("importo") or 0),
+                "wallbox": float(o.get("qty_wb") or 0),
+                "stato": o.get("stato_commerciale") or o.get("stato") or "",
+                "stato_finanziaria": o.get("stato_finanziaria") or "",
+                "source": "ordine",
+            })
+
+        for c in clients:
+            cid = str(c.get("id") or "")
+            if cid in clients_with_orders:
+                continue
+            amount = c.get("capitale")
+            wb = c.get("qty_wb")
+            date = str(c.get("data_firma") or "")[:10]
+            if not date and amount in (None, "", 0, 0.0) and wb in (None, "", 0, 0.0):
+                continue
+            items.append({
+                "id": f"legacy:{cid}", "ordine_id": None, "numero": None,
+                "cliente_id": cid, "cliente": client_name(c), "data_firma": date,
+                "fatturato": float(amount or 0), "wallbox": float(wb or 0),
+                "stato": "", "stato_finanziaria": "", "source": "legacy_cliente",
+            })
+
+        items.sort(key=lambda x: (str(x.get("data_firma") or ""), str(x.get("numero") or x.get("id") or "")), reverse=True)
+        return {"items": items, "count": len(items)}
+
     @router.get("/clienti-summary")
     async def clienti_summary(current=Depends(dep)):
         """Elenco leggero per Elios Tech Ordini, gia' aggregato e ordinato per Data firma.

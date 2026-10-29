@@ -183,12 +183,67 @@ function QuoteDialog({open,item,clients,surveys,sites,products,onClose,onSaved})
   const [form,setForm]=useState(item?{...EMPTY,...item,righe:Array.isArray(item.righe)?item.righe:[]}:{...EMPTY});
   const [saving,setSaving]=useState(false);
   const [clientSearch,setClientSearch]=useState("");
-  useEffect(()=>{ if(open){setForm(item?{...EMPTY,...item,righe:Array.isArray(item.righe)?item.righe:[]}:{...EMPTY}); setClientSearch(item?.cliente_id ? clientName(clients.find(c=>c.id===item.cliente_id)) : "");}},[open,item,clients]);
+  const [localClients,setLocalClients]=useState(clients||[]);
+  const [localSites,setLocalSites]=useState(sites||[]);
+  const [clientCreateOpen,setClientCreateOpen]=useState(false);
+  const [clientCreating,setClientCreating]=useState(false);
+  const [clientDraft,setClientDraft]=useState({tipo:"Azienda",ragione_sociale:"",telefono:"",email:""});
+  const [siteCreateOpen,setSiteCreateOpen]=useState(false);
+  const [siteCreating,setSiteCreating]=useState(false);
+  const [siteDraft,setSiteDraft]=useState({nome:"Sede installazione",indirizzo:"",civico:"",cap:"",comune:"",provincia:"",telefono:""});
+
+  useEffect(()=>{
+    if(open){
+      setForm(item?{...EMPTY,...item,righe:Array.isArray(item.righe)?item.righe:[]}:{...EMPTY});
+      setLocalClients(clients||[]); setLocalSites(sites||[]);
+      setClientSearch(item?.cliente_id ? clientName((clients||[]).find(c=>c.id===item.cliente_id)) : "");
+      setClientCreateOpen(false); setSiteCreateOpen(false);
+    }
+  },[open,item,clients,sites]);
+
   const set=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const norm=(v)=>String(v||"").trim().toLocaleLowerCase("it-IT");
   const rows=Array.isArray(form.righe)?form.righe:[];
-  const filteredClients=useMemo(()=>{const q=clientSearch.trim().toLowerCase(); if(!q)return clients.slice(0,20); return clients.filter(c=>`${clientName(c)} ${c.telefono||""} ${c.email||""} ${c.partita_iva||""}`.toLowerCase().includes(q)).slice(0,20)},[clientSearch,clients]);
+  const filteredClients=useMemo(()=>{
+    const q=clientSearch.trim().toLowerCase();
+    if(!q) return localClients.slice(0,20);
+    return localClients.filter(c=>`${clientName(c)} ${c.telefono||""} ${c.email||""} ${c.partita_iva||""}`.toLowerCase().includes(q)).slice(0,20);
+  },[clientSearch,localClients]);
   const filteredSurveys=surveys.filter(s=>!form.cliente_id || String(s.cliente_id||"")===String(form.cliente_id));
-  const filteredSites=sites.filter(s=>!form.cliente_id || String(s.cliente_id||"")===String(form.cliente_id));
+  const filteredSites=localSites.filter(s=>!form.cliente_id || String(s.cliente_id||"")===String(form.cliente_id));
+
+  const selectClient=(c)=>{
+    setForm(p=>({...p,cliente_id:c.id,nominativo:"",sede_id:"",telefono:p.telefono||c.telefono||"",email:p.email||c.email||""}));
+    setClientSearch(clientName(c));
+    setClientCreateOpen(false);
+  };
+
+  const createClient=async()=>{
+    const name=String(clientDraft.ragione_sociale||"").trim();
+    if(!name) return toast.error("Ragione sociale / nome cliente obbligatorio");
+    const email=norm(clientDraft.email); const phone=norm(clientDraft.telefono).replace(/\s+/g,"");
+    const existing=localClients.find(c=>norm(clientName(c))===norm(name)||(email&&norm(c.email)===email)||(phone&&norm(c.telefono).replace(/\s+/g,"")===phone));
+    if(existing){ selectClient(existing); toast.info("Cliente già presente: selezionata l'anagrafica esistente"); return; }
+    setClientCreating(true);
+    try{
+      const payload={tipo:clientDraft.tipo||"Azienda",ragione_sociale:name,telefono:String(clientDraft.telefono||"").trim(),email:String(clientDraft.email||"").trim()};
+      const {data}=await axios.post(`${API}/crm/clienti`,payload);
+      setLocalClients(p=>[...p,data]); selectClient(data); toast.success("Cliente creato e selezionato");
+    }catch(e){toast.error("Creazione cliente non riuscita",{description:errText(e)})}finally{setClientCreating(false)}
+  };
+
+  const createSite=async()=>{
+    if(!form.cliente_id) return toast.error("Seleziona o crea prima il cliente");
+    if(!String(siteDraft.nome||"").trim()||!String(siteDraft.indirizzo||"").trim()||!String(siteDraft.comune||"").trim()) return toast.error("Nome sede, indirizzo e comune sono obbligatori");
+    const existing=localSites.find(s=>String(s.cliente_id||"")===String(form.cliente_id)&&norm(s.nome)===norm(siteDraft.nome)&&norm(s.indirizzo)===norm(siteDraft.indirizzo)&&norm(s.comune)===norm(siteDraft.comune));
+    if(existing){ set("sede_id",existing.id); setSiteCreateOpen(false); toast.info("Sede già presente: selezionata quella esistente"); return; }
+    setSiteCreating(true);
+    try{
+      const {data}=await axios.post(`${API}/crm/sedi`,{cliente_id:form.cliente_id,tipo:"Installazione",...siteDraft});
+      setLocalSites(p=>[...p,data]); set("sede_id",data.id); setSiteCreateOpen(false); toast.success("Sede creata e selezionata");
+    }catch(e){toast.error("Creazione sede non riuscita",{description:errText(e)})}finally{setSiteCreating(false)}
+  };
+
   const addRow=(tipo="materiale")=>set("righe",[...rows,{tipo_riga:tipo,product_page_id:"",product_name:"",product_code:"",descrizione:"",quantity:1,unit:"pz",prezzo_unitario:0,sconto:0,iva:22}]);
   const updateRow=(i,patch)=>set("righe",rows.map((r,n)=>n===i?{...r,...patch}:r));
   const removeRow=(i)=>set("righe",rows.filter((_,n)=>n!==i));
@@ -208,12 +263,19 @@ function QuoteDialog({open,item,clients,surveys,sites,products,onClose,onSaved})
 
   return <Dialog open={open} onOpenChange={v=>!v&&onClose()}><DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto"><DialogHeader><DialogTitle>{item?.id?`Modifica preventivo · Rev. ${item.quote_revision || 1}`:"Crea preventivo"}</DialogTitle></DialogHeader><form onSubmit={save} className="space-y-5">
     <div className="rounded-md border border-slate-200 p-4"><h3 className="font-bold mb-3">Destinatario</h3><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 relative"><Label>Cerca cliente</Label><Input className="mt-1 h-12" value={clientSearch} onChange={e=>{setClientSearch(e.target.value); if(form.cliente_id)set("cliente_id","")}} placeholder="Scrivi nome, azienda, telefono, email o P.IVA..."/>{clientSearch&&!form.cliente_id&&<div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-56 overflow-auto">{filteredClients.map(c=><button type="button" key={c.id} onClick={()=>{set("cliente_id",c.id);setClientSearch(clientName(c));}} className="block w-full text-left px-3 py-2 hover:bg-slate-50"><b>{clientName(c)}</b><div className="text-xs text-slate-500">{[c.telefono,c.email,c.partita_iva].filter(Boolean).join(" · ")}</div></button>)}</div>}</div>
+      <div className="lg:col-span-2 relative"><Label>Cliente</Label><Input className="mt-1 h-12" value={clientSearch} onChange={e=>{setClientSearch(e.target.value); if(form.cliente_id)setForm(p=>({...p,cliente_id:"",sede_id:""}))}} placeholder="Scrivi nome, azienda, telefono, email o P.IVA..." autoComplete="off"/>{clientSearch&&!form.cliente_id&&<div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-64 overflow-auto">{filteredClients.map(c=><button type="button" key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>selectClient(c)} className="block w-full text-left px-3 py-2.5 hover:bg-slate-50 border-b border-slate-100"><b>{clientName(c)}</b><div className="text-xs text-slate-500">{[c.telefono,c.email,c.partita_iva].filter(Boolean).join(" · ")}</div></button>)}{!filteredClients.length&&<div className="px-3 py-2 text-sm text-slate-500">Nessun cliente esistente trovato.</div>}<button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>{setClientDraft({tipo:"Azienda",ragione_sociale:clientSearch,telefono:form.telefono||"",email:form.email||""});setClientCreateOpen(true)}} className="block w-full text-left px-3 py-3 font-semibold text-blue-700 hover:bg-blue-50">+ Aggiungi nuovo cliente</button></div>}<p className="text-[11px] text-slate-500 mt-1">Digita per cercare. Se non esiste, puoi crearlo qui senza uscire dal preventivo.</p></div>
       <div><Label>Oppure nominativo non ancora cliente</Label><Input className="mt-1 h-12" value={form.nominativo||""} onChange={e=>set("nominativo",e.target.value)} placeholder="Prospect / privato / azienda"/></div>
+
+      {clientCreateOpen&&<div className="lg:col-span-3 rounded-md border border-blue-200 bg-blue-50/50 p-4"><div className="font-semibold text-slate-900 mb-3">Nuovo cliente</div><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><Label>Tipo</Label><select className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-2" value={clientDraft.tipo} onChange={e=>setClientDraft(p=>({...p,tipo:e.target.value}))}><option>Azienda</option><option>Privato</option></select></div><div><Label>Ragione sociale / Nome *</Label><Input className="mt-1 h-11" value={clientDraft.ragione_sociale} onChange={e=>setClientDraft(p=>({...p,ragione_sociale:e.target.value}))}/></div><div><Label>Telefono</Label><Input className="mt-1 h-11" value={clientDraft.telefono} onChange={e=>setClientDraft(p=>({...p,telefono:e.target.value}))}/></div><div><Label>Email</Label><Input type="email" className="mt-1 h-11" value={clientDraft.email} onChange={e=>setClientDraft(p=>({...p,email:e.target.value}))}/></div></div><div className="flex justify-end gap-2 mt-3"><Button type="button" variant="outline" onClick={()=>setClientCreateOpen(false)}>Annulla</Button><Button type="button" onClick={createClient} disabled={clientCreating}>{clientCreating?"Creazione…":"Crea e seleziona"}</Button></div></div>}
+
       <div><Label>Telefono</Label><Input className="mt-1 h-12" value={form.telefono||""} onChange={e=>set("telefono",e.target.value)}/></div><div><Label>Email</Label><Input type="email" className="mt-1 h-12" value={form.email||""} onChange={e=>set("email",e.target.value)}/></div>
-      <div><Label>Sede</Label><select className="mt-1 h-12 w-full rounded-md border border-slate-300 bg-white px-3" value={form.sede_id||""} onChange={e=>set("sede_id",e.target.value)}><option value="">Da definire</option>{filteredSites.map(s=><option key={s.id} value={s.id}>{[s.nome,s.indirizzo,s.comune].filter(Boolean).join(" · ")}</option>)}</select></div>
+      <div><Label>Sede</Label><div className="flex gap-2 mt-1"><select className="h-12 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3" value={form.sede_id||""} onChange={e=>set("sede_id",e.target.value)} disabled={!form.cliente_id}><option value="">{form.cliente_id?"Da definire":"Seleziona prima il cliente"}</option>{filteredSites.map(s=><option key={s.id} value={s.id}>{[s.nome,s.indirizzo,s.comune].filter(Boolean).join(" · ")}</option>)}</select>{form.cliente_id&&<Button type="button" variant="outline" className="h-12 px-3" onClick={()=>{setSiteDraft({nome:"Sede installazione",indirizzo:"",civico:"",cap:"",comune:"",provincia:"",telefono:""});setSiteCreateOpen(true)}}>+ Nuova</Button>}</div></div>
       <div><Label>Sopralluogo collegato</Label><select className="mt-1 h-12 w-full rounded-md border border-slate-300 bg-white px-3" value={form.sopralluogo_id||""} onChange={e=>selectSurvey(e.target.value)}><option value="">Nessuno</option>{filteredSurveys.map(s=><option key={s.id} value={s.id}>{[s.data,s.tecnico,s.stato].filter(Boolean).join(" · ")}</option>)}</select></div>
-      <div><Label>Numero</Label><Input className="mt-1 h-12" value={form.numero||""} onChange={e=>set("numero",e.target.value)} placeholder="Automatico se vuoto"/></div><div><Label>Data *</Label><Input required type="date" className="mt-1 h-12" value={form.data||""} onChange={e=>set("data",e.target.value)}/></div><div><Label>Validità (giorni)</Label><Input type="number" min="1" className="mt-1 h-12" value={form.validita_giorni||30} onChange={e=>set("validita_giorni",e.target.value)}/></div>
+      <div><Label>Numero</Label><Input className="mt-1 h-12" value={form.numero||""} onChange={e=>set("numero",e.target.value)} placeholder="Automatico se vuoto"/></div>
+
+      {siteCreateOpen&&<div className="lg:col-span-3 rounded-md border border-emerald-200 bg-emerald-50/40 p-4"><div className="font-semibold text-slate-900 mb-3">Nuova sede</div><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><Label>Nome sede *</Label><Input className="mt-1 h-11" value={siteDraft.nome} onChange={e=>setSiteDraft(p=>({...p,nome:e.target.value}))}/></div><div><Label>Indirizzo *</Label><Input className="mt-1 h-11" value={siteDraft.indirizzo} onChange={e=>setSiteDraft(p=>({...p,indirizzo:e.target.value}))}/></div><div><Label>Civico</Label><Input className="mt-1 h-11" value={siteDraft.civico} onChange={e=>setSiteDraft(p=>({...p,civico:e.target.value}))}/></div><div><Label>Comune *</Label><Input className="mt-1 h-11" value={siteDraft.comune} onChange={e=>setSiteDraft(p=>({...p,comune:e.target.value}))}/></div><div><Label>CAP</Label><Input className="mt-1 h-11" value={siteDraft.cap} onChange={e=>setSiteDraft(p=>({...p,cap:e.target.value}))}/></div><div><Label>Provincia</Label><Input className="mt-1 h-11" value={siteDraft.provincia} onChange={e=>setSiteDraft(p=>({...p,provincia:e.target.value}))}/></div><div><Label>Telefono sede</Label><Input className="mt-1 h-11" value={siteDraft.telefono} onChange={e=>setSiteDraft(p=>({...p,telefono:e.target.value}))}/></div></div><div className="flex justify-end gap-2 mt-3"><Button type="button" variant="outline" onClick={()=>setSiteCreateOpen(false)}>Annulla</Button><Button type="button" onClick={createSite} disabled={siteCreating}>{siteCreating?"Creazione…":"Crea e seleziona"}</Button></div></div>}
+
+      <div><Label>Data *</Label><Input required type="date" className="mt-1 h-12" value={form.data||""} onChange={e=>set("data",e.target.value)}/></div><div><Label>Validità (giorni)</Label><Input type="number" min="1" className="mt-1 h-12" value={form.validita_giorni||30} onChange={e=>set("validita_giorni",e.target.value)}/></div>
       <div><Label>Condizioni di pagamento</Label><Input className="mt-1 h-12" value={form.condizioni_pagamento||""} onChange={e=>set("condizioni_pagamento",e.target.value)} placeholder="Es. 50% ordine, saldo fine lavori"/></div>
       <div><Label>Tempi di consegna / esecuzione</Label><Input className="mt-1 h-12" value={form.tempi_consegna||""} onChange={e=>set("tempi_consegna",e.target.value)} placeholder="Es. 20 giorni lavorativi"/></div>
       <div><Label>Stato</Label><select className="mt-1 h-12 w-full rounded-md border border-slate-300 bg-white px-3" value={form.stato} onChange={e=>set("stato",e.target.value)}>{["Bozza","Da inviare","Inviato","In trattativa","Accettato","Rifiutato","Scaduto"].map(x=><option key={x} disabled={x==="Inviato"||x==="Accettato"}>{x}</option>)}</select><div className="mt-1 text-[11px] text-slate-500">“Inviato” e “Accettato” si impostano dai pulsanti del preventivo per mantenere PDF, revisione e commessa coerenti.</div></div>
@@ -234,7 +296,8 @@ function QuoteDialog({open,item,clients,surveys,sites,products,onClose,onSaved})
       <div className="mt-4 ml-auto max-w-sm border-t border-slate-200 pt-3 space-y-1 text-sm"><div className="flex justify-between"><span>Imponibile</span><b>€ {euro(imponibile)}</b></div><div className="flex justify-between"><span>IVA</span><b>€ {euro(ivaTot)}</b></div><div className="flex justify-between text-lg"><span>Totale</span><b>€ {euro(totale)}</b></div></div>
     </div>
     <div><Label>Note</Label><Textarea className="mt-1" rows={3} value={form.note||""} onChange={e=>set("note",e.target.value)}/></div>
-    {item?.pdf_revision&&item?.pdf_outdated&&<div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex gap-2"><WarningCircle size={19}/><span>Il preventivo Rev. {item.quote_revision || 1} è stato modificato dopo la generazione del PDF. Salva le modifiche e rigenera il PDF prima dell’invio o dell’accettazione.</span></div>} {form.stato==="Accettato"&&<div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 flex gap-2"><Package size={19}/><span>Questo preventivo è già accettato. La commessa collegata resta la fonte operativa per materiali e servizi.</span></div>}
+    {item?.pdf_revision&&item?.pdf_outdated&&<div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex gap-2"><WarningCircle size={19}/><span>Il preventivo Rev. {item.quote_revision || 1} è stato modificato dopo la generazione del PDF. Salva le modifiche e rigenera il PDF prima dell’invio o dell’accettazione.</span></div>}
+    {form.stato==="Accettato"&&<div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 flex gap-2"><Package size={19}/><span>Questo preventivo è già accettato. La commessa collegata resta la fonte operativa per materiali e servizi.</span></div>}
     <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit" disabled={saving}>{saving?"Salvataggio…":"Salva preventivo"}</Button></DialogFooter>
   </form></DialogContent></Dialog>;
 }

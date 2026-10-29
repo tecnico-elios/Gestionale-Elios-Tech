@@ -226,6 +226,9 @@ class ChecklistPayload(BaseModel):
     # Se presente: viene usato DIRETTAMENTE (skip ricerca per nome — evita ambiguità).
     # Se assente: fallback alla ricerca per struttura (retrocompatibilità).
     order_page_id: Optional[str] = None
+    cliente_id: Optional[str] = None
+    sede_id: Optional[str] = None
+    sede_label: Optional[str] = None
     model_config = ConfigDict(extra="ignore")
     operator: str
     shipping_date: str  # ISO date YYYY-MM-DD
@@ -242,6 +245,9 @@ class ChecklistRecord(BaseModel):
     operator: str
     shipping_date: str
     structure: str
+    cliente_id: Optional[str] = None
+    sede_id: Optional[str] = None
+    sede_label: Optional[str] = None
     taken_by: str = ""
     items: List[ProductItem]
     notes: Optional[str] = None
@@ -964,6 +970,9 @@ async def submit_checklist(
         operator=payload.operator,
         shipping_date=payload.shipping_date,
         structure=payload.structure,
+        cliente_id=payload.cliente_id,
+        sede_id=payload.sede_id,
+        sede_label=payload.sede_label,
         taken_by=payload.taken_by,
         items=filled,
         notes=payload.notes,

@@ -3,7 +3,7 @@ import axios from "axios";
 import { API } from "../lib/apiBase";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { ChartBar, Lightning, CalendarBlank, TrendUp } from "@phosphor-icons/react";
+import { ChartBar, Lightning, CalendarBlank, TrendUp, Receipt } from "@phosphor-icons/react";
 
 const MONTHS = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
 const euro = (v) => `€ ${Number(v || 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -25,7 +25,7 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await axios.get(`${API}/crm/clienti-summary`);
+        const { data } = await axios.get(`${API}/crm/ordini-insights`);
         if (active) setRows(data.items || []);
       } catch (e) {
         toast.error("Impossibile caricare i dati", { description: e?.response?.data?.detail || e.message });
@@ -39,12 +39,13 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
   useEffect(() => { if (years.length && !years.includes(year)) setYear(years[0]); }, [years, year]);
   const filtered = useMemo(() => rows.filter((r) => getYear(r.data_firma) === Number(year)), [rows, year]);
   const monthly = useMemo(() => {
-    const out = MONTHS.map((name, i) => ({ name, month: i + 1, fatturato: 0, wallbox: 0 }));
+    const out = MONTHS.map((name, i) => ({ name, month: i + 1, fatturato: 0, wallbox: 0, ordini: 0 }));
     for (const r of filtered) {
       const m = getMonth(r.data_firma);
       if (m == null || m < 0 || m > 11) continue;
-      out[m].fatturato += Number(r.fatturato ?? r.capitale ?? 0);
-      out[m].wallbox += Number(r.wb_totali ?? r.qty_wb ?? 0);
+      out[m].fatturato += Number(r.fatturato || 0);
+      out[m].wallbox += Number(r.wallbox || 0);
+      out[m].ordini += r.source === "ordine" ? 1 : 0;
     }
     return out;
   }, [filtered]);
@@ -52,12 +53,15 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
     const yr = rows.filter((r) => getYear(r.data_firma) === y);
     return {
       year: String(y),
-      fatturato: yr.reduce((s, r) => s + Number(r.fatturato ?? r.capitale ?? 0), 0),
-      wallbox: yr.reduce((s, r) => s + Number(r.wb_totali ?? r.qty_wb ?? 0), 0),
+      fatturato: yr.reduce((s, r) => s + Number(r.fatturato || 0), 0),
+      wallbox: yr.reduce((s, r) => s + Number(r.wallbox || 0), 0),
     };
   }), [rows, years]);
-  const annualRevenue = filtered.reduce((s, r) => s + Number(r.fatturato ?? r.capitale ?? 0), 0);
-  const annualWb = filtered.reduce((s, r) => s + Number(r.wb_totali ?? r.qty_wb ?? 0), 0);
+
+  const annualRevenue = filtered.reduce((s, r) => s + Number(r.fatturato || 0), 0);
+  const annualWb = filtered.reduce((s, r) => s + Number(r.wallbox || 0), 0);
+  const orderCount = filtered.filter((r) => r.source === "ordine").length;
+  const uniqueClients = new Set(filtered.filter((r) => Number(mode === "fatturato" ? r.fatturato : r.wallbox) > 0).map((r) => r.cliente_id || r.cliente)).size;
   const isRevenue = mode === "fatturato";
   const Icon = isRevenue ? ChartBar : Lightning;
   const dataKey = isRevenue ? "fatturato" : "wallbox";
@@ -69,7 +73,7 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
     <div className="r52-commandbar">
       <div>
         <div className="r52-commandbar-title">Analisi {isRevenue ? "economica" : "Wallbox"}</div>
-        <div className="r52-commandbar-subtitle">Valore degli ordini raggruppato per cliente e ultima data firma. Include gli ordini ancora da fatturare; non rappresenta le fatture emesse.</div>
+        <div className="r52-commandbar-subtitle">Ogni ordine è attribuito alla propria data firma/data ordine. I valori non vengono più spostati sull'ultima data del cliente; i record legacy senza ordine restano come fallback.</div>
       </div>
       <div className="r52-commandbar-actions">
         <CalendarBlank size={17} className="text-slate-400" />
@@ -79,20 +83,21 @@ export default function CommesseInsightsPage({ mode = "fatturato" }) {
       </div>
     </div>
 
-    {loading ? <div className="r52-empty-state">Caricamento dati…</div> : <>
+    {loading ? <div className="r52-empty-state">Caricamento dati…</div> : !filtered.length ? <div className="r52-empty-state">Nessun dato disponibile per {year}.</div> : <>
       <div className="r52-insight-metrics-grid">
-        <Metric label={isRevenue ? "Totale anno" : "Wallbox anno"} value={isRevenue ? euro(annualRevenue) : annualWb.toLocaleString("it-IT")} sub={String(year)} Icon={Icon} />
+        <Metric label={isRevenue ? "Valore ordini anno" : "Wallbox anno"} value={isRevenue ? euro(annualRevenue) : annualWb.toLocaleString("it-IT")} sub={String(year)} Icon={Icon} />
+        <Metric label="Ordini registrati" value={String(orderCount)} sub="con data nel periodo" Icon={Receipt} />
         <Metric label="Mesi con attività" value={String(activeMonths)} sub="su 12 mesi" Icon={CalendarBlank} />
-        <Metric label={isRevenue ? "Clienti con ordini" : "Clienti con wallbox"} value={String(filtered.filter((r) => Number(isRevenue ? (r.fatturato ?? r.capitale ?? 0) : (r.wb_totali ?? r.qty_wb ?? 0)) > 0).length)} sub="nel periodo selezionato" Icon={TrendUp} />
+        <Metric label={isRevenue ? "Clienti con valore" : "Clienti con wallbox"} value={String(uniqueClients)} sub="clienti distinti" Icon={TrendUp} />
       </div>
 
       <section className="r52-panel r52-chart-panel">
-        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Mensile</div><h2>{isRevenue ? "Valore ordini per mese" : "Wallbox per mese"}</h2><p>Distribuzione basata sulla data firma registrata nel gestionale.</p></div><Icon size={23} className="text-[#1A456B]" /></div>
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Mensile</div><h2>{isRevenue ? "Valore ordini per mese" : "Wallbox per mese"}</h2><p>Distribuzione calcolata sulla data del singolo ordine.</p></div><Icon size={23} className="text-[#1A456B]" /></div>
         <div className="r52-chart-body"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="name" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Bar dataKey={dataKey} fill="#2d6ea3" radius={[7, 7, 0, 0]} /></BarChart></ResponsiveContainer></div>
       </section>
 
       <section className="r52-panel r52-chart-panel">
-        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>{isRevenue ? "Andamento valore ordini annuale" : "Andamento wallbox annuale"}</h2><p>Confronto tra gli anni presenti nel database.</p></div></div>
+        <div className="r52-panel-heading"><div><div className="r52-section-kicker">Storico</div><h2>{isRevenue ? "Andamento valore ordini annuale" : "Andamento wallbox annuale"}</h2><p>Confronto tra gli anni presenti nel database, senza aggregazioni per ultima data cliente.</p></div></div>
         <div className="r52-chart-body smaller"><ResponsiveContainer width="100%" height="100%"><LineChart data={yearly} margin={{ top: 12, right: 18, left: 8, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf3" /><XAxis dataKey="year" /><YAxis allowDecimals={!isRevenue ? false : undefined} tickFormatter={yTick} /><Tooltip formatter={tooltipFormatter} /><Line type="monotone" dataKey={dataKey} stroke="#2d6ea3" strokeWidth={3} dot={{ r: 4, fill: "#f6c344", stroke: "#1a456b", strokeWidth: 2 }} /></LineChart></ResponsiveContainer></div>
       </section>
     </>}
