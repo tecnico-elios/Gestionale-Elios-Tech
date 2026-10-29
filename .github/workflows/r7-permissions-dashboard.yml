@@ -29,6 +29,25 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Make first-match replacement explicit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/apply_r7_permissions_dashboard.py")
+          s = p.read_text(encoding="utf-8")
+          helper = '''\n\ndef replace_first(rel, old, new, label):\n    text = read(rel)\n    if old not in text:\n        raise RuntimeError(f"{rel}: match non trovato per {label}")\n    write(rel, text.replace(old, new, 1))\n'''
+          anchor = "\n\n# -----------------------------------------------------------------------------\n# 1) Backend"
+          if "def replace_first(" not in s:
+              s = s.replace(anchor, helper + anchor, 1)
+          marker = '    "installazione sospesa nomi arricchiti",\n)'
+          idx = s.index(marker)
+          start = s.rfind("replace_once(", 0, idx)
+          if start < 0:
+              raise RuntimeError("Chiamata installazione sospesa non trovata")
+          s = s[:start] + "replace_first(" + s[start + len("replace_once("):]
+          p.write_text(s, encoding="utf-8")
+          PY
+
       - name: Apply R7 hardening
         run: python scripts/apply_r7_permissions_dashboard.py
 
