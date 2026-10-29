@@ -40,7 +40,7 @@ class ForgotPasswordBody(BaseModel):
 class ResetPasswordTokenBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
     token: str = Field(min_length=10, max_length=128)
-    new_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class BootstrapBody(BaseModel):
@@ -48,13 +48,13 @@ class BootstrapBody(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     username: str = Field(min_length=2, max_length=32)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class ChangeMyPasswordBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
     old_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 def _normalize_username(u: str) -> str:

@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Eye, EyeSlash, Lock, CheckCircle, ArrowLeft } from "@phosphor-icons/react";
 import EliosLogo from "../components/EliosLogo";
+import { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 function formatError(err) {
   const d = err?.response?.data?.detail;
@@ -33,7 +34,8 @@ export default function ResetPasswordPage() {
   const submit = async (e) => {
     e.preventDefault();
     if (newPwd !== confirm) { toast.error("Le password non coincidono"); return; }
-    if (newPwd.length < 6) { toast.error("Almeno 6 caratteri"); return; }
+    const passwordError = validatePassword(newPwd);
+    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }
     setBusy(true);
     try {
       await axios.post(`${API}/auth/reset-password`, { token, new_password: newPwd });
@@ -61,6 +63,7 @@ export default function ResetPasswordPage() {
           <div className="r52-auth-card-kicker">Sicurezza account</div>
           <h2>Reimposta password</h2>
           <p className="r52-auth-card-copy">Inserisci la nuova password. Il link è valido una sola volta e per 1 ora.</p>
+          <p className="text-xs text-slate-500 mt-1">{PASSWORD_POLICY_HINT}</p>
 
           {done ? (
             <div className="r52-auth-success"><CheckCircle size={20} weight="fill" /><div><b>Password aggiornata</b><span>Reindirizzamento al login…</span></div></div>
@@ -69,13 +72,13 @@ export default function ResetPasswordPage() {
               <div>
                 <Label>Nuova password</Label>
                 <div className="relative mt-1">
-                  <Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={6} className="h-12 pr-10" autoFocus data-testid="reset-new-password" />
+                  <Input type={show ? "text" : "password"} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} required minLength={8} className="h-12 pr-10" autoFocus data-testid="reset-new-password" />
                   <button type="button" onClick={() => setShow((s) => !s)} className="r52-auth-eye" tabIndex={-1} aria-label={show ? "Nascondi password" : "Mostra password"}>{show ? <EyeSlash size={17} /> : <Eye size={17} />}</button>
                 </div>
               </div>
               <div>
                 <Label>Ripeti password</Label>
-                <Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} className="h-12 mt-1" data-testid="reset-confirm-password" />
+                <Input type={show ? "text" : "password"} value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={8} className="h-12 mt-1" data-testid="reset-confirm-password" />
               </div>
               <Button type="submit" disabled={busy} className="h-12 w-full et-btn-primary border-0" data-testid="reset-submit-btn">{busy ? "Aggiorno…" : "Aggiorna password"}</Button>
               <Link to="/login" className="r52-auth-back"><ArrowLeft size={15} /> Torna al login</Link>

@@ -14,9 +14,9 @@ if not BASE_URL:
                 break
 
 TEST_ADMIN_USER = "test_admin_ci"
-TEST_ADMIN_PWD = "test_admin_ci_pw_1"
+TEST_ADMIN_PWD = "Test_Admin_CI!1"
 TEST_OP_USER = "test_op_ci"
-TEST_OP_PWD = "test_op_ci_pw_1"
+TEST_OP_PWD = "Test_Op_CI!1"
 
 
 def _ensure_admin_token():

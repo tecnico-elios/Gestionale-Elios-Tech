@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { UserPlus, Key, PencilSimple, Prohibit, ArrowClockwise, Trash } from "@phosphor-icons/react";
 import { fmtDateTime, useTz } from "../lib/tz";
+import { validatePassword, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 const MASTER_EMAIL = "tecnico@eliostech.org";
 const isMasterUser = (u) => String(u?.email || "").trim().toLowerCase() === MASTER_EMAIL;
@@ -45,6 +46,8 @@ function CreateUserDialog({ open, onClose, onCreated }) {
   const patch = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const submit = async (e) => {
     e.preventDefault();
+    const passwordError = validatePassword(form.password);
+    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }
     setBusy(true);
     try {
       const { data } = await axios.post(`${API}/admin/users`, {
@@ -61,7 +64,7 @@ function CreateUserDialog({ open, onClose, onCreated }) {
     <div className="grid grid-cols-2 gap-3"><div><Label>Nome</Label><Input className="mt-1" required value={form.first_name} onChange={(e) => patch("first_name", e.target.value)} autoComplete="off" /></div><div><Label>Cognome</Label><Input className="mt-1" required value={form.last_name} onChange={(e) => patch("last_name", e.target.value)} autoComplete="off" /></div></div>
     <div><Label>Username</Label><Input className="mt-1" required value={form.username} onChange={(e) => patch("username", e.target.value.toLowerCase())} placeholder="minuscole, numeri, . _ -" autoComplete="off" /></div>
     <div><Label>Email</Label><Input className="mt-1" type="email" value={form.email} onChange={(e) => patch("email", e.target.value)} autoComplete="off" /></div>
-    <div><Label>Password iniziale</Label><Input className="mt-1" type="password" minLength={6} required value={form.password} onChange={(e) => patch("password", e.target.value)} autoComplete="new-password" /><p className="text-xs text-slate-500 mt-1">Al primo accesso l'utente dovrà impostarne una nuova.</p></div>
+    <div><Label>Password iniziale</Label><Input className="mt-1" type="password" minLength={8} required value={form.password} onChange={(e) => patch("password", e.target.value)} autoComplete="new-password" /><p className="text-xs text-slate-500 mt-1">{PASSWORD_POLICY_HINT} Al primo accesso l'utente dovrà impostarne una nuova.</p></div>
     <div><Label>Ruolo</Label><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">{ROLES.map(([value, label]) => <button key={value} type="button" onClick={() => patch("role", value)} className={`h-10 rounded-md border text-sm font-semibold ${form.role === value ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300"}`}>{label}</button>)}</div></div>
     <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Annulla</Button><Button type="submit" disabled={busy}>{busy ? "Creazione…" : "Crea utente"}</Button></DialogFooter>
   </form></DialogContent></Dialog>;
@@ -87,12 +90,14 @@ function ResetPwdDialog({ user, onClose, onDone }) {
   useEffect(() => { if (user) setPwd(""); }, [user]);
   if (!user) return null;
   const save = async () => {
+    const passwordError = validatePassword(pwd);
+    if (passwordError) { toast.error("Password non valida", { description: passwordError }); return; }
     setBusy(true);
     try { await axios.post(`${API}/admin/users/${user.id}/reset-password`, { new_password: pwd }); toast.success("Password reimpostata e sessioni revocate"); onDone?.(); onClose(); }
     catch (e) { toast.error("Reset fallito", { description: formatError(e) }); }
     finally { setBusy(false); }
   };
-  return <Dialog open onOpenChange={(v) => !v && onClose()}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Reset password — {user.username}</DialogTitle></DialogHeader><div><Label>Nuova password</Label><Input className="mt-1" type="password" minLength={6} value={pwd} onChange={(e) => setPwd(e.target.value)} /></div><DialogFooter><Button variant="outline" onClick={onClose}>Annulla</Button><Button onClick={save} disabled={busy || pwd.length < 6}>{busy ? "Reset…" : "Reset password"}</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(v) => !v && onClose()}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Reset password — {user.username}</DialogTitle></DialogHeader><div><Label>Nuova password</Label><Input className="mt-1" type="password" minLength={8} value={pwd} onChange={(e) => setPwd(e.target.value)} /></div><DialogFooter><Button variant="outline" onClick={onClose}>Annulla</Button><Button onClick={save} disabled={busy || !!validatePassword(pwd)}>{busy ? "Reset…" : "Reset password"}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function PermissionsDialog({ user, onClose, onDone }) {

@@ -11,6 +11,7 @@ Design:
 from __future__ import annotations
 
 import os
+import re
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -197,9 +198,20 @@ def _remember_ttl_minutes() -> int:
         return 60 * 24 * 30
 
 
+PASSWORD_POLICY_MESSAGE = "La password deve avere almeno 8 caratteri, una lettera maiuscola e un carattere speciale"
+
+
+def validate_password(password: str) -> None:
+    if not password or len(password) < 8:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    if not re.search(r"[A-Z]", password):
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+
+
 def hash_password(password: str) -> str:
-    if not password or len(password) < 6:
-        raise ValueError("La password deve avere almeno 6 caratteri")
+    validate_password(password)
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
