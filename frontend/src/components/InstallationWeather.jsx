@@ -86,6 +86,7 @@ export default function InstallationWeather({ date, site, address = "", comune =
       <div className={compact ? "font-bold" : "font-black text-base"}>{verified ? "Meteo confermato" : `Meteo ${subject}`} · {weatherText(weather.code)}</div>
       <div className={compact ? "mt-0.5" : "mt-1 text-sm"}>{weather.min}–{weather.max} °C · pioggia {weather.rain ?? 0}% · vento max {weather.wind ?? 0} km/h</div>
       {!compact && weather.location && <div className="mt-1 text-xs opacity-75 flex items-center gap-1"><MapPin size={13}/>{weather.location}</div>}
+      {!compact && weather.attribution && <div className="mt-1 text-[11px] opacity-65">{weather.attribution}</div>}
       {warning && <div className={compact ? "mt-1 font-bold" : "mt-2 text-sm font-bold"}>⚠ Condizioni da verificare prima dell’intervento</div>}
     </div></div>
   </div>;
