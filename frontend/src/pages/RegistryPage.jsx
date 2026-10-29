@@ -155,7 +155,21 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
 
   const startNew = () => {
     setEditing(null);
-    setForm({ ...empty });
+    const nextForm = { ...empty };
+    if (resource === "sopralluoghi") {
+      Object.assign(nextForm, {
+        indirizzo_libero: "",
+        indirizzo_verificato: false,
+        indirizzo_latitudine: "",
+        indirizzo_longitudine: "",
+        comune_libero: "",
+        provincia_libera: "",
+        cap_libero: "",
+        sede_id: "",
+      });
+      setAddressSearch({ query: "", loading: false, items: [], open: false, error: "" });
+    }
+    setForm(nextForm);
     setLookupSearch({});
     setLookupOpen({});
     setOpen(true);
@@ -671,25 +685,29 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                 ? [[selectedSite.indirizzo, selectedSite.civico].filter(Boolean).join(" "), selectedSite.cap, selectedSite.comune, selectedSite.provincia].filter(Boolean).join(", ")
                 : "";
               const freeAddress = String(form.indirizzo_libero || "").trim();
-              const mapAddress = freeAddress || siteAddress;
+              const verifiedFreeAddress = Boolean(form.indirizzo_verificato && form.indirizzo_latitudine && form.indirizzo_longitudine);
+              const hasConfirmedLocation = Boolean(selectedSite || verifiedFreeAddress);
+              const mapAddress = resource === "sopralluoghi"
+                ? (verifiedFreeAddress ? freeAddress : siteAddress)
+                : (freeAddress || siteAddress);
               return <div className="mb-4 space-y-3">
                 {mapAddress && <a
                   className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold hover:bg-blue-100 ${form.indirizzo_verificato ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-blue-200 bg-blue-50 text-[#1A456B]"}`}
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(form.indirizzo_verificato && form.indirizzo_latitudine && form.indirizzo_longitudine ? `${form.indirizzo_latitudine},${form.indirizzo_longitudine}` : mapAddress)}`}
                   target="_blank" rel="noreferrer"
                 ><MapPin size={18} weight="fill"/>{form.indirizzo_verificato ? "Posizione confermata in Google Maps" : "Apri in Google Maps"} · {mapAddress}</a>}
-                <InstallationWeather
+                {(resource !== "sopralluoghi" || hasConfirmedLocation) && <InstallationWeather
                   date={form.data}
                   site={selectedSite}
-                  address={freeAddress}
-                  comune={selectedSite?.comune || form.comune_libero || ""}
-                  provincia={selectedSite?.provincia || form.provincia_libera || ""}
-                  cap={selectedSite?.cap || form.cap_libero || ""}
-                  latitude={form.indirizzo_verificato ? form.indirizzo_latitudine : null}
-                  longitude={form.indirizzo_verificato ? form.indirizzo_longitudine : null}
-                  verified={Boolean(form.indirizzo_verificato)}
+                  address={verifiedFreeAddress ? freeAddress : ""}
+                  comune={selectedSite?.comune || (verifiedFreeAddress ? form.comune_libero : "") || ""}
+                  provincia={selectedSite?.provincia || (verifiedFreeAddress ? form.provincia_libera : "") || ""}
+                  cap={selectedSite?.cap || (verifiedFreeAddress ? form.cap_libero : "") || ""}
+                  latitude={verifiedFreeAddress ? form.indirizzo_latitudine : null}
+                  longitude={verifiedFreeAddress ? form.indirizzo_longitudine : null}
+                  verified={verifiedFreeAddress}
                   subject={resource === "sopralluoghi" ? "sopralluogo" : "installazione"}
-                />
+                />}
               </div>;
             })()}
             <DialogFooter>
