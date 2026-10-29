@@ -1,0 +1,51 @@
+name: R10 controlled patch
+
+on:
+  push:
+    branches:
+      - fix/r10-opzioni-operative-admin
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'R10 — Stati e priorita operative configurabili') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/r10-opzioni-operative-admin
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Applica patch controllata R10
+        run: python r10_patch.py
+
+      - name: Verifica compilazione backend
+        run: python -m compileall -q backend
+
+      - name: Installa frontend
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Commit patch validata
+        run: |
+          rm -f r10_patch.py .github/workflows/r10-patch.yml
+          git config user.name "Elios Tech CI"
+          git config user.email "tecnico@eliostech.org"
+          git add -A
+          git diff --cached --check
+          git commit -m "R10 — Stati e priorita operative configurabili"
+          git push origin HEAD:fix/r10-opzioni-operative-admin
