@@ -1,0 +1,43 @@
+name: R11.1 dropdown prospect hotfix
+
+on:
+  push:
+    branches: [fix/r11-dropdown-prospect]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Applica hotfix
+        run: python scripts/r11_dropdown_hotfix.py
+      - name: Installa frontend
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          DISABLE_ESLINT_PLUGIN: 'true'
+        run: npm run build
+      - name: Commit hotfix validata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION frontend/src/pages/RegistryPage.jsx frontend/src/pages/BusinessPages.jsx
+          if git diff --cached --quiet; then
+            echo "Nessuna modifica da committare"
+            exit 0
+          fi
+          git commit -m "R11.1 — suggerimenti cliente solo dopo digitazione"
+          git push
