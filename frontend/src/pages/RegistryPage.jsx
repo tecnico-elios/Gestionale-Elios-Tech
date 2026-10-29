@@ -558,6 +558,9 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                         disabled={disabled}
                       >
                         <option value="">Seleziona...</option>
+                        {form[f.key] && !f.options.some((o) => String(o) === String(form[f.key])) && (
+                          <option value={form[f.key]}>{form[f.key]} (storico)</option>
+                        )}
                         {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (

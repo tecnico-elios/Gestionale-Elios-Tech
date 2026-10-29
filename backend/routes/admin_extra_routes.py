@@ -120,6 +120,15 @@ class RetroattivitaSettings(BaseModel):
     email_enabled: Optional[bool] = None              # invio email automatico dopo save success
 
 
+class OperativoSettings(BaseModel):
+    """R10 — Opzioni operative modificabili dall'Admin senza cambiare codice."""
+    model_config = ConfigDict(extra="ignore")
+    sopralluoghi_stati: Optional[List[str]] = None
+    assistenza_tipi: Optional[List[str]] = None
+    assistenza_priorita: Optional[List[str]] = None
+    assistenza_stati: Optional[List[str]] = None
+
+
 # Lista IANA supportata (fusi principali internazionali). L'ora legale/solare è gestita
 # automaticamente da ZoneInfo. Sono i tz mostrati nella UI Admin.
 SUPPORTED_TIMEZONES = [
@@ -164,6 +173,8 @@ class SettingsBody(BaseModel):
     spedizioni: Optional[SpedizioniSettings] = None
     # F14 Retroattività
     retroattivita: Optional[RetroattivitaSettings] = None
+    # R10 opzioni operative configurabili
+    operativo: Optional[OperativoSettings] = None
     # F8 general (timezone)
     general: Optional[GeneralSettings] = None
 
@@ -266,6 +277,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "retroattivita": {
         "email_enabled": False,   # F14 §9 — default OFF (no email)
     },
+    "operativo": {
+        "sopralluoghi_stati": ["Da programmare", "Programmato", "Eseguito", "Annullato"],
+        "assistenza_tipi": ["Remota", "In loco"],
+        "assistenza_priorita": ["Bassa", "Normale", "Alta", "Urgente"],
+        "assistenza_stati": [
+            "Aperta", "Da programmare", "Programmata", "In lavorazione",
+            "In attesa cliente / fornitore", "Tecnico in intervento", "Risolta", "Completata", "Chiusa",
+        ],
+    },
     "general": {
         "app_name": "Gestionale Elios Tech",
         "company_name": "Elios Tech S.r.l.",
@@ -301,7 +321,7 @@ async def get_app_settings(db) -> Dict[str, Any]:
         "feedback_seconds": int(doc.get("feedback_seconds", DEFAULT_SETTINGS["feedback_seconds"])),
     }
     # Nested — merge default con quanto salvato
-    for section in ("scanner", "dashboard", "magazzino", "ricerca", "movimenti", "sicurezza", "arrivi", "spedizioni", "retroattivita", "general"):
+    for section in ("scanner", "dashboard", "magazzino", "ricerca", "movimenti", "sicurezza", "arrivi", "spedizioni", "retroattivita", "operativo", "general"):
         result[section] = _merge_section(DEFAULT_SETTINGS[section], doc.get(section))
     # Coerenza: mantieni magazzino.low_stock_threshold allineato al flat top-level
     result["magazzino"]["low_stock_threshold"] = result["low_stock_threshold"]
@@ -649,6 +669,7 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             ("sicurezza", body.sicurezza),
             ("arrivi", body.arrivi),
             ("spedizioni", body.spedizioni),
+            ("operativo", body.operativo),
             ("general", body.general),
         ]:
             if section_body is None:
@@ -656,6 +677,22 @@ def build_router(db, deps: auth_mod.AuthDependencies) -> APIRouter:
             section_dict = section_body.model_dump(exclude_none=True)
             if not section_dict:
                 continue
+            if section_name == "operativo":
+                normalized = {}
+                for key, values in section_dict.items():
+                    cleaned = []
+                    for value in values or []:
+                        item = str(value or "").strip()
+                        if item and item not in cleaned:
+                            cleaned.append(item)
+                    if not cleaned:
+                        raise HTTPException(400, f"{key}: inserisci almeno una voce")
+                    if len(cleaned) > 30:
+                        raise HTTPException(400, f"{key}: massimo 30 voci")
+                    if any(len(item) > 80 for item in cleaned):
+                        raise HTTPException(400, f"{key}: ogni voce può avere massimo 80 caratteri")
+                    normalized[key] = cleaned
+                section_dict = normalized
             # F8: valida timezone IANA
             if section_name == "general" and "timezone" in section_dict:
                 tz_name = section_dict["timezone"]

@@ -475,6 +475,12 @@ async def root():
     return {"status": "ok", "service": "Gestionale Elios Tech", "database": "locale"}
 
 
+@api_router.get("/operational-options", dependencies=[Depends(dep_current_user)])
+async def operational_options():
+    settings = await admin_extra_routes.get_app_settings(db)
+    return settings.get("operativo") or admin_extra_routes.DEFAULT_SETTINGS["operativo"]
+
+
 @api_router.get("/inventory", dependencies=[Depends(dep_current_user)])
 async def inventory(warehouse_id: str = "elios-tech"):
     """Lettura aggiornata del magazzino locale del Gestionale Elios Tech."""
