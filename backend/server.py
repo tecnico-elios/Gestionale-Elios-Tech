@@ -1862,7 +1862,7 @@ async def weather_installation(date: str, comune: str = "", provincia: str = "",
 
     timeout = httpx.Timeout(8.0, connect=5.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": "Gestionale-Elios-Tech/1.0 weather"}) as client:
             loc = None
             used = None
             if latitude is not None and longitude is not None:
@@ -1913,9 +1913,14 @@ async def weather_installation(date: str, comune: str = "", provincia: str = "",
     except HTTPException:
         raise
     except httpx.TimeoutException:
-        raise HTTPException(504, "Servizio meteo non raggiungibile: timeout")
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Servizio meteo non raggiungibile: {type(e).__name__}")
+        raise HTTPException(504, "Servizio meteo temporaneamente non raggiungibile: timeout")
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 429:
+            raise HTTPException(503, "Servizio meteo temporaneamente occupato. Riprova tra poco.")
+        raise HTTPException(502, f"Servizio meteo non disponibile (HTTP {status})")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Servizio meteo temporaneamente non raggiungibile")
 
     times = (data.get("daily") or {}).get("time") or []
     if date not in times:
