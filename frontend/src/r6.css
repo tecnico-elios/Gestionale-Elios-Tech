@@ -1,0 +1,50 @@
+/* R6 — correzioni responsive e chiarezza navigazione.
+   Il redesign R55 sposta il titolo pagina nella topbar solo su desktop.
+   Alcune regole R52 nascondevano però il titolo interno anche su mobile/tablet,
+   lasciando pagine senza intestazione. Qui ripristiniamo il titolo sotto 1024px
+   senza duplicarlo su desktop. */
+
+@media (max-width: 1023px) {
+  /* Header legacy con titolo + pulsanti: titolo visibile e comandi affiancati. */
+  .r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):has(button) {
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+  .r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):has(button) > div:first-child {
+    display: block !important;
+    min-width: min(100%, 240px);
+    flex: 1 1 240px;
+  }
+
+  /* Header legacy con solo titolo: non va nascosto quando la topbar compatta
+     non mostra il titolo della pagina. */
+  .r52-page-host > div > div:first-child:not(.commessa-detail):has(h1):not(:has(button)) {
+    display: block !important;
+  }
+
+  /* Eccezioni R52 più specifiche per registri e Clienti/Ordini. */
+  .r52-route-sopralluoghi [data-testid="sopralluoghi-page"] > div:first-child,
+  .r52-route-assistenza [data-testid="assistenza-page"] > div:first-child,
+  .r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"] > div:first-child {
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+
+  .r52-route-sopralluoghi [data-testid="sopralluoghi-page"] > div:first-child > div:first-child,
+  .r52-route-assistenza [data-testid="assistenza-page"] > div:first-child > div:first-child,
+  .r52-route-clienti-ordini [data-testid="elios-tech-ordini-page"] > div:first-child > div:first-child {
+    display: block !important;
+    min-width: min(100%, 240px);
+    flex: 1 1 240px;
+  }
+
+  /* Su mobile il titolo deve avere una gerarchia chiara ma compatta. */
+  .r52-page-host h1.et-page-heading,
+  .r52-page-host > div > div:first-child h1 {
+    font-size: 1.35rem !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+  }
+}
