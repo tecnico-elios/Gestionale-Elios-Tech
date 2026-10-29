@@ -12,6 +12,9 @@ jobs:
   patch:
     if: ${{ !contains(github.event.head_commit.message, 'R10 — Stati e priorita operative configurabili') }}
     runs-on: ubuntu-latest
+    env:
+      GENERATE_SOURCEMAP: "false"
+      DISABLE_ESLINT_PLUGIN: "true"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +37,9 @@ jobs:
 
       - name: Installa frontend
         working-directory: frontend
-        run: npm install --legacy-peer-deps
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm install --legacy-peer-deps --no-audit --no-fund --save-dev ajv@8.17.1 ajv-keywords@5.1.0
 
       - name: Build frontend
         working-directory: frontend
@@ -42,6 +47,8 @@ jobs:
 
       - name: Commit patch validata
         run: |
+          git checkout -- frontend/package.json || true
+          rm -f frontend/package-lock.json
           rm -f r10_patch.py .github/workflows/r10-patch.yml
           git config user.name "Elios Tech CI"
           git config user.email "tecnico@eliostech.org"
