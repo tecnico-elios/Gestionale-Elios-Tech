@@ -72,14 +72,92 @@ export default function ChecklistPage() {
   }, [warehouseId]);
 
   const [cliente, setCliente] = useState("");
-  // F14 (autocomplete) — ID locale dell'ordine cliente selezionato dal picker.
-  //   Se null: nessun ordine selezionato (blocco sync su richiesta backend).
-  const [clienteOrderId, setClienteOrderId] = useState(null);
+  const [clienteClientId, setClienteClientId] = useState(null);
   const [clienteSuggestions, setClienteSuggestions] = useState([]);
   const [clienteOpen, setClienteOpen] = useState(false);
   const [clienteLoading, setClienteLoading] = useState(false);
+  const [clientCreateOpen, setClientCreateOpen] = useState(false);
+  const [clientSaving, setClientSaving] = useState(false);
+  const [clientDraft, setClientDraft] = useState({ tipo: "Azienda", ragione_sociale: "", telefono: "", email: "" });
+  const [sedeId, setSedeId] = useState("");
+  const [sedeLabel, setSedeLabel] = useState("");
+  const [siteOptions, setSiteOptions] = useState([]);
+  const [siteCreateOpen, setSiteCreateOpen] = useState(false);
+  const [siteSaving, setSiteSaving] = useState(false);
+  const [siteDraft, setSiteDraft] = useState({ nome: "Sede installazione", indirizzo: "", civico: "", cap: "", comune: "", provincia: "", telefono: "" });
   const [shippingDate, setShippingDate] = useState(todayISO());
   const [notes, setNotes] = useState("");
+
+  const clientDisplayName = (c) => c?.ragione_sociale || [c?.nome, c?.cognome].filter(Boolean).join(" ") || c?.nome_struttura || "Cliente";
+  const siteDisplayName = (s) => [s?.nome, [s?.indirizzo, s?.civico].filter(Boolean).join(" "), s?.comune].filter(Boolean).join(" · ") || "Sede";
+  const normText = (v) => String(v || "").trim().toLocaleLowerCase("it-IT");
+
+  const loadSitesForClient = async (clientId) => {
+    if (!clientId) { setSiteOptions([]); return; }
+    try {
+      const { data } = await axios.get(`${API}/crm/sedi`, { params: { q: clientId } });
+      setSiteOptions((data.items || []).filter((s) => String(s.cliente_id || "") === String(clientId)));
+    } catch {
+      setSiteOptions([]);
+    }
+  };
+
+  const selectShippingClient = async (c) => {
+    const label = clientDisplayName(c);
+    setCliente(label);
+    setClienteClientId(c.id);
+    setClienteOpen(false);
+    setClienteSuggestions([]);
+    setSedeId(""); setSedeLabel(""); setSiteCreateOpen(false);
+    await loadSitesForClient(c.id);
+  };
+
+  const createShippingClient = async () => {
+    const name = String(clientDraft.ragione_sociale || "").trim();
+    if (!name) return toast.error("Ragione sociale / nome cliente obbligatorio");
+    const email = normText(clientDraft.email);
+    const phone = normText(clientDraft.telefono).replace(/\s+/g, "");
+    const existing = clienteSuggestions.find((c) => normText(clientDisplayName(c)) === normText(name) || (email && normText(c.email) === email) || (phone && normText(c.telefono).replace(/\s+/g, "") === phone));
+    if (existing) {
+      await selectShippingClient(existing);
+      setClientCreateOpen(false);
+      toast.info("Cliente già presente: selezionata l'anagrafica esistente");
+      return;
+    }
+    setClientSaving(true);
+    try {
+      const { data } = await axios.post(`${API}/crm/clienti`, {
+        tipo: clientDraft.tipo || "Azienda",
+        ragione_sociale: name,
+        telefono: String(clientDraft.telefono || "").trim(),
+        email: String(clientDraft.email || "").trim(),
+      });
+      await selectShippingClient(data);
+      setClientCreateOpen(false);
+      toast.success("Cliente creato e selezionato");
+    } catch (e) {
+      toast.error("Creazione cliente non riuscita", { description: e?.response?.data?.detail || e?.message || "" });
+    } finally { setClientSaving(false); }
+  };
+
+  const createShippingSite = async () => {
+    if (!clienteClientId) return toast.error("Seleziona o crea prima il cliente");
+    if (!String(siteDraft.nome || "").trim() || !String(siteDraft.indirizzo || "").trim() || !String(siteDraft.comune || "").trim()) return toast.error("Nome sede, indirizzo e comune sono obbligatori");
+    const existing = siteOptions.find((s) => normText(s.nome) === normText(siteDraft.nome) && normText(s.indirizzo) === normText(siteDraft.indirizzo) && normText(s.comune) === normText(siteDraft.comune));
+    if (existing) {
+      setSedeId(existing.id); setSedeLabel(siteDisplayName(existing)); setSiteCreateOpen(false);
+      toast.info("Sede già presente: selezionata quella esistente");
+      return;
+    }
+    setSiteSaving(true);
+    try {
+      const { data } = await axios.post(`${API}/crm/sedi`, { cliente_id: clienteClientId, tipo: "Installazione", ...siteDraft });
+      setSiteOptions((p) => [...p, data]); setSedeId(data.id); setSedeLabel(siteDisplayName(data)); setSiteCreateOpen(false);
+      toast.success("Sede creata e selezionata");
+    } catch (e) {
+      toast.error("Creazione sede non riuscita", { description: e?.response?.data?.detail || e?.message || "" });
+    } finally { setSiteSaving(false); }
+  };
 
   // F8 — Sostituisce la data locale con quella del server nel tz configurato.
   useEffect(() => {
@@ -340,8 +418,8 @@ export default function ChecklistPage() {
       return;
     }
     // F15 §16 — Cliente non registrato: se il nome non è agganciato a un ordine cliente
-    // (clienteOrderId null) e non è vuoto, chiedi conferma esplicita prima di procedere.
-    if (!clienteOrderId && cliente.trim()) {
+    // (clienteClientId null) e non è vuoto, chiedi conferma esplicita prima di procedere.
+    if (!clienteClientId && cliente.trim()) {
       setShowUnknownClient(true);
       return;
     }
@@ -360,7 +438,10 @@ export default function ChecklistPage() {
         warehouse_id: warehouseId,
         shipping_date: shippingDate,
         structure: cliente.trim(),
-        order_page_id: clienteOrderId || null,
+        order_page_id: null,
+        cliente_id: clienteClientId || null,
+        sede_id: sedeId || null,
+        sede_label: sedeLabel || null,
         taken_by: operatorName,
         notes: notes.trim() || null,
         items: list.map((li) => ({
@@ -385,8 +466,13 @@ export default function ChecklistPage() {
       }
       setList([]);
       setCliente("");
-      setClienteOrderId(null);
+      setClienteClientId(null);
       setClienteSuggestions([]);
+      setSedeId("");
+      setSedeLabel("");
+      setSiteOptions([]);
+      setClientCreateOpen(false);
+      setSiteCreateOpen(false);
       setNotes("");
       setPending(null);
       setLastScan(null);
@@ -437,27 +523,17 @@ export default function ChecklistPage() {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 space-y-6">
         {/* Dati generali */}
         <section className="bg-white border border-slate-200 rounded-md p-4 sm:p-6">
-          <div className="text-xs tracking-[0.1em] uppercase text-slate-500 font-semibold mb-4">
-            Dati Generali
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="text-xs tracking-[0.1em] uppercase text-slate-500 font-semibold mb-4">Dati Generali</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             <div>
-              <Label htmlFor="warehouse" className="text-slate-700 text-sm font-semibold">
-                <Package size={14} className="inline mr-1" /> Magazzino di partenza
-              </Label>
-              <select
-                id="warehouse"
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="h-12 mt-1 w-full rounded-md border border-slate-200 bg-white px-3 text-base"
-              >
+              <Label htmlFor="warehouse" className="text-slate-700 text-sm font-semibold"><Package size={14} className="inline mr-1" /> Magazzino di partenza</Label>
+              <select id="warehouse" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className="h-12 mt-1 w-full rounded-md border border-slate-200 bg-white px-3 text-base">
                 {WAREHOUSES.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
+
             <div>
-              <Label htmlFor="cliente" className="text-slate-700 text-sm font-semibold">
-                <Buildings size={14} className="inline mr-1" /> Struttura / Cliente
-              </Label>
+              <Label htmlFor="cliente" className="text-slate-700 text-sm font-semibold"><Buildings size={14} className="inline mr-1" /> Cliente</Label>
               <div className="relative mt-1">
                 <Input
                   id="cliente"
@@ -465,106 +541,63 @@ export default function ChecklistPage() {
                   value={cliente}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setCliente(v);
-                    setClienteOrderId(null); // ogni digitazione invalida la selezione precedente
-                    setClienteOpen(true);
+                    setCliente(v); setClienteClientId(null); setSedeId(""); setSedeLabel(""); setSiteOptions([]); setClienteOpen(true);
                     if (window.__cliSug) clearTimeout(window.__cliSug);
                     window.__cliSug = setTimeout(async () => {
                       const q = v.trim();
                       if (q.length < 2) { setClienteSuggestions([]); return; }
                       setClienteLoading(true);
                       try {
-                        const { data } = await axios.get(`${API}/orders/search`, { params: { q, limit: 20 } });
+                        const { data } = await axios.get(`${API}/crm/clienti`, { params: { q } });
                         setClienteSuggestions(data.items || []);
-                      } catch {
-                        setClienteSuggestions([]);
-                      } finally {
-                        setClienteLoading(false);
-                      }
+                      } catch { setClienteSuggestions([]); }
+                      finally { setClienteLoading(false); }
                     }, 220);
                   }}
                   onFocus={() => cliente.trim().length >= 2 && setClienteOpen(true)}
                   onBlur={() => setTimeout(() => setClienteOpen(false), 180)}
                   autoComplete="off"
-                  placeholder=""
+                  placeholder="Scrivi nome o azienda..."
                   className="h-12 text-base pr-9"
                 />
-                {clienteOrderId && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600" title="Ordine cliente selezionato">
-                    <Check size={16} weight="bold" />
-                  </span>
-                )}
+                {clienteClientId && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600" title="Cliente collegato"><Check size={16} weight="bold" /></span>}
                 {clienteOpen && cliente.trim().length >= 2 && (
-                  <div
-                    className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-64 overflow-auto"
-                    data-testid="cliente-suggestions"
-                  >
-                    {clienteLoading && (
-                      <div className="px-3 py-2 text-xs text-slate-400">Cerco…</div>
-                    )}
-                    {!clienteLoading && clienteSuggestions.length === 0 && (
-                      <div className="px-3 py-3 text-sm text-red-600" data-testid="cliente-no-results">
-                        Nessuna struttura trovata
-                      </div>
-                    )}
-                    {clienteSuggestions.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setCliente(s.structure);
-                          setClienteOrderId(s.id);
-                          setClienteOpen(false);
-                          setClienteSuggestions([]);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b border-slate-100 last:border-0 min-h-[44px]"
-                        data-testid={`cliente-sug-${s.id}`}
-                      >
-                        <div className="font-semibold text-sm text-slate-900">{s.structure}</div>
-                        {s.title && s.title !== s.structure && (
-                          <div className="text-xs text-slate-500 truncate">{s.title}</div>
-                        )}
-                      </button>
-                    ))}
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-72 overflow-auto" data-testid="cliente-suggestions">
+                    {clienteLoading && <div className="px-3 py-2 text-xs text-slate-400">Cerco…</div>}
+                    {!clienteLoading && clienteSuggestions.length === 0 && <div className="px-3 py-3 text-sm text-slate-500" data-testid="cliente-no-results">Nessun cliente esistente trovato</div>}
+                    {clienteSuggestions.map((c) => <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectShippingClient(c)} className="w-full text-left px-3 py-2.5 hover:bg-slate-50 border-b border-slate-100 min-h-[44px]" data-testid={`cliente-sug-${c.id}`}><div className="font-semibold text-sm text-slate-900">{clientDisplayName(c)}</div><div className="text-xs text-slate-500 truncate">{[c.telefono,c.email,c.partita_iva].filter(Boolean).join(" · ")}</div></button>)}
+                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setClientDraft({ tipo:"Azienda", ragione_sociale:cliente, telefono:"", email:"" }); setClientCreateOpen(true); setClienteOpen(false); }} className="w-full text-left px-3 py-3 font-semibold text-blue-700 hover:bg-blue-50">+ Aggiungi nuovo cliente</button>
                   </div>
                 )}
               </div>
-              {!clienteOrderId && cliente.trim().length >= 2 && (
-                <p className="text-[11px] text-amber-700 mt-1">
-                  ⚠️ Seleziona un ordine cliente dall'elenco per collegare correttamente la spedizione.
-                </p>
-              )}
+              {!clienteClientId && cliente.trim().length >= 2 && <p className="text-[11px] text-amber-700 mt-1">Puoi selezionare/creare il cliente oppure continuare come nominativo libero.</p>}
             </div>
+
             <div>
-              <Label className="text-slate-700 text-sm font-semibold">
-                <User size={14} className="inline mr-1" /> Operatore (Preso da)
-              </Label>
-              <div
-                className="h-12 mt-1 px-3 flex items-center border border-slate-200 bg-slate-50 rounded-md text-slate-900 font-semibold"
-                data-testid="operator-readonly"
-                title="L'operatore è determinato dal login (non modificabile)"
-              >
-                {operatorName || "—"}
-                <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">
-                  auto
-                </span>
+              <Label className="text-slate-700 text-sm font-semibold"><Buildings size={14} className="inline mr-1" /> Sede / destinazione</Label>
+              <div className="flex gap-2 mt-1">
+                <select value={sedeId} onChange={(e) => { const id=e.target.value; setSedeId(id); const s=siteOptions.find(x=>String(x.id)===String(id)); setSedeLabel(s?siteDisplayName(s):""); }} disabled={!clienteClientId} className="h-12 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 text-sm disabled:bg-slate-100">
+                  <option value="">{clienteClientId ? "Da definire" : "Seleziona cliente"}</option>
+                  {siteOptions.map((s)=><option key={s.id} value={s.id}>{siteDisplayName(s)}</option>)}
+                </select>
+                {clienteClientId && <Button type="button" variant="outline" className="h-12 px-3" onClick={() => { setSiteDraft({nome:"Sede installazione",indirizzo:"",civico:"",cap:"",comune:"",provincia:"",telefono:""}); setSiteCreateOpen(true); }}>+</Button>}
               </div>
             </div>
+
             <div>
-              <Label htmlFor="date" className="text-slate-700 text-sm font-semibold">
-                <CalendarBlank size={14} className="inline mr-1" /> Data
-              </Label>
-              <Input
-                id="date"
-                data-testid="input-date"
-                type="date"
-                value={shippingDate}
-                onChange={(e) => setShippingDate(e.target.value)}
-                className="h-12 mt-1 text-base"
-              />
+              <Label className="text-slate-700 text-sm font-semibold"><User size={14} className="inline mr-1" /> Operatore</Label>
+              <div className="h-12 mt-1 px-3 flex items-center border border-slate-200 bg-slate-50 rounded-md text-slate-900 font-semibold" data-testid="operator-readonly" title="L'operatore è determinato dal login (non modificabile)">{operatorName || "—"}<span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">auto</span></div>
+            </div>
+
+            <div>
+              <Label htmlFor="date" className="text-slate-700 text-sm font-semibold"><CalendarBlank size={14} className="inline mr-1" /> Data</Label>
+              <Input id="date" data-testid="input-date" type="date" value={shippingDate} onChange={(e) => setShippingDate(e.target.value)} className="h-12 mt-1 text-base" />
             </div>
           </div>
+
+          {clientCreateOpen && <div className="mt-4 rounded-md border border-blue-200 bg-blue-50/50 p-4"><div className="font-semibold text-slate-900 mb-3">Nuovo cliente</div><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><Label>Tipo</Label><select className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-2" value={clientDraft.tipo} onChange={(e)=>setClientDraft(p=>({...p,tipo:e.target.value}))}><option>Azienda</option><option>Privato</option></select></div><div><Label>Ragione sociale / Nome *</Label><Input className="mt-1 h-11" value={clientDraft.ragione_sociale} onChange={(e)=>setClientDraft(p=>({...p,ragione_sociale:e.target.value}))}/></div><div><Label>Telefono</Label><Input className="mt-1 h-11" value={clientDraft.telefono} onChange={(e)=>setClientDraft(p=>({...p,telefono:e.target.value}))}/></div><div><Label>Email</Label><Input type="email" className="mt-1 h-11" value={clientDraft.email} onChange={(e)=>setClientDraft(p=>({...p,email:e.target.value}))}/></div></div><div className="flex justify-end gap-2 mt-3"><Button type="button" variant="outline" onClick={()=>setClientCreateOpen(false)}>Annulla</Button><Button type="button" onClick={createShippingClient} disabled={clientSaving}>{clientSaving?"Creazione…":"Crea e seleziona"}</Button></div></div>}
+
+          {siteCreateOpen && <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50/40 p-4"><div className="font-semibold text-slate-900 mb-3">Nuova sede</div><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><Label>Nome sede *</Label><Input className="mt-1 h-11" value={siteDraft.nome} onChange={(e)=>setSiteDraft(p=>({...p,nome:e.target.value}))}/></div><div><Label>Indirizzo *</Label><Input className="mt-1 h-11" value={siteDraft.indirizzo} onChange={(e)=>setSiteDraft(p=>({...p,indirizzo:e.target.value}))}/></div><div><Label>Civico</Label><Input className="mt-1 h-11" value={siteDraft.civico} onChange={(e)=>setSiteDraft(p=>({...p,civico:e.target.value}))}/></div><div><Label>Comune *</Label><Input className="mt-1 h-11" value={siteDraft.comune} onChange={(e)=>setSiteDraft(p=>({...p,comune:e.target.value}))}/></div><div><Label>CAP</Label><Input className="mt-1 h-11" value={siteDraft.cap} onChange={(e)=>setSiteDraft(p=>({...p,cap:e.target.value}))}/></div><div><Label>Provincia</Label><Input className="mt-1 h-11" value={siteDraft.provincia} onChange={(e)=>setSiteDraft(p=>({...p,provincia:e.target.value}))}/></div><div><Label>Telefono sede</Label><Input className="mt-1 h-11" value={siteDraft.telefono} onChange={(e)=>setSiteDraft(p=>({...p,telefono:e.target.value}))}/></div></div><div className="flex justify-end gap-2 mt-3"><Button type="button" variant="outline" onClick={()=>setSiteCreateOpen(false)}>Annulla</Button><Button type="button" onClick={createShippingSite} disabled={siteSaving}>{siteSaving?"Creazione…":"Crea e seleziona"}</Button></div></div>}
         </section>
 
         {/* ScannerBar sempre in alto */}
@@ -873,6 +906,7 @@ export default function ChecklistPage() {
         meta={[
           { label: "Magazzino", value: WAREHOUSES.find((w) => w.id === warehouseId)?.name || warehouseId },
           { label: "Cliente", value: cliente.trim() },
+          { label: "Sede", value: sedeLabel || "—" },
           { label: "Preso da (Operatore loggato)", value: operatorName },
           { label: "Data", value: shippingDate },
         ]}
@@ -982,7 +1016,7 @@ export default function ChecklistPage() {
             <DialogHeader>
               <DialogTitle className="text-amber-700">Cliente non registrato</DialogTitle>
               <DialogDescription>
-                Il cliente/struttura <b>{cliente}</b> non è collegato a un ordine cliente registrato. Continuare comunque?
+                Il nominativo <b>{cliente}</b> non è collegato all’anagrafica clienti. Puoi continuare comunque oppure tornare indietro e usare “Aggiungi nuovo cliente”.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="flex-col sm:flex-row gap-2">

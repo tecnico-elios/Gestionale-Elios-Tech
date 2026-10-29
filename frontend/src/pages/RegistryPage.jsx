@@ -67,6 +67,9 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
   const [siteCreate, setSiteCreate] = useState({ open: false, fieldKey: "", clienteId: "" });
   const [siteDraft, setSiteDraft] = useState({ nome: "Sede installazione", indirizzo: "", civico: "", cap: "", comune: "", provincia: "", telefono: "" });
   const [siteSaving, setSiteSaving] = useState(false);
+  const [clientCreate, setClientCreate] = useState({ open: false, fieldKey: "" });
+  const [clientDraft, setClientDraft] = useState({ tipo: "Azienda", ragione_sociale: "", telefono: "", email: "", indirizzo: "", cap: "", comune: "", provincia: "" });
+  const [clientSaving, setClientSaving] = useState(false);
   const [documentsTarget, setDocumentsTarget] = useState(null);
   const [clientView, setClientView] = useState("active");
 
@@ -231,6 +234,56 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
       list = list.filter((x) => `${optionLabel(x, field)} ${Object.values(x || {}).join(" ")}`.toLowerCase().includes(needle));
     }
     return list;
+  };
+
+  const openClientCreate = (field) => {
+    const typed = String(lookupTextValue(field) || "").trim();
+    setClientDraft({ tipo: "Azienda", ragione_sociale: typed, telefono: "", email: "", indirizzo: "", cap: "", comune: "", provincia: "" });
+    setClientCreate({ open: true, fieldKey: field.key });
+  };
+
+  const saveInlineClient = async () => {
+    const field = fields.find((x) => x.key === clientCreate.fieldKey);
+    if (!field) return;
+    const name = String(clientDraft.ragione_sociale || "").trim();
+    if (!name) {
+      toast.error("Ragione sociale / nome cliente obbligatorio");
+      return;
+    }
+    const norm = (v) => String(v || "").trim().toLocaleLowerCase("it-IT");
+    const email = norm(clientDraft.email);
+    const phone = norm(clientDraft.telefono).replace(/\s+/g, "");
+    const existing = (lookups.clienti || []).find((c) => {
+      const sameName = norm(optionLabel(c, field)) === norm(name);
+      const sameEmail = email && norm(c.email) === email;
+      const samePhone = phone && norm(c.telefono).replace(/\s+/g, "") === phone;
+      return sameName || sameEmail || samePhone;
+    });
+    if (existing) {
+      chooseLookup(field, existing);
+      setClientCreate({ open: false, fieldKey: "" });
+      toast.info("Cliente già presente: ho selezionato l'anagrafica esistente");
+      return;
+    }
+    setClientSaving(true);
+    try {
+      const payload = Object.fromEntries(
+        Object.entries(clientDraft).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v])
+      );
+      const { data } = await axios.post(`${API}/crm/clienti`, payload);
+      setLookups((prev) => ({ ...prev, clienti: [...(prev.clienti || []), data] }));
+      changeField(field, data.id);
+      setLookupSearch((prev) => ({ ...prev, [field.key]: optionLabel(data, field) }));
+      if (field.allowFreeText && field.freeTextTarget) {
+        setForm((prev) => ({ ...prev, [field.freeTextTarget]: "" }));
+      }
+      setClientCreate({ open: false, fieldKey: "" });
+      toast.success("Cliente creato e selezionato");
+    } catch (e) {
+      toast.error("Creazione cliente non riuscita", { description: errorText(e) });
+    } finally {
+      setClientSaving(false);
+    }
   };
 
   const openSiteCreate = (field) => {
@@ -476,10 +529,15 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
                               return <button type="button" key={o[key]} onMouseDown={(e)=>e.preventDefault()} onClick={()=>chooseLookup(f,o)} className="block w-full text-left px-3 py-2.5 hover:bg-slate-50 border-b border-slate-50 last:border-0">
                                 <div className="font-semibold text-sm text-slate-900">{optionLabel(o,f)}</div>
                               </button>;
-                            }) : <div className="px-3 py-3 text-sm text-slate-500">{f.allowFreeText && lookupTextValue(f) ? `Nessun cliente esistente: puoi salvare “${lookupTextValue(f)}” come nuovo prospect.` : "Nessun risultato"}</div>}
+                            }) : <div className="px-3 py-3 text-sm text-slate-500">{f.allowFreeText && lookupTextValue(f) ? `Nessun cliente esistente per “${lookupTextValue(f)}”.` : "Nessun risultato"}</div>}
+                            {f.inlineCreateClient && lookupTextValue(f).trim() && !form[f.key] && (
+                              <button type="button" onMouseDown={(e)=>e.preventDefault()} onClick={() => openClientCreate(f)} className="block w-full text-left px-3 py-3 font-semibold text-blue-700 hover:bg-blue-50 border-t border-slate-100">
+                                + Aggiungi nuovo cliente
+                              </button>
+                            )}
                           </div>
                         )}
-                        {f.allowFreeText && !form[f.key] && lookupTextValue(f) && <div className="text-xs text-amber-700 mt-1">Nuovo prospect: verrà salvato il nominativo senza creare ancora il cliente.</div>}
+                        {f.allowFreeText && !form[f.key] && lookupTextValue(f) && <div className="text-xs text-amber-700 mt-1">Puoi lasciarlo come prospect oppure usare “Aggiungi nuovo cliente” per creare subito l’anagrafica e la sede.</div>}
                         {f.inlineCreateSite && !disabledByDependency && (
                           <div className="mt-2 flex items-center gap-2 flex-wrap">
                             {lookupOptions(f).length === 0 && (
@@ -537,6 +595,34 @@ export default function RegistryPage({ resource, title, subtitle, fields, column
         module={module}
         title={`Documenti · ${title}`}
       />
+
+      <Dialog open={clientCreate.open} onOpenChange={(v) => setClientCreate((prev) => ({ ...prev, open: v }))}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Nuovo cliente</DialogTitle></DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-4 py-2">
+            <div>
+              <Label>Tipo</Label>
+              <select className="mt-1 h-12 w-full rounded-md border border-slate-300 bg-white px-3" value={clientDraft.tipo} onChange={(e) => setClientDraft((x) => ({ ...x, tipo: e.target.value }))}>
+                <option value="Azienda">Azienda</option><option value="Privato">Privato</option>
+              </select>
+            </div>
+            <div>
+              <Label>Ragione sociale / Nome cliente *</Label>
+              <Input className="mt-1 h-12" value={clientDraft.ragione_sociale} onChange={(e) => setClientDraft((x) => ({ ...x, ragione_sociale: e.target.value }))} />
+            </div>
+            <div><Label>Telefono</Label><Input className="mt-1 h-12" value={clientDraft.telefono} onChange={(e) => setClientDraft((x) => ({ ...x, telefono: e.target.value }))} /></div>
+            <div><Label>Email</Label><Input type="email" className="mt-1 h-12" value={clientDraft.email} onChange={(e) => setClientDraft((x) => ({ ...x, email: e.target.value }))} /></div>
+            <div className="sm:col-span-2"><Label>Indirizzo</Label><Input className="mt-1 h-12" value={clientDraft.indirizzo} onChange={(e) => setClientDraft((x) => ({ ...x, indirizzo: e.target.value }))} /></div>
+            <div><Label>CAP</Label><Input className="mt-1 h-12" value={clientDraft.cap} onChange={(e) => setClientDraft((x) => ({ ...x, cap: e.target.value }))} /></div>
+            <div><Label>Comune</Label><Input className="mt-1 h-12" value={clientDraft.comune} onChange={(e) => setClientDraft((x) => ({ ...x, comune: e.target.value }))} /></div>
+            <div><Label>Provincia</Label><Input className="mt-1 h-12" value={clientDraft.provincia} onChange={(e) => setClientDraft((x) => ({ ...x, provincia: e.target.value }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setClientCreate({ open: false, fieldKey: "" })}>Annulla</Button>
+            <Button type="button" onClick={saveInlineClient} disabled={clientSaving}>{clientSaving ? "Salvataggio…" : "Crea e seleziona"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={siteCreate.open} onOpenChange={(v) => setSiteCreate((prev) => ({ ...prev, open: v }))}>
         <DialogContent className="max-w-2xl">
