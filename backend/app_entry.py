@@ -20,6 +20,12 @@ import performance_runtime
 
 app = server.app
 
+# Shared process-wide handles for new routers using Depends(get_database).
+# No client is opened per request: the legacy server's AsyncIOMotorClient remains
+# the single source during the incremental migration to database.py.
+app.state.db = server.db
+app.state.mongo_client = server.client
+
 
 async def weather_installation_r17(
     date: str,
