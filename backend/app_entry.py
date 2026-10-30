@@ -17,6 +17,7 @@ import server
 import weather_location
 import weather_service
 import performance_runtime
+import performance_compat
 
 app = server.app
 
@@ -89,7 +90,7 @@ def _install_weather_route() -> None:
 
 _install_weather_route()
 
-# Global backend performance refactor.  server.py already owns the Motor client;
+# Global backend performance refactor. server.py already owns the Motor client;
 # this layer optimizes the hot read paths while preserving all write semantics.
 performance_runtime.install(
     app,
@@ -97,3 +98,8 @@ performance_runtime.install(
     server.auth_deps,
     server.auth_mod,
 )
+
+# Transitional compatibility for the current PWA: legacy list requests still
+# receive the complete bounded dataset, while explicit page/limit calls use the
+# new paginated contract immediately.
+performance_compat.install(app, server.auth_deps)
