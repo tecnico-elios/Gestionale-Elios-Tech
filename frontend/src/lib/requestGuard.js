@@ -1,9 +1,10 @@
 import axios from "axios";
 
-// Emergency front-pressure for the PWA.
+// Global front-pressure for the PWA.
 // - identical GETs from the same route share one network request;
-// - stale GETs from the previous route are aborted when the next route starts I/O;
-// - every GET is tagged so Render logs show which page generated it.
+// - stale GETs from the previous route are aborted;
+// - hot startup pages explicitly request small CRM pages;
+// - every GET is tagged so Render logs identify the React route that generated it.
 const originalGet = axios.get.bind(axios);
 const inflight = new Map();
 const MAX_INFLIGHT_AGE_MS = 15000;
@@ -29,6 +30,33 @@ function currentSource() {
   return window.location.pathname || "/";
 }
 
+function isGenericCrmList(url) {
+  const value = String(url || "");
+  return /\/api\/crm\/(clienti|contatti|sedi|sopralluoghi|preventivi|ordini-clienti|installazioni|interventi-tecnici|assistenza)(?:\?|$)/.test(value);
+}
+
+function applyRouteBudget(url, config, source) {
+  const next = { ...config, params: { ...(config?.params || {}) } };
+  if (!isGenericCrmList(url)) return next;
+  if (next.params.page != null || next.params.limit != null) return next;
+
+  // Dashboard needs representative operational rows, not every historical row.
+  if (source === "/dashboard") {
+    next.params.page = 1;
+    next.params.limit = 100;
+    return next;
+  }
+
+  // Calendar only needs lookup options for its editor. Keep this bounded while
+  // legacy administration screens retain their complete compatibility dataset.
+  if (source === "/calendario") {
+    next.params.page = 1;
+    next.params.limit = 200;
+  }
+
+  return next;
+}
+
 function abortStaleRoutes(source) {
   for (const [key, entry] of inflight.entries()) {
     if (entry.source !== source) {
@@ -39,15 +67,22 @@ function abortStaleRoutes(source) {
 }
 
 axios.get = function guardedGet(url, config = {}) {
-  // Explicit caller-provided AbortController keeps full ownership.
-  if (config?.signal || config?.skipRequestGuard) {
-    return originalGet(url, config);
+  const source = currentSource();
+  const budgeted = applyRouteBudget(url, config, source);
+  const headers = {
+    ...(budgeted?.headers || {}),
+    "X-Client-Source": source,
+  };
+
+  // Explicit caller-provided AbortController keeps cancellation ownership, but
+  // still receives source tagging and route budgets.
+  if (budgeted?.signal || budgeted?.skipRequestGuard) {
+    return originalGet(url, { ...budgeted, headers });
   }
 
-  const source = currentSource();
   abortStaleRoutes(source);
 
-  const key = `${source}|GET|${url}|${stableParams(config?.params)}`;
+  const key = `${source}|GET|${url}|${stableParams(budgeted?.params)}`;
   const now = Date.now();
   const existing = inflight.get(key);
 
@@ -61,13 +96,8 @@ axios.get = function guardedGet(url, config = {}) {
   }
 
   const controller = new AbortController();
-  const headers = {
-    ...(config?.headers || {}),
-    "X-Client-Source": source,
-  };
-
   const promise = originalGet(url, {
-    ...config,
+    ...budgeted,
     headers,
     signal: controller.signal,
   }).finally(() => {
