@@ -1,9 +1,9 @@
 """Compatibility bridge between the current React PWA and paginated CRM API.
 
-The current UI still has a few consumers that do not send explicit page/limit.
-During the performance incident we intentionally keep that fallback small so a
-single page cannot materialize hundreds or thousands of documents at startup.
-Updated clients should always send page/limit explicitly.
+Some legacy screens still need complete customer/site/order lookup datasets.
+Those screens keep a bounded compatibility page, while hot startup screens
+(Dashboard/Calendar) are explicitly paginated by the frontend request guard.
+This bridge can be removed once every consumer uses server-side pagination.
 """
 from __future__ import annotations
 
@@ -14,10 +14,11 @@ from fastapi import Depends, Query
 
 import performance_runtime
 
-# Emergency back-pressure: legacy calls are capped aggressively. This remains
-# configurable from Render and can be raised temporarily if a specific legacy
-# screen still needs more rows while it is being migrated to server pagination.
-LEGACY_PAGE_SIZE = max(50, min(int(os.environ.get("CRM_LEGACY_PAGE_SIZE", "100")), 500))
+# Production currently contains more than 700 clients/sites/orders. 100 rows can
+# make valid linked records disappear from legacy selectors and cause UI failures.
+# Keep the compatibility dataset complete but bounded; hot pages explicitly send
+# page/limit and therefore never hit this larger fallback.
+LEGACY_PAGE_SIZE = max(200, min(int(os.environ.get("CRM_LEGACY_PAGE_SIZE", "1000")), 2000))
 
 
 def install(app: Any, auth_deps: Any) -> None:
