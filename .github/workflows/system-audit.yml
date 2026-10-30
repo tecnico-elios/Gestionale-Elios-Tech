@@ -69,7 +69,7 @@ jobs:
 
       - name: Performance runtime unit tests
         working-directory: backend
-        run: python tests/test_performance_runtime.py
+        run: python -m unittest discover -s tests -p 'test_performance_runtime.py'
 
       - name: Structural audit
         run: python backend/system_audit.py
