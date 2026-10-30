@@ -1,8 +1,9 @@
-"""Emergency diagnostics for request storms and event-loop stalls.
+"""Emergency diagnostics for request storms, event-loop stalls and UI crashes.
 
-This module is intentionally temporary and safe to remove after the performance
-incident. It adds request concurrency/source timing and two isolated Mongo read
-probes without changing production CRM write semantics.
+This module is intentionally isolated and safe to remove after the performance
+incident. It adds request timing/source diagnostics, prevents stale SPA HTML
+from surviving a deploy, records React ErrorBoundary crashes, and exposes two
+isolated Mongo read probes without changing production CRM write semantics.
 """
 from __future__ import annotations
 
@@ -18,6 +19,10 @@ from pymongo import MongoClient
 logger = logging.getLogger("emergency_perf")
 _active_requests = 0
 _active_lock = asyncio.Lock()
+
+
+def _clip(value: Any, limit: int) -> str:
+    return str(value or "").replace("\x00", "")[:limit]
 
 
 def install(app: Any, async_db: Any, auth_deps: Any) -> None:
@@ -36,6 +41,15 @@ def install(app: Any, async_db: Any, auth_deps: Any) -> None:
         try:
             response = await call_next(request)
             status = response.status_code
+
+            # The React bundle has hashed filenames, but index.html is the pointer
+            # to those hashes. Never cache SPA HTML across a Render deploy.
+            content_type = str(response.headers.get("content-type") or "").lower()
+            if not request.url.path.startswith("/api/") and "text/html" in content_type:
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+
             return response
         finally:
             elapsed = time.perf_counter() - started
@@ -52,6 +66,26 @@ def install(app: Any, async_db: Any, auth_deps: Any) -> None:
             )
             async with _active_lock:
                 _active_requests = max(0, _active_requests - 1)
+
+    @app.post("/api/_diag/ui-error", tags=["diagnostics"])
+    async def ui_error(request: Request):
+        """Receive a bounded same-app React crash report for Render diagnostics."""
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        logger.error(
+            "UI_ERROR path=%s message=%s stack=%s component=%s ua=%s",
+            _clip(payload.get("path"), 240),
+            _clip(payload.get("message"), 600),
+            _clip(payload.get("stack"), 3000),
+            _clip(payload.get("componentStack"), 3000),
+            _clip(payload.get("userAgent") or request.headers.get("user-agent"), 400),
+        )
+        return {"ok": True}
 
     dep = auth_deps.require_password_current
 
