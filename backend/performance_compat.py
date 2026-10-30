@@ -1,13 +1,9 @@
 """Compatibility bridge between the current React PWA and paginated CRM API.
 
-The existing RegistryPage still expects complete lookup/list datasets and does
-not yet render server-side pagination controls.  Production currently contains
-more than 700 clients/sites/orders, so switching the endpoint to 50 rows would
-silently hide valid records.
-
-This bridge keeps legacy requests (no explicit page/limit parameters) bounded
-to a transitional 1000-row page while new/updated clients get true pagination.
-It can be removed once RegistryPage and all lookup consumers send page/limit.
+The current UI still has a few consumers that do not send explicit page/limit.
+During the performance incident we intentionally keep that fallback small so a
+single page cannot materialize hundreds or thousands of documents at startup.
+Updated clients should always send page/limit explicitly.
 """
 from __future__ import annotations
 
@@ -18,7 +14,10 @@ from fastapi import Depends, Query
 
 import performance_runtime
 
-LEGACY_PAGE_SIZE = max(200, min(int(os.environ.get("CRM_LEGACY_PAGE_SIZE", "1000")), 2000))
+# Emergency back-pressure: legacy calls are capped aggressively. This remains
+# configurable from Render and can be raised temporarily if a specific legacy
+# screen still needs more rows while it is being migrated to server pagination.
+LEGACY_PAGE_SIZE = max(50, min(int(os.environ.get("CRM_LEGACY_PAGE_SIZE", "100")), 500))
 
 
 def install(app: Any, auth_deps: Any) -> None:
@@ -39,9 +38,6 @@ def install(app: Any, auth_deps: Any) -> None:
         limit: Optional[int] = Query(default=None, ge=1, le=performance_runtime.MAX_PAGE_SIZE),
         current: Dict[str, Any] = Depends(dep),
     ):
-        # Current PWA sends neither page nor limit. Preserve complete lists during
-        # the UI migration, but keep the request bounded and use the optimized
-        # Mongo path (server filtering, no N+1, no GET-side calendar sync).
         if page is None and limit is None:
             effective_page = 1
             effective_limit = LEGACY_PAGE_SIZE
