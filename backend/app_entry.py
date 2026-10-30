@@ -18,6 +18,7 @@ import weather_location
 import weather_service
 import performance_runtime
 import performance_compat
+import emergency_runtime
 
 app = server.app
 
@@ -100,6 +101,11 @@ performance_runtime.install(
 )
 
 # Transitional compatibility for the current PWA: legacy list requests still
-# receive the complete bounded dataset, while explicit page/limit calls use the
-# new paginated contract immediately.
+# receive a bounded dataset, while explicit page/limit calls use the paginated
+# contract immediately.
 performance_compat.install(app, server.auth_deps)
+
+# Temporary emergency diagnostics: per-request source/concurrency timing plus
+# isolated Motor-vs-PyMongo read probes. No production read/write route is
+# converted to synchronous execution by this layer.
+emergency_runtime.install(app, server.db, server.auth_deps)
