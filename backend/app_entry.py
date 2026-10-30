@@ -4,6 +4,10 @@ Mantiene l'app FastAPI esistente e sostituisce in modo mirato la sola rotta
 meteo con il servizio resiliente multi-provider. R18 aggiunge una risoluzione
 coordinate robusta per installazioni/sedi storiche che hanno solo Comune o
 indirizzo e non latitudine/longitudine salvate.
+
+Il performance runtime applica inoltre il refactoring globale delle letture
+CRM senza duplicare il core storico di server.py: paginazione, query Mongo
+bounded, eliminazione N+1, cache lookup, indici e slow-request monitoring.
 """
 from typing import Optional
 
@@ -12,6 +16,7 @@ from fastapi import Depends
 import server
 import weather_location
 import weather_service
+import performance_runtime
 
 app = server.app
 
@@ -77,3 +82,12 @@ def _install_weather_route() -> None:
 
 
 _install_weather_route()
+
+# Global backend performance refactor.  server.py already owns the Motor client;
+# this layer optimizes the hot read paths while preserving all write semantics.
+performance_runtime.install(
+    app,
+    server.db,
+    server.auth_deps,
+    server.auth_mod,
+)
